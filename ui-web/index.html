@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reals Lab</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app" class="nav-top">
+
+  <!-- RESIZE HANDLES (8 Directions) -->
+  <div class="resize-handle top"></div>
+  <div class="resize-handle bottom"></div>
+  <div class="resize-handle left"></div>
+  <div class="resize-handle right"></div>
+  <div class="resize-handle top-left"></div>
+  <div class="resize-handle top-right"></div>
+  <div class="resize-handle bottom-left"></div>
+  <div class="resize-handle bottom-right"></div>
+
+  <!-- TOP BAR: TABS / DRAG REGION / WINDOW CONTROLS -->
+  <header id="topbar">
+    <div id="topNavSlot">
+      <nav id="sidebar"></nav>
+    </div>
+    <div class="window-drag-region" id="winDragRegion"></div>
+    <div class="topbar-actions">
+      <button class="icon-btn" id="btnDock" title="Dock vào REAPER / Cửa sổ riêng">📌</button>
+      <button class="icon-btn" id="btnSettings" title="Cài đặt">⚙</button>
+      <button class="icon-btn" id="btnWinMin" title="Thu nhỏ">—</button>
+      <button class="icon-btn" id="btnWinMax" title="Phóng to / Khôi phục">▢</button>
+      <button class="icon-btn btn-close" id="btnWinClose" title="Đóng">✕</button>
+    </div>
+  </header>
+
+  <!-- BODY: CONTENT -->
+  <div id="bodyRow">
+    <!-- CONTENT -->
+    <div id="content">
+
+      <!-- MARKET -->
+      <section class="pane pane-scroll" id="pane-market">
+        <div class="search">
+          <span class="magnify">⌕</span>
+          <input data-i18n-ph="market.search" placeholder="Tìm plugin, script, VST...">
+          <span class="hint">Ctrl+K</span>
+        </div>
+        <div class="chips">
+          <span class="chip on" data-i18n="market.chip.all">Tất cả</span>
+          <span class="chip" data-i18n="market.chip.effects">Effects</span>
+          <span class="chip" data-i18n="market.chip.midi">MIDI</span>
+          <span class="chip" data-i18n="market.chip.utility">Utility</span>
+          <span class="chip" data-i18n="market.chip.scripts">Scripts</span>
+          <span class="chip" data-i18n="market.chip.free">Miễn phí</span>
+        </div>
+        <div class="section-title" data-i18n="market.trending">Đang thịnh hành</div>
+        <div id="marketList"></div>
+        <div class="section-title" data-i18n="market.installed">Đã cài</div>
+        <div id="installedList"></div>
+      </section>
+
+      <!-- AUDIO LAB -->
+      <section class="pane pane-scroll" id="pane-audioLab">
+        <div class="lab-file" id="labFile">
+          <span class="muted" data-i18n="lab.noFile">Chưa chọn file — chọn trong Browser (click phải → Gửi Audio Lab)</span>
+        </div>
+        <div class="lab-grid" id="labGrid">
+          <button class="lab-tool" data-job="stem"><b data-i18n="browser.lab.stem">Tách Stem</b><span data-i18n="lab.sub.stem">vocal · drum · bass · other</span></button>
+          <button class="lab-tool" data-job="denoise"><b data-i18n="browser.lab.denoise">Lọc Noise</b><span data-i18n="lab.sub.denoise">làm sạch audio</span></button>
+          <button class="lab-tool" data-job="keychord"><b data-i18n="browser.lab.keychord">Key &amp; Hợp âm</b><span data-i18n="lab.sub.keychord">phát hiện + MIDI</span></button>
+          <button class="lab-tool" data-job="analyze"><b data-i18n="browser.lab.tempo">Tempo &amp; Key</b><span data-i18n="lab.sub.tempo">phát hiện nhanh</span></button>
+        </div>
+        <div id="labProgress" class="hidden">
+          <div class="lab-progress-bar"><div id="labProgressFill"></div></div>
+          <div id="labProgressText" class="muted"></div>
+        </div>
+        <div id="labResults"></div>
+        <div class="stub-note" data-i18n="lab.apiLive">API thật: analyze · chords · separate · denoise (smk285pro Modal)</div>
+      </section>
+
+      <!-- AGENT -->
+      <section class="pane" id="pane-agent">
+        <div class="section-title" data-i18n="agent.modes">CHẾ ĐỘ PHÉP QUYỀN</div>
+        <div class="agent-mode" id="agentMode">
+          <button data-i18n="agent.mode1">Hỏi tất cả</button>
+          <button class="on" data-i18n="agent.mode2">Chỉ hỏi nguy hiểm</button>
+          <button data-i18n="agent.mode3">Toàn quyền</button>
+        </div>
+        <div class="chat" id="chat"></div>
+        <div class="agent-input">
+          <input id="chatInput" data-i18n-ph="agent.hint" placeholder="Ra lệnh cho agent... (VD: lọc noise all track audio)">
+          <button id="btnSend" class="send">➤</button>
+        </div>
+        <div class="stub-note" data-i18n="agent.apiStub">Phase 5 — cần API LLM từ server RealS</div>
+      </section>
+
+      <!-- BROWSER -->
+      <section class="pane active" id="pane-browser">
+        <div class="browser-toolbar">
+          <div class="toolbar-row row-primary">
+            <button id="btnToggleTree" class="btn-tool-icon on" title="Ẩn/Hiện Cây thư mục">📁</button>
+            <select id="roots"></select>
+            <div class="search-wrap">
+              <input id="search" data-i18n-ph="browser.searchHint" placeholder="Tìm kiếm... (/tag, /bpm:120, /key:Am, ngữ nghĩa...)">
+              <div id="searchSuggest" class="search-suggest-pop hidden"></div>
+            </div>
+            <select id="sort">
+              <option value="0" data-i18n="browser.sort.name">Tên</option>
+              <option value="1" data-i18n="browser.sort.size">Dung lượng</option>
+              <option value="2" data-i18n="browser.sort.date">Ngày sửa</option>
+            </select>
+          </div>
+          <div class="toolbar-row row-filters">
+            <button id="audioOnly" data-i18n="browser.audioOnly">Audio</button>
+            <button id="autoPreview" class="on" data-i18n="browser.autoPreview">Auto</button>
+            <button id="favOnly" title="Yêu thích">★</button>
+            <select id="tagFilter">
+              <option value="0" data-i18n="browser.tagFilter">Nhãn</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+              <option value="7">7</option>
+            </select>
+            <button id="btnRefresh" data-i18n="browser.refresh">Làm mới</button>
+          </div>
+        </div>
+        <div id="scannerBar" class="scanner-bar hidden">
+          <div class="scanner-bar-info">
+            <span class="scanner-spinner">⚡</span>
+            <span id="scannerStatusText" class="scanner-status" data-i18n="scanner.scanning">Đang quét...</span>
+            <span id="scannerFileText" class="scanner-file"></span>
+          </div>
+          <div class="scanner-bar-right">
+            <select id="scannerCpuMode" class="scanner-cpu-select" data-i18n-title="scanner.cpuMode" title="Hiệu năng quét (CPU)">
+              <option value="low">🟢 30% CPU</option>
+              <option value="normal" selected>🔵 50% CPU</option>
+              <option value="high">🟠 85% CPU</option>
+            </select>
+            <div class="scanner-progress-track">
+              <div id="scannerProgressFill" class="scanner-progress-fill"></div>
+            </div>
+            <button id="btnScannerCancel" class="btn-scanner-cancel" data-i18n-title="scanner.cancel" title="Dừng">✕</button>
+          </div>
+        </div>
+        <div class="browser-body">
+          <div id="tree"></div>
+          <div id="treeSplitter" class="splitter-v" title="Kéo để chỉnh độ rộng Cây thư mục"></div>
+          <div id="files"></div>
+        </div>
+        <div id="previewSplitter" class="splitter-h" title="Kéo để chỉnh chiều cao Trình phát"></div>
+        <div id="preview">
+          <div class="preview-row">
+            <button id="btnPlay" class="flat">&gt;</button>
+            <button id="btnLoop" class="flat" data-i18n="browser.loop">Loop</button>
+            <button id="btnSyncBpm" class="flat" data-i18n="player.syncBpm">Sync BPM</button>
+            <button id="btnKeyTransposer" class="flat btn-key-transposer" title="Key Transposer">
+              <span id="playerKeyLabel">ORIGINAL</span>
+              <span id="pitchShiftBadge" class="pitch-badge">0st</span>
+            </button>
+            <button id="btnLab" class="flat" data-i18n="browser.sendLab">Audio Lab</button>
+            <span id="timeLabel">0.0 / 0.0s</span>
+          </div>
+          <div id="playerTagBar" class="player-tag-bar"></div>
+          <canvas id="waveform" height="44"></canvas>
+          <div class="preview-row">
+            <canvas id="meter" height="10"></canvas>
+            <label data-i18n="browser.volume">Âm lượng</label>
+            <input type="range" id="volume" min="0" max="1" step="0.01" value="0.9">
+          </div>
+          <div id="trackInfo" class="muted"></div>
+        </div>
+        <!-- MINI PIANO KEYBOARD TRANSPOSER POPUP -->
+        <div id="pianoTransposerPop" class="piano-popup hidden">
+          <div class="piano-pop-header">
+            <span class="piano-title" data-i18n="player.transposer">Tone Transposer</span>
+            <span id="pianoSemitoneLabel" class="piano-semitone-val">0 semitones</span>
+          </div>
+          <div class="piano-keyboard" id="pianoKeyboard">
+            <div class="piano-key white" data-note="C" data-semitone="0"><span class="key-lbl">C</span></div>
+            <div class="piano-key black" data-note="C#" data-semitone="1" style="left: 10.5%;"><span class="key-lbl">C#</span></div>
+            <div class="piano-key white" data-note="D" data-semitone="2"><span class="key-lbl">D</span></div>
+            <div class="piano-key black" data-note="D#" data-semitone="3" style="left: 24.8%;"><span class="key-lbl">D#</span></div>
+            <div class="piano-key white" data-note="E" data-semitone="4"><span class="key-lbl">E</span></div>
+            <div class="piano-key white" data-note="F" data-semitone="5"><span class="key-lbl">F</span></div>
+            <div class="piano-key black" data-note="F#" data-semitone="6" style="left: 53.5%;"><span class="key-lbl">F#</span></div>
+            <div class="piano-key white" data-note="G" data-semitone="7"><span class="key-lbl">G</span></div>
+            <div class="piano-key black" data-note="G#" data-semitone="8" style="left: 67.8%;"><span class="key-lbl">G#</span></div>
+            <div class="piano-key white" data-note="A" data-semitone="9"><span class="key-lbl">A</span></div>
+            <div class="piano-key black" data-note="A#" data-semitone="10" style="left: 82.1%;"><span class="key-lbl">A#</span></div>
+            <div class="piano-key white" data-note="B" data-semitone="11"><span class="key-lbl">B</span></div>
+          </div>
+          <div class="piano-pop-footer">
+            <button id="btnResetKey" class="btn-reset-key" data-i18n="player.originalKey">Original Key</button>
+          </div>
+        </div>
+        <div id="renameModal" class="modal hidden">
+          <div class="modal-box">
+            <p data-i18n="browser.rename.title">Đổi tên file:</p>
+            <input id="renameInput">
+            <div class="modal-actions">
+              <button id="renameOk" class="accent" data-i18n="common.confirm">Xác nhận</button>
+              <button id="renameCancel" data-i18n="common.cancel">Hủy</button>
+            </div>
+          </div>
+        </div>
+        <div id="deleteModal" class="modal hidden">
+          <div class="modal-box">
+            <p data-i18n="browser.delete.title">Xóa file này?</p>
+            <p id="deletePath" class="muted"></p>
+            <div class="modal-actions">
+              <button id="deleteOk" class="accent" data-i18n="browser.delete.confirm">Xóa</button>
+              <button id="deleteCancel" data-i18n="common.cancel">Hủy</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ACCOUNT -->
+      <section class="pane pane-scroll" id="pane-account">
+        <div class="profile">
+          <div class="avatar">?</div>
+          <div class="who">
+            <div class="uname" data-i18n="account.notLogin">Chưa đăng nhập</div>
+            <div class="umail" data-i18n="account.loginHint">Đăng nhập bằng tài khoản reals.media</div>
+          </div>
+        </div>
+        <button id="btnLogin" class="accent login-btn" data-i18n="account.login">Đăng nhập</button>
+        <div class="stub-note" data-i18n="account.apiStub">Phase 4 — chờ hệ thống đăng nhập trên web chính</div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- STATUS BAR -->
+  <footer id="statusbar">
+    <span class="conn"><i></i> <span data-i18n="status.connected">Đã kết nối</span></span>
+    <span class="sp"></span>
+    <a id="verLabel">Reals Lab v0.2.0</a>
+    <span>·</span>
+    <a id="siteLink">reals.media</a>
+  </footer>
+
+  <!-- SETTINGS POPUP -->
+  <div id="settingsPop" class="hidden"></div>
+
+  <!-- CONTEXT MENU -->
+  <div id="ctxMenu" class="hidden"></div>
+
+  <!-- DROP ZONE OVERLAY -->
+  <div id="dropOverlay" class="drop-overlay hidden">
+    <div class="drop-zone-box">
+      <div class="drop-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          <line x1="12" y1="11" x2="12" y2="17"/>
+          <line x1="9" y1="14" x2="15" y2="14"/>
+        </svg>
+      </div>
+      <div class="drop-title" data-i18n="browser.dropTitle">Thêm thư mục gốc</div>
+      <div class="drop-sub" data-i18n="browser.dropHint">Thả thư mục từ Windows Explorer vào đây để thêm vào Thư mục gốc</div>
+    </div>
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ui-web",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "http-server", "ui-web", "-p", "5273", "-c-1", "--silent"],
+      "port": 5273
+    }
+  ]
+}

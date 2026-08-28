@@ -1,0 +1,31 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "windows",
+      "displayName": "Windows (Visual Studio 2022)",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/build/windows",
+      "cacheVariables": {
+        "REALS_BUILD_APP": "OFF",
+        "REALS_BUILD_EXTENSION": "ON"
+      }
+    },
+    {
+      "name": "windows-extension",
+      "displayName": "Windows + REAPER extension",
+      "binaryDir": "${sourceDir}/build/windows-ext",
+      "cacheVariables": {
+        "REALS_BUILD_APP": "OFF",
+        "REALS_BUILD_EXTENSION": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "windows", "configurePreset": "windows" },
+    { "name": "windows-extension", "configurePreset": "windows-extension" }
+  ],
+  "testPresets": [
+    { "name": "windows", "configurePreset": "windows" }
+  ]
+}

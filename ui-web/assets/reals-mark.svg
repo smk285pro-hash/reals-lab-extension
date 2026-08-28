@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 48" role="img" aria-labelledby="title">
+  <title id="title">RealS</title>
+  <path
+    d="M8 26C16 8 25 8 33 26S50 44 59 26 76 8 85 26s17 18 27 0"
+    fill="none"
+    stroke="#c8f93a"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="11"
+  />
+</svg>

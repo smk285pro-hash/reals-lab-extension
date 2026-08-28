@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reals Lab — UI Mockup (Design System v1)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ===== TOKENS (theo DESIGN.md) ===== */
+  :root {
+    --bg-root:#090A0C; --bg-app:#0D0E11; --bg-sidebar:#101114;
+    --bg-panel:#121316; --bg-card:#15171A; --bg-card-hover:#191B1F;
+    --bg-input:#0D0F12; --bg-elevated:#1A1C20;
+    --border-subtle:#24262B; --border-default:#2C2F35; --border-strong:#363941;
+    --text-primary:#F2F3F5; --text-secondary:#A3A6AD;
+    --text-tertiary:#737780; --text-disabled:#4E5158;
+    --accent:#FF6B2C; --accent-hover:#FF7A3D; --accent-active:#E9571D;
+    --accent-soft:rgba(255,107,44,.12); --accent-border:rgba(255,107,44,.35);
+    --free-bg:rgba(34,197,94,.12); --free-tx:#35D07F;
+    --pro-bg:rgba(255,107,44,.12); --pro-tx:#FF7A3D;
+    --upd-bg:rgba(59,130,246,.12); --upd-tx:#55A5FF;
+    --danger:#ff5c66;
+    --t-fast:120ms ease; --t-med:160ms ease;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:#060708;
+    font-family:'Inter','Segoe UI',system-ui,sans-serif;
+    color:var(--text-primary);
+    display:flex; flex-direction:column; align-items:center; gap:14px;
+    padding:24px 12px; min-height:100vh;
+    font-size:13.5px;
+  }
+  .caption { color:var(--text-tertiary); font-size:12.5px; }
+  .caption b { color:var(--text-secondary); }
+
+  /* ===== APP SHELL ===== */
+  .frame {
+    width:560px; height:880px;
+    background:var(--bg-app);
+    border:1px solid #292B30;
+    border-radius:14px;
+    display:flex; flex-direction:column;
+    overflow:hidden;
+    box-shadow:0 12px 40px rgba(0,0,0,.35);
+  }
+
+  /* ===== HEADER (64px) ===== */
+  .titlebar {
+    height:52px; flex-shrink:0;
+    display:flex; align-items:center; gap:12px;
+    padding:0 16px;
+    border-bottom:1px solid var(--border-subtle);
+    user-select:none;
+  }
+  .logo {
+    display:flex; align-items:center; justify-content:center;
+  }
+  .titlebar .spacer { flex:1; }
+  .icon-btn {
+    width:30px; height:30px;
+    display:grid; place-items:center;
+    border-radius:8px;
+    color:var(--text-tertiary);
+    cursor:pointer;
+    font-size:16px;
+    transition:background var(--t-fast), color var(--t-fast);
+  }
+  .icon-btn:hover { background:var(--bg-elevated); color:var(--text-primary); }
+
+  /* ===== UPDATE BANNER (~72px) ===== */
+  .update-banner {
+    height:72px; flex-shrink:0;
+    display:flex; align-items:center; gap:12px;
+    padding:0 20px;
+    background:var(--bg-card);
+    border-bottom:1px solid var(--border-default);
+  }
+  .update-banner .dot {
+    width:6px; height:6px; border-radius:50%;
+    background:var(--accent); flex-shrink:0;
+  }
+  .update-banner .msg { flex:1; color:var(--text-secondary); font-size:13px; }
+  .update-banner .msg b { color:var(--accent); font-weight:600; }
+  .btn-primary {
+    height:36px; padding:0 18px;
+    background:var(--accent); color:#fff;
+    border:none; border-radius:9px;
+    font-size:13px; font-weight:600; font-family:inherit;
+    cursor:pointer;
+    transition:background var(--t-fast);
+  }
+  .btn-primary:hover { background:var(--accent-hover); }
+  .btn-primary:active { background:var(--accent-active); }
+  .update-banner .close { color:var(--text-disabled); cursor:pointer; padding:4px 6px; transition:color var(--t-fast); }
+  .update-banner .close:hover { color:var(--text-secondary); }
+
+  /* ===== BODY ROW + NAV 4 VỊ TRÍ (top mặc định) ===== */
+  .body-row { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+  .frame.nav-left .body-row, .frame.nav-right .body-row { flex-direction:row; }
+  .frame.nav-right .sidebar, .frame.nav-bottom .sidebar { order:2; }
+
+  /* Nav container */
+  .sidebar {
+    flex-shrink:0;
+    background:var(--bg-sidebar);
+    display:flex;
+    user-select:none;
+  }
+  /* — dọc (trái/phải) — */
+  .frame.nav-left .sidebar, .frame.nav-right .sidebar {
+    width:176px;
+    flex-direction:column; gap:2px;
+    padding:8px 0;
+  }
+  .frame.nav-left .sidebar { border-right:1px solid var(--border-subtle); }
+  .frame.nav-right .sidebar { border-left:1px solid var(--border-subtle); }
+  /* — ngang (trên/dưới) — */
+  .frame.nav-top .sidebar, .frame.nav-bottom .sidebar {
+    height:50px;
+    flex-direction:row; gap:4px;
+    padding:0 12px;
+  }
+  .frame.nav-top .sidebar { border-bottom:1px solid var(--border-subtle); }
+  .frame.nav-bottom .sidebar { border-top:1px solid var(--border-subtle); }
+
+  /* Nav item */
+  .nav {
+    display:flex; align-items:center; gap:10px;
+    font-size:13px; font-weight:500;
+    color:var(--text-secondary);
+    cursor:pointer;
+    position:relative;
+    transition:background var(--t-fast), color var(--t-fast);
+  }
+  .frame.nav-left .nav, .frame.nav-right .nav { height:56px; padding:0 20px; gap:12px; }
+  .frame.nav-top .nav, .frame.nav-bottom .nav { padding:0 15px; }
+  .nav svg { width:17px; height:17px; color:#858991; flex-shrink:0; transition:color var(--t-fast); }
+  .nav:hover { background:var(--bg-card); color:var(--text-primary); }
+  .nav.active { background:#17191C; color:var(--accent); }
+  .nav.active svg { color:var(--accent); }
+  .nav.active::before { content:""; position:absolute; background:var(--accent); }
+  /* vạch cam theo từng hướng */
+  .frame.nav-left .nav.active::before { left:0; top:0; bottom:0; width:2px; }
+  .frame.nav-right .nav.active::before { right:0; top:0; bottom:0; width:2px; }
+  .frame.nav-top .nav.active::before { left:0; right:0; bottom:0; height:2px; }
+  .frame.nav-bottom .nav.active::before { left:0; right:0; top:0; height:2px; }
+
+  /* ===== CONTENT ===== */
+  .content { flex:1; overflow-y:auto; overflow-x:hidden; background:var(--bg-panel); }
+  .content::-webkit-scrollbar { width:9px; }
+  .content::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:5px; }
+  .content::-webkit-scrollbar-track { background:transparent; }
+  .pane { display:none; padding:24px; }
+  .pane.active { display:block; }
+
+  .section-title {
+    font-size:12px; font-weight:600;
+    letter-spacing:1.5px;
+    color:var(--text-tertiary);
+    text-transform:uppercase;
+    margin:28px 0 12px;
+  }
+  .pane > .section-title:first-child { margin-top:0; }
+
+  /* ===== SEARCH ===== */
+  .search {
+    height:48px;
+    display:flex; align-items:center; gap:12px;
+    background:var(--bg-input);
+    border:1px solid #292C31;
+    border-radius:10px;
+    padding:0 16px;
+    margin-bottom:16px;
+    transition:border-color var(--t-fast), box-shadow var(--t-fast);
+  }
+  .search:focus-within {
+    border-color:rgba(255,107,44,.55);
+    box-shadow:0 0 0 3px rgba(255,107,44,.08);
+  }
+  .search .magnify { color:var(--text-tertiary); font-size:14px; }
+  .search input {
+    flex:1; min-width:0;
+    background:none; border:none; outline:none;
+    color:var(--text-primary);
+    font-size:13.5px; font-family:inherit;
+  }
+  .search input::placeholder { color:var(--text-disabled); }
+  .search .hint {
+    color:var(--text-tertiary); font-size:11px;
+    border:1px solid var(--border-default);
+    border-radius:5px; padding:2px 7px;
+  }
+
+  /* ===== CHIPS ===== */
+  .chips { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:4px; }
+  .chip {
+    height:34px; padding:0 16px;
+    display:inline-flex; align-items:center;
+    font-size:12.5px; font-weight:500;
+    border-radius:17px;
+    background:var(--bg-card);
+    border:1px solid #272A30;
+    color:#8F939B;
+    cursor:pointer;
+    transition:background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
+  }
+  .chip:hover { border-color:var(--border-strong); color:var(--text-primary); }
+  .chip.on { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+
+  /* ===== PLUGIN CARD ===== */
+  .product {
+    display:flex; gap:14px; align-items:center;
+    background:var(--bg-card);
+    border:1px solid #24272C;
+    border-radius:11px;
+    padding:16px;
+    margin-bottom:12px;
+    transition:background var(--t-fast), border-color var(--t-fast), transform var(--t-fast);
+  }
+  .product:hover {
+    background:var(--bg-card-hover);
+    border-color:#30333A;
+    transform:translateY(-1px);
+  }
+  .thumb {
+    width:56px; height:56px;
+    border-radius:8px; flex-shrink:0;
+    display:grid; place-items:center;
+    font-weight:700; font-size:19px; color:rgba(255,255,255,.92);
+  }
+  .product .info { flex:1; min-width:0; }
+  .product .pname {
+    font-size:15px; font-weight:600; color:#F1F2F4;
+    margin-bottom:5px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .product .meta { font-size:12px; color:#777B84; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .tag {
+    height:20px; padding:0 8px;
+    display:inline-flex; align-items:center;
+    font-size:10px; font-weight:700; letter-spacing:.6px;
+    border-radius:5px;
+  }
+  .tag.free { background:var(--free-bg); color:var(--free-tx); }
+  .tag.pro  { background:var(--pro-bg);  color:var(--pro-tx); }
+  .tag.upd  { background:var(--upd-bg);  color:var(--upd-tx); }
+  .tag.dev  { background:rgba(115,119,128,.14); color:var(--text-tertiary); }
+
+  /* Buttons */
+  .btn-card {
+    height:36px; padding:0 16px; flex-shrink:0;
+    border-radius:9px;
+    font-size:13px; font-weight:600; font-family:inherit;
+    cursor:pointer;
+    transition:background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
+  }
+  .btn-card.primary { background:var(--accent); border:none; color:#fff; }
+  .btn-card.primary:hover { background:var(--accent-hover); }
+  .btn-card.primary:active { background:var(--accent-active); }
+  .btn-card.secondary {
+    background:var(--bg-elevated);
+    border:1px solid #30333A;
+    color:#D7D9DD;
+  }
+  .btn-card.secondary:hover { border-color:var(--border-strong); color:#fff; }
+  .btn-card:disabled { opacity:.45; cursor:default; }
+
+  /* ===== AUDIO LAB ===== */
+  .item-row {
+    display:flex; align-items:center; gap:12px;
+    padding:12px 14px;
+    background:var(--bg-card);
+    border:1px solid #24272C;
+    border-radius:9px;
+    margin-bottom:10px;
+    cursor:pointer; user-select:none;
+    font-size:13px;
+    transition:background var(--t-fast), border-color var(--t-fast);
+  }
+  .item-row:hover { background:var(--bg-card-hover); border-color:#30333A; }
+  .item-row.sel { border-color:var(--accent-border); background:var(--accent-soft); }
+  .item-row .ic { color:var(--text-tertiary); font-size:13px; }
+  .item-row .nm { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-primary); }
+  .item-row .dur { color:var(--text-tertiary); font-size:12px; font-variant-numeric:tabular-nums; }
+  .list-head {
+    display:flex; padding:0 14px 7px;
+    font-size:10.5px; font-weight:600; letter-spacing:1px;
+    color:var(--text-disabled); text-transform:uppercase;
+  }
+  .list-head .h-nm { flex:1; }
+  .wave { height:22px; flex-shrink:0; display:flex; align-items:center; gap:1.5px; }
+  .wave i { width:2.5px; background:var(--accent); opacity:.6; border-radius:1px; display:block; }
+
+  /* Toolbar tool — kiểu desktop app: nút compact icon + text ngang */
+  .lab-toolbar { display:flex; gap:8px; margin-top:14px; }
+  .tool {
+    flex:1; height:40px;
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    background:var(--bg-card);
+    border:1px solid #24272C;
+    border-radius:9px;
+    font-size:12px; font-weight:600; font-family:inherit;
+    color:var(--text-secondary);
+    cursor:pointer;
+    transition:background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
+  }
+  .tool:hover { background:var(--bg-card-hover); border-color:#30333A; color:var(--text-primary); }
+  .tool .em { font-size:15px; }
+
+  .result-card {
+    background:var(--bg-card);
+    border:1px solid #24272C;
+    border-radius:11px;
+    padding:16px;
+    margin-top:16px;
+  }
+  .result-card h4 {
+    font-size:13px; font-weight:600; color:var(--text-primary);
+    margin:-16px -16px 14px;
+    padding:12px 16px;
+    border-bottom:1px solid var(--border-subtle);
+    display:flex; align-items:center; gap:8px;
+  }
+  .stem-row {
+    display:flex; align-items:center; gap:10px;
+    padding:9px 11px;
+    background:var(--bg-input);
+    border-radius:8px;
+    margin-bottom:8px;
+    font-size:12.5px;
+  }
+  .stem-row .cl { width:10px; height:10px; border-radius:3px; flex-shrink:0; }
+  .stem-row .sn { flex:1; color:var(--text-primary); }
+  .stem-row a { color:var(--upd-tx); font-size:11.5px; text-decoration:none; cursor:pointer; }
+  .stem-row a:hover { text-decoration:underline; }
+  .row-actions { display:flex; gap:10px; margin-top:12px; }
+  .row-actions .btn-card { flex:1; }
+  .key-badges { display:flex; gap:8px; flex-wrap:wrap; }
+  .kbd {
+    background:var(--bg-input);
+    border:1px solid var(--border-default);
+    padding:5px 11px;
+    border-radius:7px;
+    font-size:12px; color:var(--text-secondary);
+  }
+  .kbd b { color:var(--accent); font-weight:600; }
+
+  /* ===== AGENT ===== */
+  .agent-mode {
+    display:flex; gap:4px;
+    background:var(--bg-input);
+    padding:4px;
+    border-radius:10px;
+    border:1px solid var(--border-subtle);
+    margin-bottom:16px;
+  }
+  .mode {
+    flex:1; text-align:center;
+    font-size:11px; font-weight:600;
+    padding:8px 4px;
+    border-radius:8px;
+    color:var(--text-tertiary);
+    cursor:pointer;
+    transition:background var(--t-fast), color var(--t-fast);
+  }
+  .mode:hover { color:var(--text-secondary); }
+  .mode.on { background:var(--bg-elevated); color:var(--accent); }
+  .chat { display:flex; flex-direction:column; gap:12px; }
+  .bubble {
+    max-width:88%;
+    padding:11px 14px;
+    border-radius:12px;
+    font-size:13px; line-height:1.55;
+  }
+  .bubble.user {
+    align-self:flex-end;
+    background:var(--accent); color:#fff;
+    border-bottom-right-radius:5px;
+  }
+  .bubble.bot {
+    align-self:flex-start;
+    background:var(--bg-card);
+    border:1px solid #24272C;
+    color:var(--text-secondary);
+    border-bottom-left-radius:5px;
+  }
+  .bubble.bot b, .bubble.bot i { color:var(--text-primary); }
+  .actions-log { display:flex; flex-direction:column; gap:6px; margin-top:10px; }
+  .act {
+    display:flex; align-items:center; gap:8px;
+    font-size:11.5px;
+    padding:7px 10px;
+    background:var(--bg-input);
+    border-radius:7px;
+    color:var(--text-tertiary);
+  }
+  .act.ok::before { content:"✓"; color:var(--free-tx); font-weight:700; }
+  .act.run::before { content:"◌"; color:var(--upd-tx); font-weight:700; }
+  .confirm-box {
+    margin-top:10px;
+    border:1px solid var(--accent-border);
+    background:var(--accent-soft);
+    border-radius:9px;
+    padding:11px 12px;
+    font-size:12px; color:var(--text-secondary);
+  }
+  .confirm-box b { color:var(--text-primary); }
+  .confirm-box .row { display:flex; gap:10px; margin-top:10px; }
+  .confirm-box .row .btn-card { flex:1; height:34px; }
+  .agent-input {
+    position:sticky; bottom:0;
+    display:flex; gap:10px;
+    padding:16px 0 2px;
+    background:linear-gradient(transparent, var(--bg-panel) 30%);
+  }
+  .agent-input input {
+    flex:1; min-width:0;
+    height:46px;
+    background:var(--bg-input);
+    border:1px solid #292C31;
+    border-radius:10px;
+    padding:0 16px;
+    color:var(--text-primary);
+    font-size:13px; font-family:inherit;
+    outline:none;
+    transition:border-color var(--t-fast), box-shadow var(--t-fast);
+  }
+  .agent-input input::placeholder { color:var(--text-disabled); }
+  .agent-input input:focus {
+    border-color:rgba(255,107,44,.55);
+    box-shadow:0 0 0 3px rgba(255,107,44,.08);
+  }
+  .send {
+    width:46px; height:46px;
+    background:var(--accent);
+    border:none; border-radius:10px;
+    color:#fff; font-size:16px;
+    cursor:pointer;
+    transition:background var(--t-fast);
+  }
+  .send:hover { background:var(--accent-hover); }
+
+  /* ===== BROWSER ===== */
+  .mini-tabs { display:flex; gap:8px; margin-bottom:16px; }
+  .mini-tab {
+    height:34px; padding:0 14px;
+    display:inline-flex; align-items:center; gap:8px;
+    font-size:12px; font-weight:600;
+    border-radius:9px;
+    background:var(--bg-card);
+    border:1px solid #272A30;
+    color:var(--text-tertiary);
+    cursor:pointer;
+    transition:background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
+  }
+  .mini-tab:hover { color:var(--text-secondary); }
+  .mini-tab.on { background:var(--bg-elevated); color:var(--text-primary); border-color:#30333A; }
+  /* Browser toolbar: path + view toggle */
+  .browser-bar { display:flex; gap:8px; margin-bottom:12px; }
+  .pathbar {
+    flex:1; min-width:0;
+    display:flex; align-items:center; gap:7px;
+    background:var(--bg-input);
+    border:1px solid var(--border-subtle);
+    border-radius:9px;
+    padding:10px 14px;
+    font-size:12px; color:var(--text-tertiary);
+  }
+  .pathbar b { color:var(--text-primary); font-weight:600; }
+  .view-toggle {
+    display:flex; flex-shrink:0;
+    background:var(--bg-input);
+    border:1px solid var(--border-subtle);
+    border-radius:9px;
+    overflow:hidden;
+  }
+  .vt {
+    width:38px;
+    background:none; border:none;
+    color:var(--text-tertiary);
+    font-size:13px; cursor:pointer;
+    transition:background var(--t-fast), color var(--t-fast);
+  }
+  .vt.on { background:var(--bg-elevated); color:var(--text-primary); }
+  .tree-row {
+    display:flex; align-items:center; gap:10px;
+    padding:9px 10px;
+    border-radius:8px;
+    font-size:13px;
+    cursor:pointer; user-select:none;
+    transition:background var(--t-fast);
+  }
+  .tree-row:hover { background:var(--bg-card-hover); }
+  .tree-row.folder { color:var(--text-secondary); font-weight:600; }
+  .tree-row.file { color:var(--text-tertiary); padding-left:32px; }
+  .tree-row .arw { width:12px; color:var(--text-disabled); font-size:10px; }
+  .tree-row .cnt { margin-left:auto; font-size:11px; color:var(--text-disabled); }
+  .fav { color:var(--accent); margin-left:4px; font-size:11px; }
+
+  /* ===== ACCOUNT ===== */
+  .profile {
+    display:flex; align-items:center; gap:14px;
+    background:var(--bg-card);
+    border:1px solid #24272C;
+    border-radius:11px;
+    padding:16px;
+    margin-bottom:16px;
+  }
+  .avatar {
+    width:48px; height:48px; border-radius:50%;
+    background:var(--accent);
+    display:grid; place-items:center;
+    font-weight:700; font-size:17px; color:#fff;
+  }
+  .profile .who { flex:1; min-width:0; }
+  .profile .who .uname { font-weight:600; font-size:14.5px; }
+  .profile .who .umail { font-size:12px; color:var(--text-tertiary); margin-top:2px; overflow:hidden; text-overflow:ellipsis; }
+  .plan-card {
+    background:var(--accent-soft);
+    border:1px solid var(--accent-border);
+    border-radius:11px;
+    padding:14px 16px;
+    margin-bottom:16px;
+    display:flex; align-items:center; gap:12px;
+  }
+  .plan-card .pl { flex:1; }
+  .plan-card .pl .t { font-weight:600; font-size:13.5px; color:var(--accent); }
+  .plan-card .pl .d { font-size:11.5px; color:var(--text-tertiary); margin-top:3px; }
+  .lic-row {
+    display:flex; align-items:center; gap:11px;
+    padding:11px 14px;
+    background:var(--bg-card);
+    border:1px solid #24272C;
+    border-radius:9px;
+    margin-bottom:8px;
+    font-size:12.5px;
+    transition:background var(--t-fast), border-color var(--t-fast);
+  }
+  .lic-row:hover { background:var(--bg-card-hover); }
+  .lic-row .ln { flex:1; color:var(--text-primary); }
+  .lic-row .st { font-size:11px; font-weight:700; }
+  .st.ok { color:var(--free-tx); }
+  .st.ex { color:var(--danger); }
+  .link-row {
+    display:flex; align-items:center; gap:10px;
+    padding:11px 12px;
+    font-size:13px;
+    color:var(--text-secondary);
+    cursor:pointer;
+    border-radius:9px;
+    transition:background var(--t-fast), color var(--t-fast);
+  }
+  .link-row:hover { background:var(--bg-card-hover); color:var(--text-primary); }
+
+  /* ===== STATUS BAR ===== */
+  .statusbar {
+    height:32px; flex-shrink:0;
+    display:flex; align-items:center; gap:10px;
+    padding:0 20px;
+    background:var(--bg-app);
+    border-top:1px solid var(--border-subtle);
+    font-size:11.5px; color:var(--text-tertiary);
+  }
+  .statusbar .conn { display:flex; align-items:center; gap:6px; }
+  .statusbar .conn i {
+    width:6px; height:6px; border-radius:50%;
+    background:var(--free-tx); display:inline-block;
+  }
+  .statusbar .sp { flex:1; }
+  .statusbar a { color:var(--text-tertiary); text-decoration:none; cursor:pointer; transition:color var(--t-fast); }
+  .statusbar a:hover { color:var(--accent); }
+
+  /* ===== ACCENT VARIANTS ===== */
+  .frame.acc-amber {
+    --accent:#F09A2E; --accent-hover:#F5A945; --accent-active:#D9821A;
+    --accent-soft:rgba(240,154,46,.12); --accent-border:rgba(240,154,46,.35);
+  }
+  .frame.acc-muted {
+    --accent:#D96E30; --accent-hover:#E37E42; --accent-active:#C05F26;
+    --accent-soft:rgba(217,110,48,.12); --accent-border:rgba(217,110,48,.35);
+  }
+  .frame.acc-gray {
+    --accent:#B4B8BF; --accent-hover:#CDD1D7; --accent-active:#9A9EA6;
+    --accent-soft:rgba(180,184,191,.12); --accent-border:rgba(180,184,191,.35);
+  }
+
+  /* ===== NOISE OVERLAY (analog grain) ===== */
+  .frame::after {
+    content:"";
+    position:absolute; inset:0;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+    opacity:.032;
+    pointer-events:none;
+    z-index:5;
+  }
+  .frame.no-noise::after { display:none; }
+
+  /* ===== SETTINGS POPUP (vị trí nav) ===== */
+  .settings-pop {
+    position:absolute;
+    top:56px; right:14px;
+    width:210px;
+    background:var(--bg-elevated);
+    border:1px solid #30333A;
+    border-radius:10px;
+    box-shadow:0 12px 40px rgba(0,0,0,.35);
+    padding:6px;
+    z-index:50;
+    display:none;
+  }
+  .settings-pop.show { display:block; }
+  .settings-pop .sp-title {
+    font-size:11px; font-weight:600; letter-spacing:.8px;
+    color:var(--text-tertiary);
+    text-transform:uppercase;
+    padding:8px 10px 9px;
+    border-bottom:1px solid var(--border-subtle);
+    margin-bottom:6px;
+  }
+  .sp-opt {
+    display:flex; align-items:center; gap:10px;
+    padding:9px 10px;
+    font-size:12.5px; color:var(--text-secondary);
+    border-radius:7px;
+    cursor:pointer;
+    transition:background var(--t-fast), color var(--t-fast);
+  }
+  .sp-opt:hover { background:var(--bg-card-hover); color:var(--text-primary); }
+  .sp-opt.on { color:var(--accent); }
+  .sp-opt.on::after { content:"✓"; margin-left:auto; font-weight:700; }
+
+  /* ===== CONTEXT MENU ===== */
+  .ctx {
+    position:fixed;
+    width:250px;
+    background:var(--bg-elevated);
+    border:1px solid #30333A;
+    border-radius:10px;
+    box-shadow:0 12px 40px rgba(0,0,0,.35);
+    padding:6px;
+    z-index:99;
+    display:none;
+  }
+  .ctx.show { display:block; }
+  .ctx .ctx-head {
+    font-size:11px; color:var(--text-tertiary);
+    padding:7px 10px 8px;
+    border-bottom:1px solid var(--border-subtle);
+    margin-bottom:6px;
+  }
+  .ctx .ctx-head b { color:var(--accent); }
+  .ctx-item {
+    display:flex; align-items:center; gap:10px;
+    padding:9px 10px;
+    font-size:12.5px; color:var(--text-secondary);
+    border-radius:7px;
+    cursor:pointer;
+    transition:background var(--t-fast), color var(--t-fast);
+  }
+  .ctx-item:hover { background:var(--accent); color:#fff; }
+  .ctx-item .sub { margin-left:auto; font-size:10px; color:var(--text-disabled); font-weight:700; }
+  .ctx-item:hover .sub { color:rgba(255,255,255,.8); }
+  .ctx-sep { height:1px; background:var(--border-subtle); margin:6px 8px; }
+  .ctx-item.ai:hover { background:var(--upd-tx); }
+</style>
+</head>
+<body>
+
+<div class="caption"><b>REALS LAB — MOCKUP v3</b> · bấm <b style="color:var(--accent)">⚙</b> để đổi vị trí thanh điều hướng (trên/dưới/trái/phải) · <b style="color:var(--accent)">Ctrl+Right-click</b> vào item audio xem context menu</div>
+
+<div class="frame nav-top" id="frame" style="position:relative">
+
+  <!-- HEADER -->
+  <div class="titlebar">
+    <div class="logo" title="RealS">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 48" style="height:22px;width:auto;display:block">
+        <path d="M8 26C16 8 25 8 33 26S50 44 59 26 76 8 85 26s17 18 27 0" fill="none" stroke="#c8f93a" stroke-linecap="round" stroke-linejoin="round" stroke-width="11"/>
+      </svg>
+    </div>
+    <div class="spacer"></div>
+    <div class="icon-btn" title="Cài đặt" id="btnSettings">⚙</div>
+    <div class="icon-btn" title="Thu nhỏ">—</div>
+    <div class="icon-btn" title="Đóng">✕</div>
+  </div>
+
+  <!-- SETTINGS POPUP -->
+  <div class="settings-pop" id="settingsPop">
+    <div class="sp-title">Vị trí thanh điều hướng</div>
+    <div class="sp-opt on" data-pos="top">⬆ Trên</div>
+    <div class="sp-opt" data-pos="bottom">⬇ Dưới</div>
+    <div class="sp-opt" data-pos="left">⬅ Trái</div>
+    <div class="sp-opt" data-pos="right">➡ Phải</div>
+    <div class="sp-title" style="margin-top:4px">Màu nhấn</div>
+    <div class="sp-opt on" data-acc="orange">Cam Reals</div>
+    <div class="sp-opt" data-acc="amber">Cam hổ phách (amber)</div>
+    <div class="sp-opt" data-acc="muted">Cam trầm</div>
+    <div class="sp-opt" data-acc="gray">Xám (monochrome)</div>
+    <div class="sp-title" style="margin-top:4px">Hiệu ứng</div>
+    <div class="sp-opt on" data-noise>Lớp phủ noise</div>
+  </div>
+
+  <!-- UPDATE BANNER -->
+  <div class="update-banner" id="updBanner">
+    <div class="dot"></div>
+    <div class="msg"><b>v0.2.0</b> đã sẵn sàng — thêm Audio Lab</div>
+    <button class="btn-primary">Update</button>
+    <span class="close" onclick="document.getElementById('updBanner').style.display='none'">✕</span>
+  </div>
+
+  <!-- BODY -->
+  <div class="body-row">
+
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+      <div class="nav active" data-t="market">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h14l-1.2 12.2a1.8 1.8 0 0 1-1.8 1.6H8a1.8 1.8 0 0 1-1.8-1.6L5 8z"/><path d="M8.5 10.5V6.5a3.5 3.5 0 0 1 7 0v4"/></svg>
+        Market
+      </div>
+      <div class="nav" data-t="lab">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><line x1="6" y1="4" x2="6" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/><line x1="18" y1="4" x2="18" y2="20"/><circle cx="6" cy="9" r="2.2" fill="#101114"/><circle cx="12" cy="15" r="2.2" fill="#101114"/><circle cx="18" cy="8" r="2.2" fill="#101114"/></svg>
+        Audio Lab
+      </div>
+      <div class="nav" data-t="agent">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="5" y="8" width="14" height="10" rx="2.5"/><line x1="12" y1="5" x2="12" y2="8"/><circle cx="12" cy="4.6" r="0.9" fill="currentColor" stroke="none"/><circle cx="9.5" cy="13" r="1" fill="currentColor" stroke="none"/><circle cx="14.5" cy="13" r="1" fill="currentColor" stroke="none"/></svg>
+        Agent
+      </div>
+      <div class="nav" data-t="browser">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8"/><ellipse cx="12" cy="12" rx="3.5" ry="8"/><line x1="4" y1="12" x2="20" y2="12"/></svg>
+        Browser
+      </div>
+      <div class="nav" data-t="acc">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c1.4-3.2 4-4.8 7-4.8s5.6 1.6 7 4.8"/></svg>
+        Tài khoản
+      </div>
+    </div>
+
+    <!-- CONTENT -->
+    <div class="content">
+
+      <!-- ============ MARKET ============ -->
+      <div class="pane active" id="p-market">
+        <div class="search">
+          <span class="magnify">⌕</span>
+          <input placeholder="Tìm plugin, script, VST...">
+          <span class="hint">Ctrl+K</span>
+        </div>
+        <div class="chips">
+          <div class="chip on">Tất cả</div>
+          <div class="chip">Effects</div>
+          <div class="chip">MIDI</div>
+          <div class="chip">Utility</div>
+          <div class="chip">Scripts</div>
+          <div class="chip">Miễn phí</div>
+        </div>
+
+        <div class="section-title">Đang thịnh hành</div>
+
+        <div class="product">
+          <div class="thumb" style="background:#5b4a6b">MG</div>
+          <div class="info">
+            <div class="pname">MegaGrit Multiband Distortion</div>
+            <div class="meta"><span class="tag free">FREE</span> JSFX · Bao phuc Nguyen</div>
+          </div>
+          <button class="btn-card primary">Tải về</button>
+        </div>
+
+        <div class="product">
+          <div class="thumb" style="background:#3d5a52">HT</div>
+          <div class="info">
+            <div class="pname">Hackey Trackey for REAPER</div>
+            <div class="meta"><span class="tag free">FREE</span> ReaScript Lua · Bao phuc Nguyen</div>
+          </div>
+          <button class="btn-card primary">Tải về</button>
+        </div>
+
+        <div class="product">
+          <div class="thumb" style="background:#3e4c6b">MS</div>
+          <div class="info">
+            <div class="pname">JSFX Mastering Suite</div>
+            <div class="meta"><span class="tag pro">PRO</span> JSFX · Bao phuc Nguyen</div>
+          </div>
+          <button class="btn-card secondary">199K</button>
+        </div>
+
+        <div class="product">
+          <div class="thumb" style="background:#524058">YT</div>
+          <div class="info">
+            <div class="pname">Yumyoo Beatmaker Toolkit</div>
+            <div class="meta"><span class="tag pro">PRO</span> ReaScript Lua · Bao phuc Nguyen</div>
+          </div>
+          <button class="btn-card secondary">249K</button>
+        </div>
+
+        <div class="section-title">Đã cài</div>
+
+        <div class="product">
+          <div class="thumb" style="background:#4a5a52">PR</div>
+          <div class="info">
+            <div class="pname">Properties Ribbon</div>
+            <div class="meta"><span class="tag upd">CẬP NHẬT 2.1</span> v2.0 · đã cài</div>
+          </div>
+          <button class="btn-card primary">Update</button>
+        </div>
+
+        <div class="product">
+          <div class="thumb" style="background:#5a4040">RB</div>
+          <div class="info">
+            <div class="pname">ReaBlink Ableton Link</div>
+            <div class="meta">v1.3 · đã cài</div>
+          </div>
+          <button class="btn-card secondary" disabled>✓</button>
+        </div>
+      </div>
+
+      <!-- ============ AUDIO LAB ============ -->
+      <div class="pane" id="p-lab">
+        <div class="section-title">Item trong project — click chọn · Ctrl+click chọn nhiều</div>
+        <div class="list-head"><span class="h-nm">Tên</span><span>Thời lượng</span></div>
+
+        <div class="item-row sel">
+          <span class="nm">Vocal_lead_01.wav</span>
+          <div class="wave"><i style="height:5px"></i><i style="height:11px"></i><i style="height:17px"></i><i style="height:8px"></i><i style="height:14px"></i><i style="height:20px"></i><i style="height:6px"></i><i style="height:12px"></i><i style="height:18px"></i><i style="height:9px"></i><i style="height:15px"></i><i style="height:21px"></i><i style="height:7px"></i><i style="height:13px"></i></div>
+          <span class="dur">0:42</span>
+        </div>
+        <div class="item-row">
+          <span class="nm">Drum_bus_full.wav</span>
+          <div class="wave"><i style="height:15px"></i><i style="height:8px"></i><i style="height:19px"></i><i style="height:10px"></i><i style="height:6px"></i><i style="height:17px"></i><i style="height:12px"></i><i style="height:21px"></i><i style="height:9px"></i><i style="height:14px"></i><i style="height:5px"></i><i style="height:16px"></i><i style="height:11px"></i><i style="height:18px"></i></div>
+          <span class="dur">1:18</span>
+        </div>
+        <div class="item-row">
+          <span class="nm">Guitar_take3.wav</span>
+          <div class="wave"><i style="height:8px"></i><i style="height:14px"></i><i style="height:6px"></i><i style="height:16px"></i><i style="height:11px"></i><i style="height:19px"></i><i style="height:7px"></i><i style="height:13px"></i><i style="height:20px"></i><i style="height:9px"></i><i style="height:15px"></i><i style="height:5px"></i><i style="height:12px"></i><i style="height:17px"></i></div>
+          <span class="dur">0:57</span>
+        </div>
+
+        <div class="lab-toolbar">
+          <button class="tool" title="vocal · drum · bass · other">Tách Stem</button>
+          <button class="tool" title="làm sạch audio">Lọc Noise</button>
+          <button class="tool" title="phát hiện + MIDI">Key &amp; Hợp âm</button>
+          <button class="tool" title="phát hiện BPM">Tempo</button>
+        </div>
+
+        <div class="result-card">
+          <h4>Kết quả tách stem — Vocal_lead_01.wav</h4>
+          <div class="stem-row"><span class="cl" style="background:#ff5c66"></span><span class="sn">Vocals</span><a>+ vào project</a></div>
+          <div class="stem-row"><span class="cl" style="background:#55A5FF"></span><span class="sn">Drums</span><a>+ vào project</a></div>
+          <div class="stem-row"><span class="cl" style="background:#35D07F"></span><span class="sn">Bass</span><a>+ vào project</a></div>
+          <div class="stem-row"><span class="cl" style="background:#b98cff"></span><span class="sn">Other</span><a>+ vào project</a></div>
+          <div class="row-actions">
+            <button class="btn-card primary">Tải ZIP</button>
+            <button class="btn-card secondary">Xuất tất cả MIDI</button>
+          </div>
+        </div>
+
+        <div class="result-card">
+          <h4>Phân tích — Vocal_lead_01.wav</h4>
+          <div class="key-badges">
+            <span class="kbd">Key <b>C# minor</b></span>
+            <span class="kbd">Tempo <b>128 BPM</b></span>
+            <span class="kbd">Hợp âm <b>Am — F — C — G</b></span>
+          </div>
+          <div class="row-actions">
+            <button class="btn-card secondary">Xuất MIDI hợp âm</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ AGENT ============ -->
+      <div class="pane" id="p-agent">
+        <div class="section-title">Chế độ phép quyền</div>
+        <div class="agent-mode">
+          <div class="mode" title="Hỏi xác nhận mọi action">Hỏi tất cả</div>
+          <div class="mode on" title="Chỉ hỏi action nguy hiểm">Chỉ hỏi nguy hiểm</div>
+          <div class="mode" title="Toàn quyền — mọi action đều có thể Ctrl+Z">Toàn quyền</div>
+        </div>
+
+        <div class="chat" id="chat">
+          <div class="bubble bot">Xin chào! Mình là trợ lý AI của Reals Lab. Mình có thể điều khiển REAPER và gọi các dịch vụ RealS giúp bạn. Cần gì cứ nói!</div>
+          <div class="bubble user">tự tìm các track vocal rồi lọc noise hết giúp tao</div>
+          <div class="bubble bot">
+            Được! Mình tìm thấy <b>2 track vocal</b>: <i>Vocal_lead</i> và <i>Vocal_harmony</i>. Đang xử lý:
+            <div class="actions-log">
+              <div class="act ok">Tìm track theo tên "vocal" — thấy 2 track</div>
+              <div class="act ok">Render Vocal_lead_01.wav → gửi API Lọc Noise</div>
+              <div class="act run">Đang xử lý Vocal_harmony.wav trên server...</div>
+            </div>
+            <div class="confirm-box">
+              <b>Xác nhận:</b> thay thế item gốc bằng bản đã lọc? (bản gốc lưu vào backup)
+              <div class="row">
+                <button class="btn-card primary">Đồng ý</button>
+                <button class="btn-card secondary">Bỏ qua</button>
+              </div>
+            </div>
+          </div>
+          <div class="bubble bot">Xong! Cả 2 track đã được lọc noise. Nhớ: mọi thay đổi của mình đều <b>Ctrl+Z</b> được nhé.</div>
+          <div class="bubble user">tạo thêm 1 track FX và đặt tempo 140</div>
+          <div class="bubble bot">
+            Ok, làm ngay:
+            <div class="actions-log">
+              <div class="act ok">Tạo track "FX"</div>
+              <div class="act ok">Set tempo = 140 BPM</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="agent-input">
+          <input placeholder="Ra lệnh cho agent... (VD: lọc noise all track audio)">
+          <button class="send">➤</button>
+        </div>
+      </div>
+
+      <!-- ============ BROWSER ============ -->
+      <div class="pane" id="p-browser">
+        <div class="mini-tabs">
+          <div class="mini-tab on">Local</div>
+          <div class="mini-tab">RealS Free <span class="tag dev">SẮP RA MẮT</span></div>
+        </div>
+        <div class="browser-bar">
+          <div class="pathbar"><b>This PC</b> › <b>Samples</b> › <b>Drums</b></div>
+          <div class="view-toggle">
+            <button class="vt on" title="Dạng danh sách">▤</button>
+            <button class="vt" title="Dạng lưới">▦</button>
+          </div>
+        </div>
+
+        <div class="tree-row folder"><span class="arw">▼</span>Samples<span class="cnt">1,248</span></div>
+        <div class="tree-row file"><span class="arw"></span>kick_punch_01.wav<span class="fav">★</span></div>
+        <div class="tree-row file"><span class="arw"></span>snare_tight_02.wav</div>
+        <div class="tree-row file"><span class="arw"></span>hat_closed_03.wav</div>
+        <div class="tree-row file"><span class="arw"></span>clap_room_04.wav<span class="fav">★</span></div>
+        <div class="tree-row folder"><span class="arw">▶</span>Presets<span class="cnt">356</span></div>
+        <div class="tree-row folder"><span class="arw">▶</span>Projects<span class="cnt">42</span></div>
+        <div class="tree-row folder"><span class="arw">▶</span>Favorites<span class="cnt">18</span></div>
+      </div>
+
+      <!-- ============ ACCOUNT ============ -->
+      <div class="pane" id="p-acc">
+        <div class="profile">
+          <div class="avatar">BP</div>
+          <div class="who">
+            <div class="uname">Bao phuc Nguyen</div>
+            <div class="umail">baophuc@reals.media</div>
+          </div>
+        </div>
+
+        <div class="plan-card">
+          <div class="pl">
+            <div class="t">Gói PRO</div>
+            <div class="d">Còn 25 ngày · tách stem không giới hạn</div>
+          </div>
+          <button class="btn-card primary">Gia hạn</button>
+        </div>
+
+        <div class="section-title">License của tôi</div>
+        <div class="lic-row">
+          <span class="ln">JSFX Mastering Suite</span><span class="st ok">● Hoạt động</span>
+        </div>
+        <div class="lic-row">
+          <span class="ln">Yumyoo Beatmaker Toolkit</span><span class="st ok">● Hoạt động</span>
+        </div>
+        <div class="lic-row">
+          <span class="ln">Ambient Expansion Pack</span><span class="st ex">● Hết hạn</span>
+        </div>
+
+        <div class="section-title">Tài khoản</div>
+        <div class="link-row">Lịch sử mua hàng</div>
+        <div class="link-row">Quản lý thiết bị</div>
+        <div class="link-row">Cài đặt Reals Lab</div>
+        <div class="link-row" style="color:var(--danger)">Đăng xuất</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- STATUS BAR -->
+  <div class="statusbar">
+    <span class="conn"><i></i> Đã kết nối</span>
+    <span class="sp"></span>
+    <a>Reals Lab v0.1.0</a>
+    <span>·</span>
+    <a href="#">reals.media</a>
+  </div>
+</div>
+
+<!-- CONTEXT MENU -->
+<div class="ctx" id="ctx">
+  <div class="ctx-head" id="ctxHead">Reals Lab Tools — <b>1 item</b></div>
+  <div class="ctx-item">Tách Stem<span class="sub">PRO</span></div>
+  <div class="ctx-item">Lọc Noise<span class="sub">PRO</span></div>
+  <div class="ctx-item">Key &amp; Hợp âm<span class="sub">PRO</span></div>
+  <div class="ctx-item">Detect Tempo<span class="sub">PRO</span></div>
+  <div class="ctx-item">Xuất MIDI<span class="sub">PRO</span></div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item ai">Hỏi Agent về item này</div>
+</div>
+
+<script>
+  // Settings: đổi vị trí thanh điều hướng
+  const frameEl = document.getElementById('frame');
+  const pop = document.getElementById('settingsPop');
+  document.getElementById('btnSettings').onclick = e => {
+    e.stopPropagation();
+    pop.classList.toggle('show');
+  };
+  // Đổi vị trí nav
+  document.querySelectorAll('.sp-opt[data-pos]').forEach(o => {
+    o.onclick = e => {
+      e.stopPropagation();
+      frameEl.classList.remove('nav-top','nav-bottom','nav-left','nav-right');
+      frameEl.classList.add('nav-' + o.dataset.pos);
+      document.querySelectorAll('.sp-opt[data-pos]').forEach(x => x.classList.remove('on'));
+      o.classList.add('on');
+    };
+  });
+  // Đổi màu nhấn
+  document.querySelectorAll('.sp-opt[data-acc]').forEach(o => {
+    o.onclick = e => {
+      e.stopPropagation();
+      frameEl.classList.remove('acc-amber','acc-muted','acc-gray');
+      if (o.dataset.acc !== 'orange') frameEl.classList.add('acc-' + o.dataset.acc);
+      document.querySelectorAll('.sp-opt[data-acc]').forEach(x => x.classList.remove('on'));
+      o.classList.add('on');
+    };
+  });
+  // Bật/tắt noise
+  document.querySelector('.sp-opt[data-noise]').onclick = e => {
+    e.stopPropagation();
+    frameEl.classList.toggle('no-noise');
+    e.currentTarget.classList.toggle('on');
+  };
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.settings-pop') && !e.target.closest('#btnSettings'))
+      pop.classList.remove('show');
+  });
+
+  // View toggle (browser)
+  document.querySelectorAll('.vt').forEach(v => {
+    v.onclick = () => {
+      document.querySelectorAll('.vt').forEach(x => x.classList.remove('on'));
+      v.classList.add('on');
+    };
+  });
+
+  // Sidebar navigation
+  document.querySelectorAll('.nav').forEach(n => {
+    n.onclick = () => {
+      document.querySelectorAll('.nav').forEach(x => x.classList.remove('active'));
+      document.querySelectorAll('.pane').forEach(x => x.classList.remove('active'));
+      n.classList.add('active');
+      document.getElementById('p-' + n.dataset.t).classList.add('active');
+    };
+  });
+
+  // Item selection
+  let selected = new Set(['Vocal_lead_01.wav']);
+  function refreshSel() {
+    document.querySelectorAll('.item-row').forEach(r => {
+      r.classList.toggle('sel', selected.has(r.querySelector('.nm').textContent));
+    });
+    updateCtxHead();
+  }
+  document.querySelectorAll('.item-row').forEach(r => {
+    r.onclick = e => {
+      const nm = r.querySelector('.nm').textContent;
+      if (e.ctrlKey || e.shiftKey) { selected.has(nm) ? selected.delete(nm) : selected.add(nm); }
+      else { selected.clear(); selected.add(nm); }
+      refreshSel();
+    };
+    r.oncontextmenu = e => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        const nm = r.querySelector('.nm').textContent;
+        if (!selected.has(nm)) { selected.clear(); selected.add(nm); refreshSel(); }
+        const ctx = document.getElementById('ctx');
+        ctx.style.left = Math.min(e.clientX, window.innerWidth - 260) + 'px';
+        ctx.style.top = Math.min(e.clientY, window.innerHeight - 300) + 'px';
+        ctx.classList.add('show');
+      }
+    };
+  });
+  function updateCtxHead() {
+    document.getElementById('ctxHead').innerHTML =
+      'Reals Lab Tools — <b>' + selected.size + ' item' + (selected.size > 1 ? 's' : '') + ' đã chọn</b>';
+  }
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.ctx') && !e.target.closest('.item-row'))
+      document.getElementById('ctx').classList.remove('show');
+  });
+  refreshSel();
+
+  // Agent permission modes
+  document.querySelectorAll('.mode').forEach(m => {
+    m.onclick = () => {
+      document.querySelectorAll('.mode').forEach(x => x.classList.remove('on'));
+      m.classList.add('on');
+    };
+  });
+
+  // Fake chat send
+  function sendMsg() {
+    const inp = document.querySelector('.agent-input input');
+    if (!inp.value.trim()) return;
+    const chat = document.getElementById('chat');
+    const u = document.createElement('div');
+    u.className = 'bubble user'; u.textContent = inp.value;
+    chat.appendChild(u);
+    inp.value = '';
+    chat.parentElement.scrollTop = chat.parentElement.scrollHeight;
+  }
+  document.querySelector('.send').onclick = sendMsg;
+  document.querySelector('.agent-input input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') sendMsg();
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+# Build
+build/
+out/
+cmake-build-*/
+CMakeUserPresets.json
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+_deps/
+
+# Secrets
+.env
+*.key
+*.pem
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Temp
+*.log
+*.tmp
+*.dmp
+test_output.txt
+
+# GitNexus
+.gitnexus/
