@@ -71,6 +71,13 @@ void FeatureExtractor::fft(std::vector<std::complex<float>>& x) {
     const size_t n = x.size();
     if (n <= 1) return;
 
+    // Radix-2 Cooley-Tukey only works for power-of-two sizes. A non-power-of-
+    // two length drives the butterfly indexing out of bounds (heap overflow,
+    // MAJ-04). Bail out leaving the buffer untouched instead of corrupting
+    // the heap; every current caller passes 1024/2048 so this is a guard
+    // against future misuse only.
+    if ((n & (n - 1)) != 0) return;
+
     // Bit reversal permutation
     size_t j = 0;
     for (size_t i = 0; i < n - 1; ++i) {

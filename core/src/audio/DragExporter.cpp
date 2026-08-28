@@ -130,6 +130,19 @@ struct CachedEntry {
 static std::unordered_map<std::string, CachedEntry> s_memCache;
 static std::mutex s_cacheMutex;
 
+// Bounded memory cache (MIN-04): entries are small result descriptors, but a
+// long session dragging hundreds of unique files used to grow the map without
+// limit. Simple policy — once the cap is hit, drop everything; the cache is
+// purely an optimization and repopulates on demand.
+constexpr size_t kMaxMemCacheEntries = 256;
+
+void cacheInsert(const std::string& key, CachedEntry entry) {
+    std::lock_guard lock(s_cacheMutex);
+    if (s_memCache.size() >= kMaxMemCacheEntries)
+        s_memCache.clear();
+    s_memCache[key] = std::move(entry);
+}
+
 } // namespace
 
 std::string DragExporter::getTempExportPath(
@@ -226,8 +239,7 @@ DragExportResult DragExporter::exportTempWav(
                         result.renderTimeMs = std::chrono::duration<double, std::milli>(endTime - startTime).count();
 
                         {
-                            std::lock_guard lock(s_cacheMutex);
-                            s_memCache[targetPath] = CachedEntry{srcMtime, result};
+                            cacheInsert(targetPath, CachedEntry{srcMtime, result});
                         }
                         return result;
                     }
@@ -315,8 +327,7 @@ DragExportResult DragExporter::exportTempWav(
     result.renderTimeMs = std::chrono::duration<double, std::milli>(endTime - startTime).count();
 
     {
-        std::lock_guard lock(s_cacheMutex);
-        s_memCache[targetPath] = CachedEntry{srcMtime, result};
+        cacheInsert(targetPath, CachedEntry{srcMtime, result});
     }
 
     LOG_INFO(kTag, "exportTempWav: rendered " + inputPath + " -> " + targetPath +

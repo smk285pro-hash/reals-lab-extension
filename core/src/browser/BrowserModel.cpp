@@ -8,20 +8,9 @@
 #include <cctype>
 #include <cstdio>
 #include <ctime>
-#include <cwctype>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
-
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-#endif
 
 #include <nlohmann/json.hpp>
 
@@ -33,30 +22,10 @@ namespace {
 constexpr auto kTag = "browser";
 constexpr size_t kMaxRecents = 20;
 
-std::string lower(std::string s) {
-    for (char& c : s)
-        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-    return s;
-}
-
+// Unicode-aware lowercase via the platform layer (MAJ-01 — no direct Win32
+// calls in core modules).
 std::string lowerUtf8(const std::string& s) {
-#ifdef _WIN32
-    if (s.empty()) return s;
-    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
-    if (n <= 1) return lower(s);
-    std::wstring w(static_cast<size_t>(n), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, w.data(), n);
-    if (!w.empty() && w.back() == L'\0') w.pop_back();
-    for (auto& c : w) c = std::towlower(c);
-    int m = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    if (m <= 1) return lower(s);
-    std::string out(static_cast<size_t>(m), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, out.data(), m, nullptr, nullptr);
-    if (!out.empty() && out.back() == '\0') out.pop_back();
-    return out;
-#else
-    return lower(s);
-#endif
+    return platform::toLowerUtf8(s);
 }
 
 bool entryLess(const FileEntry& a, const FileEntry& b, BrowserModel::Sort sort) {
@@ -87,7 +56,7 @@ FileEntry makeEntry(const fs::directory_entry& e) {
     fe.isDir = e.is_directory(ec);
     if (!fe.isDir) {
         const size_t dot = fe.name.find_last_of('.');
-        fe.ext = dot != std::string::npos ? lower(fe.name.substr(dot + 1)) : "";
+        fe.ext = dot != std::string::npos ? lowerUtf8(fe.name.substr(dot + 1)) : "";
         fe.isAudio = BrowserModel::isAudioExt(fe.name);
         fe.sizeBytes = static_cast<unsigned long long>(e.file_size(ec));
     }

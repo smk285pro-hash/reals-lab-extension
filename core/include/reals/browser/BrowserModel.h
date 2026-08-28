@@ -37,7 +37,13 @@ public:
     void saveStore() const;
 
     // --- Roots ---------------------------------------------------------------
-    [[nodiscard]] const std::vector<Root>& roots() const { return m_roots; }
+    // Snapshot getters: copy under m_storeMutex instead of returning references
+    // to internals (MAJ-06) — a reader holding the old reference across a
+    // concurrent mutation would race / dangle.
+    [[nodiscard]] std::vector<Root> roots() const {
+        const std::lock_guard lock(m_storeMutex);
+        return m_roots;
+    }
     // Returns false if `path` is already a root (no-op).
     bool addRoot(const std::string& name, const std::string& path);
     void removeRoot(size_t index);
@@ -51,16 +57,25 @@ public:
     // --- Favorites / recents / tags -------------------------------------------
     [[nodiscard]] bool isFavorite(const std::string& path) const;
     void toggleFavorite(const std::string& path);
-    [[nodiscard]] const std::vector<std::string>& favorites() const { return m_favorites; }
+    [[nodiscard]] std::vector<std::string> favorites() const {
+        const std::lock_guard lock(m_storeMutex);
+        return m_favorites;
+    }
 
-    [[nodiscard]] const std::deque<std::string>& recents() const { return m_recents; }
+    [[nodiscard]] std::deque<std::string> recents() const {
+        const std::lock_guard lock(m_storeMutex);
+        return m_recents;
+    }
     void addRecent(const std::string& path);
     void clearRecents();
 
     // 0 = none, 1..7 = palette color
     [[nodiscard]] int tagOf(const std::string& path) const;
     void setTag(const std::string& path, int colorIndex);
-    [[nodiscard]] const std::unordered_map<std::string, int>& tags() const { return m_tags; }
+    [[nodiscard]] std::unordered_map<std::string, int> tags() const {
+        const std::lock_guard lock(m_storeMutex);
+        return m_tags;
+    }
 
     // Keep favorites/tags/recents consistent after a rename or delete.
     void rewritePath(const std::string& from, const std::string& to);

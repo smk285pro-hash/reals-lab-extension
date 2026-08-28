@@ -5,6 +5,7 @@
 #include "reals/ai/ClapEmbedder.h"
 #include "reals/audio/Engine.h"
 #include "reals/platform/Path.h"
+#include "reals/platform/System.h"
 #include "reals/util/Hash.h"
 #include "reals/util/Log.h"
 #include <miniaudio.h>
@@ -14,16 +15,6 @@
 #include <chrono>
 #include <filesystem>
 #include <regex>
-
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-#endif
 
 namespace fs = std::filesystem;
 
@@ -622,13 +613,10 @@ void BackgroundScanner::coordinatorThreadFunc(std::vector<std::string> roots, Sc
 }
 
 void BackgroundScanner::workerThreadFunc(ScanOptions options) {
-#ifdef _WIN32
-    if (m_cpuMode.load() == CpuMode::Low) {
-        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
-    } else {
-        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
-    }
-#endif
+    // MAJ-01: priority via the platform layer — no direct Win32 calls here.
+    platform::setThreadPriority(m_cpuMode.load() == CpuMode::Low
+                                    ? platform::ThreadPriority::Lowest
+                                    : platform::ThreadPriority::BelowNormal);
 
     while (!m_isCancelled.load()) {
         try {

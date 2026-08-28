@@ -2,6 +2,7 @@
 
 // Cross-platform filesystem/path helpers. All path handling in the project
 // MUST go through this namespace (see AGENTS.md architecture rules).
+#include <cstdio>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -47,5 +48,13 @@ bool ensureDir(std::string_view path);
 
 // List immediate files of a directory (names only, UTF-8).
 [[nodiscard]] std::vector<std::string> listFiles(std::string_view dir);
+
+// Unicode-aware lowercase for UTF-8 strings (Vietnamese/Japanese filenames).
+// ASCII-only on platforms without a case API; full Unicode on Windows.
+[[nodiscard]] std::string toLowerUtf8(std::string_view s);
+
+// Open a file for appending, UTF-8 path safe on every platform (wide fopen
+// on Windows, plain fopen elsewhere). Returns nullptr on failure.
+[[nodiscard]] FILE* openAppend(std::string_view utf8Path);
 
 } // namespace reals::platform

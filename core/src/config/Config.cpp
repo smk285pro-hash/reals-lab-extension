@@ -18,21 +18,6 @@ constexpr const char* kDefaults = R"({
   "labApiBaseUrl": "https://smk285pro--ai-audio-lab-fastapi-web.modal.run",
   "authToken": ""
 })";
-#ifdef _WIN32
-#include <windows.h>
-static std::filesystem::path utf8Path(const std::string& str) {
-    if (str.empty()) return {};
-    const int n = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0);
-    std::wstring w(static_cast<size_t>(n), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, w.data(), n);
-    w.pop_back();
-    return std::filesystem::path(w);
-}
-#else
-static std::filesystem::path utf8Path(const std::string& str) {
-    return std::filesystem::path(str);
-}
-#endif
 } // namespace
 
 Config& Config::instance() {
@@ -50,7 +35,7 @@ void Config::load() {
         m_data = nlohmann::json::object();
     }
 
-    std::ifstream in(utf8Path(m_filePath));
+    std::ifstream in(platform::u8path(m_filePath)); // MAJ-01: platform layer, not a local Win32 helper
     if (in) {
         try {
             nlohmann::json stored;
@@ -67,7 +52,7 @@ void Config::load() {
 
 void Config::save() {
     const std::lock_guard lock(m_mutex);
-    std::ofstream out(utf8Path(m_filePath));
+    std::ofstream out(platform::u8path(m_filePath)); // MAJ-01: platform layer
     if (out)
         out << m_data.dump(2);
     else

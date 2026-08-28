@@ -1,12 +1,12 @@
 #include "reals/util/Log.h"
 
+#include "reals/platform/Path.h"
+#include "reals/platform/System.h"
+
 #include <chrono>
 #include <cstdio>
 #include <ctime>
 #include <mutex>
-#ifdef _WIN32
-#include <windows.h>
-#endif
 
 namespace reals::util {
 
@@ -35,14 +35,9 @@ void Log::init(const std::string& filePath, LogLevel minLevel) {
         g_file = nullptr;
     }
     if (!filePath.empty()) {
-#ifdef _WIN32
-        int n = MultiByteToWideChar(CP_UTF8, 0, filePath.c_str(), -1, nullptr, 0);
-        std::wstring w(static_cast<size_t>(n), L'\0');
-        MultiByteToWideChar(CP_UTF8, 0, filePath.c_str(), -1, w.data(), n);
-        _wfopen_s(&g_file, w.c_str(), L"a");
-#else
-        g_file = std::fopen(filePath.c_str(), "a");
-#endif
+        // MAJ-01: UTF-8-safe append open via the platform layer (wide fopen
+        // on Windows) — no direct Win32 calls in core/util.
+        g_file = platform::openAppend(filePath);
     }
 }
 
@@ -75,9 +70,7 @@ void Log::write(LogLevel level, std::string_view tag, std::string_view message) 
                   static_cast<int>(message.size()), message.data());
 
     std::printf("%s", lineBuf);
-#ifdef _WIN32
-    OutputDebugStringA(lineBuf);
-#endif
+    platform::debugOutput(lineBuf); // MAJ-01: OS debug console via platform layer
 
     if (g_file) {
         char dateBuf[16];

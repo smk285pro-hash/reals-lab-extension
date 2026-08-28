@@ -80,6 +80,16 @@ const I18N = {
     'browser.clearSimilar': 'Xóa bộ lọc tương tự',
     'browser.ctx.findSimilar': 'Tìm mẫu tương tự (AI)',
     'browser.ctx.scanNew': 'Quét file mới', 'browser.ctx.rescanAll': 'Quét lại tất cả',
+    // Window / splitter / toast keys (MIN-01/02/07)
+    'window.dockHint': 'Dock vào REAPER / Cửa sổ riêng', 'window.settingsHint': 'Cài đặt',
+    'window.minimize': 'Thu nhỏ', 'window.maximize': 'Phóng to / Khôi phục',
+    'window.close': 'Đóng', 'browser.toggleTree': 'Ẩn/Hiện Cây thư mục',
+    'splitter.tree': 'Kéo để chỉnh độ rộng Cây thư mục',
+    'splitter.preview': 'Kéo để chỉnh chiều cao Trình phát',
+    'toast.labError': 'Lỗi Lab', 'toast.scannerError': 'Lỗi quét',
+    'toast.similarError': 'Lỗi tìm mẫu tương tự',
+    'sync.noBpm': 'Sync: không tìm thấy BPM, thử 120',
+    'lab.alreadyRunning': 'Đang có job chạy — chờ xong đã nhé',
   },
   en: {
     'update.available': 'is ready — Audio Lab added', 'update.button': 'Update',
@@ -158,6 +168,16 @@ const I18N = {
     'browser.clearSimilar': 'Clear similar filter',
     'browser.ctx.findSimilar': 'Find similar (AI)',
     'browser.ctx.scanNew': 'Scan new files', 'browser.ctx.rescanAll': 'Rescan all',
+    // Window / splitter / toast keys (MIN-01/02/07)
+    'window.dockHint': 'Dock into REAPER / Float window', 'window.settingsHint': 'Settings',
+    'window.minimize': 'Minimize', 'window.maximize': 'Maximize / Restore',
+    'window.close': 'Close', 'browser.toggleTree': 'Show/hide folder tree',
+    'splitter.tree': 'Drag to resize the folder tree',
+    'splitter.preview': 'Drag to resize the player',
+    'toast.labError': 'Lab error', 'toast.scannerError': 'Scanner error',
+    'toast.similarError': 'Error finding similar samples',
+    'sync.noBpm': 'Sync: no BPM found, trying 120',
+    'lab.alreadyRunning': 'A job is already running — please wait',
   },
 };
 let LANG = 'vi';
@@ -471,8 +491,9 @@ function toast(msg) {
 function applyI18n() {
   $$('[data-i18n]').forEach((e) => (e.textContent = tr(e.dataset.i18n)));
   $$('[data-i18n-ph]').forEach((e) => (e.placeholder = tr(e.dataset.i18nPh)));
-  const fav = $('#favOnly');
-  if (fav) fav.title = tr('browser.favOnly');
+  // MAJ-03: tooltips switch language too — [data-i18n-title] used to be
+  // ignored, so title attributes stayed in the initial language forever.
+  $$('[data-i18n-title]').forEach((e) => (e.title = tr(e.dataset.i18nTitle)));
 }
 
 const TAG_COLORS = [null, '#B0B4BB', '#FF5C66', '#FF6B2C', '#F5C542', '#35D07F', '#55A5FF', '#B98CFF'];
@@ -530,7 +551,7 @@ function handleEvent(event, data) {
   }
   if (event === 'lab.progress') { labProgress(true, data.percent, data.stage); return; }
   if (event === 'lab.result') { renderLabResult(data); return; }
-  if (event === 'lab.error') { labState.running = false; labProgress(false); toast('Lab error: ' + (data.error || '')); return; }
+  if (event === 'lab.error') { labState.running = false; labProgress(false); toast(tr('toast.labError') + (data.error ? ': ' + data.error : '')); return; }
   if (event === 'scanner.progress') {
     const bar = $('#scannerBar');
     const status = $('#scannerStatusText');
@@ -842,7 +863,7 @@ async function toggleSyncBpm() {
       const curPath = state.selected || state.playingPath || '';
       await bridge('audio.setSyncBpm', { enabled: true, bpm: dawTempo, sampleBpm, path: curPath });
       if (!sampleBpm || sampleBpm <= 0) {
-        toast('Sync: không tìm thấy BPM, thử 120');
+        toast(tr('sync.noBpm'));
       }
     } else {
       await bridge('audio.setSyncBpm', { enabled: false, ratio: 1.0 });
@@ -1553,7 +1574,7 @@ function findSimilarSamples(f) {
     }
   }).catch((err) => {
     console.error('findSimilar error', err);
-    toast('Error finding similar samples');
+    toast(tr('toast.similarError'));
   });
 }
 
@@ -2145,7 +2166,7 @@ function triggerFolderScan(folderPath, forceRescan = false) {
     forceRescan: !!forceRescan,
     cpuMode: state.scannerCpuMode || 'normal'
   }).catch((err) => {
-    toast('Scanner error: ' + (err || ''));
+    toast(tr('toast.scannerError') + (err ? ': ' + err : ''));
     if (bar) bar.classList.add('hidden');
   });
 }
@@ -2313,7 +2334,7 @@ function initLab() {
   $$('#labGrid .lab-tool').forEach((b) => {
     b.onclick = () => {
       if (!labState.file) { toast(tr('lab.noFile')); return; }
-      if (labState.running) { toast('...'); return; }
+      if (labState.running) { toast(tr('lab.alreadyRunning')); return; }
       labState.running = true;
       labProgress(true, 0, '...');
       const job = b.dataset.job;

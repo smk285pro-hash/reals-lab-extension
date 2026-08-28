@@ -1,9 +1,12 @@
 #pragma once
 
 // HTTP client interface. The only allowed gateway for network in the project.
-// Implementation wraps libcurl (see SPEC.md architecture rules).
+// Implementation wraps WinHTTP on Windows (see SPEC.md architecture rules);
+// other platforms currently have no transport — the symbols stay defined so
+// shells link, but the object file compiles empty there.
 #include <functional>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -47,8 +50,10 @@ public:
 
 private:
     HttpClient();
+    HttpClient(const HttpClient&) = delete;
+    HttpClient& operator=(const HttpClient&) = delete;
     struct Impl;
-    Impl* m_impl = nullptr; // PIMPL: keeps WinHTTP out of public headers
+    std::unique_ptr<Impl> m_impl; // PIMPL: keeps WinHTTP out of public headers (MAJ-07)
 };
 
 } // namespace reals::net

@@ -84,4 +84,31 @@ bool LabApi::downloadToFile(const std::string& urlOrPath, const std::string& des
 
 } // namespace reals::lab
 
+#else // !_WIN32 — MAJ-09
+
+// Non-Windows builds: no network transport exists yet (HttpClient is
+// WinHTTP-only). Previously this whole file compiled to an empty TU, which
+// left Bridge.cpp's calls to LabApi::* as unresolved symbols on macOS/Linux.
+// Keep the symbols defined so every shell links, and fail at runtime with a
+// clear error — the Bridge lab workers catch std::runtime_error and surface
+// it to the UI as a lab.error event.
+#include <stdexcept>
+
+namespace reals::lab {
+
+namespace {
+[[noreturn]] void throwUnsupported() {
+    throw std::runtime_error("LabApi: network transport is only available on Windows in this build");
+}
+} // namespace
+
+nlohmann::json LabApi::analyze(const std::string&) { throwUnsupported(); }
+nlohmann::json LabApi::chords(const std::string&) { throwUnsupported(); }
+nlohmann::json LabApi::startSeparate(const std::string&, int) { throwUnsupported(); }
+nlohmann::json LabApi::startDenoise(const std::string&, int) { throwUnsupported(); }
+nlohmann::json LabApi::pollJob(const std::string&) { throwUnsupported(); }
+bool LabApi::downloadToFile(const std::string&, const std::string&) { throwUnsupported(); }
+
+} // namespace reals::lab
+
 #endif // _WIN32

@@ -89,6 +89,9 @@ public:
 
 private:
     bool initSchema();
+    // Close without taking m_mutex — the caller must already hold it.
+    // Used by open() and the move-assignment, which lock m_mutex themselves.
+    void closeLocked();
 
     sqlite3* m_db = nullptr;
     std::string m_path;

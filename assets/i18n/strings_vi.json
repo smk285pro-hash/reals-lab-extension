@@ -165,5 +165,19 @@
   "window.undock": "↗ Tách cửa sổ",
   "common.cancel": "Hủy",
   "common.confirm": "Xác nhận",
-  "common.close": "Đóng"
+  "common.close": "Đóng",
+  "window.dockHint": "Dock vào REAPER / Cửa sổ riêng",
+  "window.settingsHint": "Cài đặt",
+  "window.minimize": "Thu nhỏ",
+  "window.maximize": "Phóng to / Khôi phục",
+  "window.close": "Đóng",
+  "browser.toggleTree": "Ẩn/Hiện Cây thư mục",
+  "splitter.tree": "Kéo để chỉnh độ rộng Cây thư mục",
+  "splitter.preview": "Kéo để chỉnh chiều cao Trình phát",
+  "browser.noResults": "Không tìm thấy mẫu tương tự",
+  "toast.labError": "Lỗi Lab",
+  "toast.scannerError": "Lỗi quét",
+  "toast.similarError": "Lỗi tìm mẫu tương tự",
+  "sync.noBpm": "Sync: không tìm thấy BPM, thử 120",
+  "lab.alreadyRunning": "Đang có job chạy — chờ xong đã nhé"
 }

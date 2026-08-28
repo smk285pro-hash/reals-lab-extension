@@ -1,9 +1,13 @@
+// Production AI class tests (TempoDetector, KeyDetector, FeatureExtractor,
+// Genre/Mood classifiers, ClapEmbedder, OnnxEngine, ModelManager, Hash).
+// Consolidated from the former standalone test_ai binary (MIN-05/MIN-06)
+// so reals_tests exercises the real production classes, not just mocks.
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 
-#include "framework/AudioTestFixtures.h"
-#include "framework/TestRunner.h"
+#include "../framework/AudioTestFixtures.h"
+#include "../framework/TestRunner.h"
 
 #include "reals/ai/ClapEmbedder.h"
 #include "reals/ai/FeatureExtractor.h"
@@ -382,10 +386,3 @@ TEST(ClapEmbedderSuite, CosineSimilarityIdentityAndRange) {
     EXPECT_LT(crossSim, 0.95f); // Different concepts should have lower similarity
 }
 
-// -----------------------------------------------------------------------------
-// Main Runner Entrypoint
-// -----------------------------------------------------------------------------
-
-int main(int argc, char** argv) {
-    return TestRunner::run(argc, argv);
-}

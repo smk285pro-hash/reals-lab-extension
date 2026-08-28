@@ -47,11 +47,16 @@ struct DspAudioSource {
     bool decoderInited = false;
     SoundTouchProcessor processor{44100, 2, true};
     mutable std::recursive_mutex dspMutex;
-    bool loop = false;
+    std::atomic<bool> loop{false};
     int sampleRate = 44100;
     int channels = 2;
     std::atomic<float> timeRatio{1.0f};
     std::atomic<float> pitchSemitones{0.0f};
+    // Last values actually applied to the SoundTouch processor. Touched ONLY
+    // on the audio thread (dsp_on_read) while holding dspMutex, so that UI
+    // parameter changes are lock-free (CRIT-03).
+    float appliedTimeRatio = 1.0f;
+    float appliedPitchSemitones = 0.0f;
     std::atomic<ma_uint64> cursorFrames{0};
     std::atomic<ma_uint64> totalFrames{0};
     std::vector<float> readBuffer;
@@ -95,6 +100,23 @@ ma_result dsp_on_read(ma_data_source* pDataSource, void* pFramesOut, ma_uint64 f
     if (!ds->decoderInited) {
         if (pFramesRead) *pFramesRead = 0;
         return MA_AT_END;
+    }
+
+    // Apply parameter changes published by the UI thread through atomics
+    // (CRIT-03): the UI setters no longer touch dspMutex, so the realtime
+    // path cannot be blocked by a parameter update. SoundTouch state is
+    // mutated here on the audio thread only.
+    {
+        const float desiredRatio = ds->timeRatio.load(std::memory_order_relaxed);
+        const float desiredPitch = ds->pitchSemitones.load(std::memory_order_relaxed);
+        if (desiredRatio != ds->appliedTimeRatio) {
+            ds->processor.setTimeRatio(desiredRatio);
+            ds->appliedTimeRatio = desiredRatio;
+        }
+        if (desiredPitch != ds->appliedPitchSemitones) {
+            ds->processor.setPitchSemitones(desiredPitch);
+            ds->appliedPitchSemitones = desiredPitch;
+        }
     }
 
     float* out = reinterpret_cast<float*>(pFramesOut);
@@ -259,13 +281,12 @@ Engine& Engine::instance() {
 
 Engine::~Engine() {
     shutdown();
-    delete m_impl;
-    m_impl = nullptr;
+    // m_impl releases via unique_ptr (MAJ-07). Impl is complete here.
 }
 
 bool Engine::init() {
     if (!m_impl)
-        m_impl = new Impl();
+        m_impl = std::make_unique<Impl>();
     if (m_impl->engineInited)
         return true;
     if (ma_engine_init(nullptr, &m_impl->engine) != MA_SUCCESS) {
@@ -352,11 +373,11 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
     }
 
     m_impl->dspSource.decoderInited = true;
-    m_impl->dspSource.loop = loop;
+    m_impl->dspSource.loop.store(loop, std::memory_order_relaxed);
     m_impl->dspSource.channels = m_impl->track.channels;
     m_impl->dspSource.sampleRate = m_impl->track.sampleRate;
-    m_impl->dspSource.timeRatio.store(m_impl->timeRatio);
-    m_impl->dspSource.pitchSemitones.store(m_impl->pitchSemitones);
+    m_impl->dspSource.timeRatio.store(m_impl->timeRatio, std::memory_order_relaxed);
+    m_impl->dspSource.pitchSemitones.store(m_impl->pitchSemitones, std::memory_order_relaxed);
     m_impl->dspSource.cursorFrames.store(startFrame);
     m_impl->dspSource.totalFrames.store(static_cast<ma_uint64>(m_impl->track.totalFrames));
     {
@@ -367,6 +388,10 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
         m_impl->dspSource.processor.setTimeRatio(m_impl->timeRatio);
         m_impl->dspSource.processor.setPitchSemitones(m_impl->pitchSemitones);
         m_impl->dspSource.processor.clear();
+        // Keep the audio-thread "applied" trackers in sync with the initial
+        // setup so dsp_on_read does not redundantly re-apply on block 1.
+        m_impl->dspSource.appliedTimeRatio = m_impl->timeRatio;
+        m_impl->dspSource.appliedPitchSemitones = m_impl->pitchSemitones;
     }
 
     ma_data_source_config baseConfig = ma_data_source_config_init();
@@ -579,14 +604,13 @@ void Engine::seekFraction(const double fraction) {
 }
 
 void Engine::setTimeRatio(const float ratio) {
-    if (!m_impl) m_impl = new Impl();
+    if (!m_impl) m_impl = std::make_unique<Impl>();
     const std::lock_guard lock(m_impl->stateMutex);
     m_impl->timeRatio = std::clamp(ratio, 0.1f, 10.0f);
-    m_impl->dspSource.timeRatio.store(m_impl->timeRatio);
-    if (m_impl->soundLoaded) {
-        std::lock_guard dspLock(m_impl->dspSource.dspMutex);
-        m_impl->dspSource.processor.setTimeRatio(m_impl->timeRatio);
-    }
+    // Lock-free publication (CRIT-03): the audio thread applies the new ratio
+    // to SoundTouch at the next block boundary — no dspMutex on this path, so
+    // a UI tempo change can never block the realtime callback.
+    m_impl->dspSource.timeRatio.store(m_impl->timeRatio, std::memory_order_relaxed);
 }
 
 float Engine::getTimeRatio() const {
@@ -596,14 +620,11 @@ float Engine::getTimeRatio() const {
 }
 
 void Engine::setPitchSemitones(const float semitones) {
-    if (!m_impl) m_impl = new Impl();
+    if (!m_impl) m_impl = std::make_unique<Impl>();
     const std::lock_guard lock(m_impl->stateMutex);
     m_impl->pitchSemitones = std::clamp(semitones, -12.0f, 12.0f);
-    m_impl->dspSource.pitchSemitones.store(m_impl->pitchSemitones);
-    if (m_impl->soundLoaded) {
-        std::lock_guard dspLock(m_impl->dspSource.dspMutex);
-        m_impl->dspSource.processor.setPitchSemitones(m_impl->pitchSemitones);
-    }
+    // Lock-free publication (CRIT-03) — same rationale as setTimeRatio().
+    m_impl->dspSource.pitchSemitones.store(m_impl->pitchSemitones, std::memory_order_relaxed);
 }
 
 float Engine::getPitchSemitones() const {
@@ -653,14 +674,11 @@ float Engine::volume() const {
 void Engine::setLoop(const bool loop) {
     if (!m_impl)
         return;
-    // Same lock order as playFile(): stateMutex -> dspMutex. Locking
-    // stateMutex first prevents m_impl->loop from racing stop()/playFile().
     const std::lock_guard lock(m_impl->stateMutex);
     m_impl->loop = loop;
-    if (m_impl->soundLoaded) {
-        std::lock_guard dspLock(m_impl->dspSource.dspMutex);
-        m_impl->dspSource.loop = loop;
-    }
+    // Lock-free publication (CRIT-03): the audio callback reads this atomic
+    // directly, so toggling loop mode cannot block the realtime path.
+    m_impl->dspSource.loop.store(loop, std::memory_order_relaxed);
 }
 
 bool Engine::loop() const {

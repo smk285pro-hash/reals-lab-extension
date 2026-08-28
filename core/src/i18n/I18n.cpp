@@ -1,5 +1,7 @@
 #include "reals/i18n/I18n.h"
 
+#include "reals/platform/Path.h"
+
 #include <fstream>
 #include <mutex>
 #include <unordered_map>
@@ -38,6 +40,12 @@ constexpr Entry kEmbedded[] = {
     {"settings.accent", "Màu nhấn", "Accent color"},
     {"settings.noiseOverlay", "Lớp phủ noise", "Noise overlay"},
     {"settings.language", "Ngôn ngữ", "Language"},
+    {"settings.browser", "Thư mục & Duyệt", "Folder tree"},
+    {"settings.autoCollapse", "Tự động thu gọn thư mục", "Auto-collapse folders"},
+    {"settings.displaySize", "Kích thước hiển thị", "Display density"},
+    {"size.small", "Nhỏ (gọn)", "Compact"},
+    {"size.medium", "Vừa (chuẩn)", "Standard"},
+    {"size.large", "To (thoáng)", "Large"},
     {"pos.top", "Trên", "Top"},
     {"pos.bottom", "Dưới", "Bottom"},
     {"pos.left", "Trái", "Left"},
@@ -52,6 +60,8 @@ constexpr Entry kEmbedded[] = {
     {"browser.column.name", "Tên", "Name"},
     {"browser.column.duration", "Thời lượng", "Duration"},
     {"browser.pickRoot", "Chọn thư mục...", "Pick a folder..."},
+    {"browser.dropTitle", "Thêm thư mục gốc", "Add Root Folder"},
+    {"browser.dropHint", "Thả thư mục từ Windows Explorer vào đây để thêm vào Thư mục gốc", "Drop folder from Windows Explorer here to add as root"},
     {"browser.searchHint", "Tìm trong thư mục...", "Search in folder..."},
     {"browser.sort.name", "Tên", "Name"},
     {"browser.sort.size", "Dung lượng", "Size"},
@@ -83,7 +93,14 @@ constexpr Entry kEmbedded[] = {
     {"browser.ctx.reveal", "Mở vị trí file", "Reveal in Explorer"},
     {"browser.ctx.rename", "Đổi tên", "Rename"},
     {"browser.ctx.delete", "Xóa", "Delete"},
+    {"browser.ctx.findSimilar", "🔍 Tìm sample tương tự", "🔍 Find Similar Samples"},
+    {"browser.similarTo", "Tương tự như", "Similar to"},
+    {"browser.clearSimilar", "Xóa bộ lọc", "Clear filter"},
+    {"browser.matchPercent", "khớp", "match"},
     {"browser.ctx.setRoot", "Đặt làm thư mục gốc", "Set as root"},
+    {"browser.ctx.scanFolder", "⚡ Quét & Phân tích AI", "⚡ Scan & AI Analyze"},
+    {"browser.ctx.scanNew", "⚡ Quét file mới", "⚡ Scan New Files"},
+    {"browser.ctx.rescanAll", "🔄 Quét lại toàn bộ AI", "🔄 Rescan All (Re-analyze)"},
     {"browser.ctx.openHere", "Mở ở đây", "Open here"},
     {"browser.ctx.removeRoot", "Xóa thư mục gốc này", "Remove this root"},
     {"browser.lab.stem", "Tách Stem", "Split Stem"},
@@ -97,15 +114,11 @@ constexpr Entry kEmbedded[] = {
     {"browser.toast.decodeFail", "Không đọc được file audio", "Cannot decode audio file"},
     {"browser.toast.copied", "Đã copy đường dẫn", "Path copied"},
     {"browser.toast.rootAdded", "Đã thêm thư mục gốc", "Root added"},
-    {"browser.toast.dropHint", "Kéo thư mục vào đây để thêm gốc", "Drop a folder here to add a root"},
-    {"browser.toast.notFolder", "Kéo một thư mục (không phải file) để thêm gốc",
-     "Drop a folder (not a file) to add a root"},
     {"browser.toast.renamed", "Đã đổi tên", "Renamed"},
     {"browser.toast.renameFail", "Đổi tên thất bại", "Rename failed"},
     {"browser.toast.deleted", "Đã xóa", "Deleted"},
     {"browser.toast.deleteFail", "Xóa thất bại", "Delete failed"},
-    {"browser.toast.labQueued", "Đã gửi tới Audio Lab (mở ở Phase 2)",
-     "Sent to Audio Lab (opens in Phase 2)"},
+    {"browser.toast.labQueued", "Đã gửi tới Audio Lab (mở ở Phase 2)", "Sent to Audio Lab (opens in Phase 2)"},
     {"browser.toast.inserted", "Đã chèn vào project", "Inserted into project"},
     {"browser.toast.notMedia", "File này không phải media", "Not a media file"},
     {"toast.copied", "Đã copy đường dẫn", "Path copied"},
@@ -115,11 +128,85 @@ constexpr Entry kEmbedded[] = {
     {"toast.decodeFail", "Không đọc được file audio", "Cannot decode audio file"},
     {"toast.rootAdded", "Đã thêm thư mục gốc", "Root added"},
     {"toast.dropHint", "Kéo thư mục vào đây để thêm gốc", "Drop a folder here to add a root"},
-    {"toast.notFolder", "Kéo một thư mục (không phải file) để thêm gốc",
-     "Drop a folder (not a file) to add a root"},
+    {"toast.notFolder", "Kéo một thư mục (không phải file) để thêm gốc", "Drop a folder (not a file) to add a root"},
+    {"toast.renamed", "Đã đổi tên", "Renamed"},
+    {"toast.renameFail", "Đổi tên thất bại", "Rename failed"},
+    {"toast.deleted", "Đã xóa", "Deleted"},
+    {"toast.deleteFail", "Xóa thất bại", "Delete failed"},
+    {"market.search", "Tìm plugin, script, VST...", "Search plugins, scripts, VST..."},
+    {"market.trending", "Đang thịnh hành", "Trending"},
+    {"market.installed", "Đã cài", "Installed"},
+    {"market.download", "Tải về", "Download"},
+    {"market.chip.all", "Tất cả", "All"},
+    {"market.chip.effects", "Effects", "Effects"},
+    {"market.chip.midi", "MIDI", "MIDI"},
+    {"market.chip.utility", "Utility", "Utility"},
+    {"market.chip.scripts", "Scripts", "Scripts"},
+    {"market.chip.free", "Miễn phí", "Free"},
+    {"lab.title", "AUDIO LAB", "AUDIO LAB"},
+    {"lab.noFile", "Chưa chọn file — chọn trong Browser (click phải → Gửi Audio Lab)", "No file selected — pick in Browser (right-click → Send to Audio Lab)"},
+    {"lab.sub.stem", "vocal · drum · bass · other", "vocal · drum · bass · other"},
+    {"lab.sub.denoise", "làm sạch audio", "clean up audio"},
+    {"lab.sub.keychord", "phát hiện + MIDI", "detect + MIDI"},
+    {"lab.sub.tempo", "phát hiện BPM", "detect BPM"},
+    {"lab.apiLive", "API thật: analyze · chords · separate · denoise", "Real API: analyze · chords · separate · denoise"},
+    {"agent.modes", "CHẾ ĐỘ PHÉP QUYỀN", "PERMISSION MODE"},
+    {"agent.mode1", "Hỏi tất cả", "Ask all"},
+    {"agent.mode2", "Chỉ hỏi nguy hiểm", "Ask dangerous only"},
+    {"agent.mode3", "Toàn quyền", "Full control"},
+    {"agent.hint", "Ra lệnh cho agent... (VD: lọc noise all track audio)", "Command the agent... (e.g. denoise all audio tracks)"},
+    {"agent.apiStub", "Phase 5 — cần API LLM từ server RealS", "Phase 5 — needs RealS server LLM API"},
+    {"account.notLogin", "Chưa đăng nhập", "Not logged in"},
+    {"account.loginHint", "Đăng nhập bằng tài khoản reals.media", "Sign in with your reals.media account"},
+    {"account.login", "Đăng nhập", "Sign in"},
+    {"account.apiStub", "Phase 4 — chờ hệ thống đăng nhập trên web chính", "Phase 4 — waiting for web login system"},
+    {"player.syncBpm", "Sync BPM", "Sync BPM"},
+    {"player.keyTransposer", "Chuyển Tone", "Key Transposer"},
+    {"player.originalKey", "Original Key", "Original Key"},
+    {"player.transposer", "Bàn phím chuyển Tone", "Tone Transposer"},
+    {"player.semitones", "bán cung", "semitones"},
+    {"player.tags", "Nhãn", "Tags"},
+    {"scanner.starting", "Bắt đầu quét & phân tích AI...", "Starting scan & AI analysis..."},
+    {"scanner.scanning", "Đang quét & phân tích AI...", "Scanning & AI analyzing..."},
+    {"scanner.complete", "✓ Quét & Phân tích AI hoàn tất", "✓ Scan & AI analysis complete"},
+    {"scanner.cancelled", "Đã dừng quét", "Scan stopped"},
+    {"scanner.cancel", "Dừng", "Stop"},
+    {"scanner.addedCount", "Đã thêm", "Added"},
+    {"scanner.skippedCount", "Bỏ qua", "Skipped"},
+    {"scanner.cpuMode", "Hiệu năng quét (CPU)", "Scan Performance (CPU)"},
+    {"scanner.cpuMode.low", "Thấp (30% CPU)", "Low (30% CPU)"},
+    {"scanner.cpuMode.lowDesc", "Êm ái, không ảnh hưởng DAW hay tác vụ khác", "Quiet, no impact on DAW or background tasks"},
+    {"scanner.cpuMode.normal", "Bình thường (50% CPU)", "Normal (50% CPU)"},
+    {"scanner.cpuMode.normalDesc", "Cân bằng hiệu năng & độ mượt (Khuyên dùng)", "Balanced performance & smoothness (Recommended)"},
+    {"scanner.cpuMode.high", "Cao (85% CPU)", "High (85% CPU)"},
+    {"scanner.cpuMode.highDesc", "Quét nhanh đa luồng, dùng tối đa 85% CPU", "Fast multi-threaded scan, utilizes up to 85% CPU"},
+    {"scanner.cpuMode.highWarn", "⚠️ CẢNH BÁO: Chế độ Cao (85% CPU) sẽ huy động 85% hiệu năng đa luồng của chip máy tính. Điều này có thể khiến quạt máy quay mạnh hoặc gây giật lag nhẹ nếu bạn đang phát dự án nặng trong DAW. Bạn có chắc muốn tiếp tục?", "⚠️ WARNING: High mode (85% CPU) will utilize 85% of multi-core CPU power. This may cause higher fan speed or minor audio dropouts during heavy DAW project playback. Are you sure you want to continue?"},
+    {"market.apiStub", "Đang phát triển — kết nối reals.media khi mở API", "Under development — connects to reals.media when API is live"},
+    {"market.installedNote", "Chưa có sản phẩm nào được cài qua Reals Lab.", "No products installed via Reals Lab yet."},
+    {"market.tagUpdate", "CẬP NHẬT", "UPDATE"},
+    {"settings.dockToReaper", "Dock vào REAPER", "Dock to REAPER"},
+    {"settings.effects", "Hiệu ứng", "Effects"},
+    {"settings.noise", "Lớp phủ noise", "Noise overlay"},
+    {"settings.window", "Cửa sổ & Dock", "Window & Dock"},
+    {"window.dock", "📌 Dock", "📌 Dock"},
+    {"window.undock", "↗ Tách cửa sổ", "↗ Undock window"},
     {"common.cancel", "Hủy", "Cancel"},
     {"common.confirm", "Xác nhận", "Confirm"},
     {"common.close", "Đóng", "Close"},
+    {"window.dockHint", "Dock vào REAPER / Cửa sổ riêng", "Dock into REAPER / Float window"},
+    {"window.settingsHint", "Cài đặt", "Settings"},
+    {"window.minimize", "Thu nhỏ", "Minimize"},
+    {"window.maximize", "Phóng to / Khôi phục", "Maximize / Restore"},
+    {"window.close", "Đóng", "Close"},
+    {"browser.toggleTree", "Ẩn/Hiện Cây thư mục", "Show/hide folder tree"},
+    {"splitter.tree", "Kéo để chỉnh độ rộng Cây thư mục", "Drag to resize the folder tree"},
+    {"splitter.preview", "Kéo để chỉnh chiều cao Trình phát", "Drag to resize the player"},
+    {"browser.noResults", "Không tìm thấy mẫu tương tự", "No similar samples found"},
+    {"toast.labError", "Lỗi Lab", "Lab error"},
+    {"toast.scannerError", "Lỗi quét", "Scanner error"},
+    {"toast.similarError", "Lỗi tìm mẫu tương tự", "Error finding similar samples"},
+    {"sync.noBpm", "Sync: không tìm thấy BPM, thử 120", "Sync: no BPM found, trying 120"},
+    {"lab.alreadyRunning", "Đang có job chạy — chờ xong đã nhé", "A job is already running — please wait"},
 };
 
 void applyEmbedded(Table& vi, Table& en) {
@@ -151,15 +238,10 @@ void init(std::string_view assetsDir) {
     applyEmbedded(g_vi, g_en);
 
     // Disk files override embedded strings when present.
-    std::string dir(assetsDir);
+    const std::string dir(assetsDir);
     if (!dir.empty()) {
-#ifdef _WIN32
-        constexpr char sep = '\\';
-#else
-        constexpr char sep = '/';
-#endif
-        loadTable(dir + sep + "strings_vi.json", g_vi);
-        loadTable(dir + sep + "strings_en.json", g_en);
+        loadTable(platform::joinPath(dir, "strings_vi.json"), g_vi); // MIN-08: platform::joinPath
+        loadTable(platform::joinPath(dir, "strings_en.json"), g_en);
     }
 }
 

@@ -1,3 +1,5 @@
+#pragma once
+
 #include "reals/db/Database.h"
 #include "reals/search/QueryParser.h"
 #include "reals/search/SemanticSearch.h"

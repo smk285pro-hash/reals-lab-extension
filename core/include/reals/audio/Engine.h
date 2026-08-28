@@ -4,6 +4,7 @@
 // Rules (AGENTS.md): no locks/allocations inside realtime callbacks.
 // Metering is data-driven: the played file is decoded once into a peak
 // envelope used for the waveform and level meter.
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -85,8 +86,10 @@ public:
 private:
     Engine() = default;
     ~Engine();
+    Engine(const Engine&) = delete;
+    Engine& operator=(const Engine&) = delete;
     struct Impl;
-    Impl* m_impl = nullptr; // PIMPL: keeps miniaudio out of public headers
+    std::unique_ptr<Impl> m_impl; // PIMPL: keeps miniaudio out of public headers (MAJ-07)
 };
 
 } // namespace reals::audio

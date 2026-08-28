@@ -18,7 +18,9 @@ constexpr int kFftSize = 1024;
 
 // Disambiguate tempo octaves preferring dance/standard music range (75 - 165 BPM)
 float disambiguateBpm(float bpm) {
-    if (bpm <= 0.0f) return 120.0f;
+    // Non-finite inputs would make `while (bpm > 180) bpm /= 2` loop forever
+    // (+inf / 2 == +inf) — guard before touching the loops (CRIT-04).
+    if (bpm <= 0.0f || !std::isfinite(bpm)) return 120.0f;
     while (bpm < 70.0f) {
         bpm *= 2.0f;
     }

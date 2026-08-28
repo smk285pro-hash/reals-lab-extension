@@ -4,8 +4,10 @@
 // Endpoints doc: API_DOCS.md (analyze, chords, separate, denoise, jobs).
 // Transport goes through net::HttpClient (AGENTS.md: network only there).
 // Base URL comes from Config "labApiBaseUrl"; kBase is the fallback default.
-#ifdef _WIN32
-
+//
+// The class is declared unconditionally (MAJ-09): callers like Bridge.cpp
+// compile on every platform. The Windows TU implements it on WinHTTP; other
+// platforms get throwing stubs (see LabApi.cpp) so links stay clean.
 #include <nlohmann/json.hpp>
 
 #include <string>
@@ -32,5 +34,3 @@ public:
 };
 
 } // namespace reals::lab
-
-#endif // _WIN32

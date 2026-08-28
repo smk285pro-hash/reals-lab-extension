@@ -1,5 +1,7 @@
-#include "framework/AudioTestFixtures.h"
-#include "framework/TestRunner.h"
+// Core Database / BackgroundScanner / Hash tests, consolidated from the
+// former standalone test_db_scanner binary (MIN-06).
+#include "../framework/AudioTestFixtures.h"
+#include "../framework/TestRunner.h"
 
 #include "reals/db/Database.h"
 #include "reals/db/SampleRecord.h"
@@ -26,7 +28,7 @@ using namespace reals::test;
 // Suite 1: Hash Utilities (xxHash64 & SHA-256)
 // =============================================================================
 
-TEST(HashSuite, Sha256StandardVectors) {
+TEST(DbHashSuite, Sha256StandardVectors) {
     // Empty string
     EXPECT_EQ(sha256(""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
 
@@ -38,7 +40,7 @@ TEST(HashSuite, Sha256StandardVectors) {
               "d7a8fbb307d7809469ca9abcb0082e4f8d5651e46d3cdb762d02d0bf37c9e592");
 }
 
-TEST(HashSuite, XxHash64DeterminismAndStreaming) {
+TEST(DbHashSuite, XxHash64DeterminismAndStreaming) {
     std::string data = "RealsLab_Audio_Engine_Sample_Checksum_Data_Verification_String_123456789";
     uint64_t direct = Hash::xx64(data);
     EXPECT_NE(direct, 0ULL);
@@ -55,7 +57,7 @@ TEST(HashSuite, XxHash64DeterminismAndStreaming) {
     EXPECT_NE(direct, seeded);
 }
 
-TEST(HashSuite, FileHashingAndUnchangedCheck) {
+TEST(DbHashSuite, FileHashingAndUnchangedCheck) {
     const auto tempDir = fs::temp_directory_path() / "reals_hash_test";
     fs::create_directories(tempDir);
     const std::string filePath = (tempDir / "test_audio.wav").string();
@@ -469,6 +471,3 @@ TEST(ScannerSuite, PauseResumeAndCancel) {
 // Main Runner Entrypoint
 // =============================================================================
 
-int main(int argc, char** argv) {
-    return TestRunner::run(argc, argv);
-}

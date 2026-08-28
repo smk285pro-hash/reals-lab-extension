@@ -26,11 +26,11 @@
     </div>
     <div class="window-drag-region" id="winDragRegion"></div>
     <div class="topbar-actions">
-      <button class="icon-btn" id="btnDock" title="Dock vào REAPER / Cửa sổ riêng">📌</button>
-      <button class="icon-btn" id="btnSettings" title="Cài đặt">⚙</button>
-      <button class="icon-btn" id="btnWinMin" title="Thu nhỏ">—</button>
-      <button class="icon-btn" id="btnWinMax" title="Phóng to / Khôi phục">▢</button>
-      <button class="icon-btn btn-close" id="btnWinClose" title="Đóng">✕</button>
+      <button class="icon-btn" id="btnDock" data-i18n-title="window.dockHint" title="Dock vào REAPER / Cửa sổ riêng">📌</button>
+      <button class="icon-btn" id="btnSettings" data-i18n-title="window.settingsHint" title="Cài đặt">⚙</button>
+      <button class="icon-btn" id="btnWinMin" data-i18n-title="window.minimize" title="Thu nhỏ">—</button>
+      <button class="icon-btn" id="btnWinMax" data-i18n-title="window.maximize" title="Phóng to / Khôi phục">▢</button>
+      <button class="icon-btn btn-close" id="btnWinClose" data-i18n-title="window.close" title="Đóng">✕</button>
     </div>
   </header>
 
@@ -99,7 +99,7 @@
       <section class="pane active" id="pane-browser">
         <div class="browser-toolbar">
           <div class="toolbar-row row-primary">
-            <button id="btnToggleTree" class="btn-tool-icon on" title="Ẩn/Hiện Cây thư mục">📁</button>
+            <button id="btnToggleTree" class="btn-tool-icon on" data-i18n-title="browser.toggleTree" title="Ẩn/Hiện Cây thư mục">📁</button>
             <select id="roots"></select>
             <div class="search-wrap">
               <input id="search" data-i18n-ph="browser.searchHint" placeholder="Tìm kiếm... (/tag, /bpm:120, /key:Am, ngữ nghĩa...)">
@@ -114,7 +114,7 @@
           <div class="toolbar-row row-filters">
             <button id="audioOnly" data-i18n="browser.audioOnly">Audio</button>
             <button id="autoPreview" class="on" data-i18n="browser.autoPreview">Auto</button>
-            <button id="favOnly" title="Yêu thích">★</button>
+            <button id="favOnly" data-i18n-title="browser.favOnly" title="Yêu thích">★</button>
             <select id="tagFilter">
               <option value="0" data-i18n="browser.tagFilter">Nhãn</option>
               <option value="1">1</option>
@@ -148,10 +148,10 @@
         </div>
         <div class="browser-body">
           <div id="tree"></div>
-          <div id="treeSplitter" class="splitter-v" title="Kéo để chỉnh độ rộng Cây thư mục"></div>
+          <div id="treeSplitter" class="splitter-v" data-i18n-title="splitter.tree" title="Kéo để chỉnh độ rộng Cây thư mục"></div>
           <div id="files"></div>
         </div>
-        <div id="previewSplitter" class="splitter-h" title="Kéo để chỉnh chiều cao Trình phát"></div>
+        <div id="previewSplitter" class="splitter-h" data-i18n-title="splitter.preview" title="Kéo để chỉnh chiều cao Trình phát"></div>
         <div id="preview">
           <div class="preview-row">
             <button id="btnPlay" class="flat">&gt;</button>

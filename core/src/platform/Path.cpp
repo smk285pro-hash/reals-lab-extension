@@ -1,5 +1,8 @@
 #include "reals/platform/Path.h"
 
+#include <cctype>
+#include <cstdio>
+#include <cwctype>
 #include <filesystem>
 
 #ifdef _WIN32
@@ -149,6 +152,41 @@ std::vector<std::string> listFiles(std::string_view dir) {
         if (entry.is_regular_file(ec))
             result.push_back(pathToUtf8(entry.path().filename()));
     return result;
+}
+
+std::string toLowerUtf8(std::string_view s) {
+#ifdef _WIN32
+    if (s.empty())
+        return {};
+    // Round-trip through UTF-16 so case folding is Unicode-aware (Vietnamese
+    // diacritics, Turkish dotless i, etc.).
+    const std::wstring w = u8path(s).wstring();
+    if (w.empty())
+        return std::string(s);
+    std::wstring lowered = w;
+    for (auto& c : lowered)
+        c = std::towlower(c);
+    return pathToUtf8(fs::path(lowered));
+#else
+    // POSIX: byte-wise ASCII lowering (locale-free, same as the previous
+    // fallback behavior in BrowserModel).
+    std::string result(s);
+    for (char& c : result)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return result;
+#endif
+}
+
+FILE* openAppend(std::string_view utf8Path) {
+#ifdef _WIN32
+    const std::wstring w = u8path(utf8Path).wstring();
+    if (w.empty())
+        return nullptr;
+    FILE* f = nullptr;
+    return _wfopen_s(&f, w.c_str(), L"a") == 0 ? f : nullptr;
+#else
+    return std::fopen(std::string(utf8Path).c_str(), "a");
+#endif
 }
 
 } // namespace reals::platform

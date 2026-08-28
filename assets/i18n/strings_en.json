@@ -165,5 +165,19 @@
   "window.undock": "↗ Undock window",
   "common.cancel": "Cancel",
   "common.confirm": "Confirm",
-  "common.close": "Close"
+  "common.close": "Close",
+  "window.dockHint": "Dock into REAPER / Float window",
+  "window.settingsHint": "Settings",
+  "window.minimize": "Minimize",
+  "window.maximize": "Maximize / Restore",
+  "window.close": "Close",
+  "browser.toggleTree": "Show/hide folder tree",
+  "splitter.tree": "Drag to resize the folder tree",
+  "splitter.preview": "Drag to resize the player",
+  "browser.noResults": "No similar samples found",
+  "toast.labError": "Lab error",
+  "toast.scannerError": "Scanner error",
+  "toast.similarError": "Error finding similar samples",
+  "sync.noBpm": "Sync: no BPM found, trying 120",
+  "lab.alreadyRunning": "A job is already running — please wait"
 }

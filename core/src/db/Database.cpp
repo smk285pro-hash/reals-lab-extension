@@ -142,7 +142,7 @@ Database::Database(Database&& other) noexcept {
 Database& Database::operator=(Database&& other) noexcept {
     if (this != &other) {
         std::scoped_lock lock(m_mutex, other.m_mutex);
-        close();
+        closeLocked();
         m_db = other.m_db;
         m_path = std::move(other.m_path);
         other.m_db = nullptr;
@@ -152,7 +152,7 @@ Database& Database::operator=(Database&& other) noexcept {
 
 bool Database::open(const std::string& dbPath) {
     const std::lock_guard lock(m_mutex);
-    close();
+    closeLocked();
 
     if (dbPath.empty()) {
         const std::string dir = platform::dataDir();
@@ -202,7 +202,7 @@ bool Database::open(const std::string& dbPath) {
 
     if (!initSchema()) {
         LOG_ERROR(kTag, "Failed to initialize database schema.");
-        close();
+        closeLocked(); // open() already holds m_mutex
         return false;
     }
 
@@ -211,6 +211,15 @@ bool Database::open(const std::string& dbPath) {
 }
 
 void Database::close() {
+    // Serialized against queries like every other public method (MAJ-05).
+    // Callers that already hold m_mutex (open, move-assign) use closeLocked()
+    // instead — a plain lock here would self-deadlock on this non-recursive
+    // mutex.
+    const std::lock_guard lock(m_mutex);
+    closeLocked();
+}
+
+void Database::closeLocked() {
     if (m_db) {
         sqlite3_close_v2(m_db);
         m_db = nullptr;

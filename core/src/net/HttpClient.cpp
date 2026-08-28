@@ -1,6 +1,13 @@
 // HTTP client implementation (Windows transport: WinHTTP).
 // The ONLY place in the project allowed to touch network APIs directly
-// (AGENTS.md architecture rules). Other OSes: add a sibling implementation.
+// (AGENTS.md architecture rules).
+//
+// CRIT-01: the entire translation unit is guarded — <windows.h>/<winhttp.h>
+// used to be included unconditionally, which broke macOS/Linux compilation.
+// Non-Windows platforms compile this file to an empty TU; nothing outside
+// LabApi references HttpClient, and LabApi's non-Windows stubs never call it,
+// so links stay clean. A portable transport (libcurl) can land here later as
+// a sibling implementation.
 //
 // Fixes over the previous inline LabApi transport:
 //  - WinHttpCrackUrl uses pre-allocated buffers (no leaked GlobalAlloc blocks).
@@ -8,6 +15,8 @@
 //  - File access uses wide APIs -> UTF-8 paths (Vietnamese names) work.
 //  - downloadToFile streams to disk instead of buffering up to 2 GB in RAM.
 #include "reals/net/HttpClient.h"
+
+#ifdef _WIN32
 
 #include "reals/platform/Path.h"
 #include "reals/util/Log.h"
@@ -171,9 +180,9 @@ struct HttpClient::Impl {
     }
 };
 
-HttpClient::HttpClient() : m_impl(new Impl()) {}
+HttpClient::HttpClient() : m_impl(std::make_unique<Impl>()) {}
 
-HttpClient::~HttpClient() { delete m_impl; }
+HttpClient::~HttpClient() = default; // Impl is complete in this TU (MAJ-07)
 
 HttpClient& HttpClient::instance() {
     static HttpClient inst;
@@ -409,3 +418,5 @@ Response HttpClient::uploadFile(const std::string& url, const std::string& field
 }
 
 } // namespace reals::net
+
+#endif // _WIN32

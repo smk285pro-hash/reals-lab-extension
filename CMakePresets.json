@@ -26,6 +26,13 @@
     { "name": "windows-extension", "configurePreset": "windows-extension" }
   ],
   "testPresets": [
-    { "name": "windows", "configurePreset": "windows" }
+    {
+      "name": "windows",
+      "configurePreset": "windows",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
   ]
 }

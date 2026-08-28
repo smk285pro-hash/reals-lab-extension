@@ -10,9 +10,11 @@ option(REALS_BUILD_EXTENSION "Build the REAPER extension (needs REAPER SDK)" OFF
 option(REALS_WARNINGS_AS_ERRORS "Treat warnings as errors" OFF)
 
 if (MSVC)
-    add_compile_options(/W4 /permissive- /utf-8 /FS)
+    # C++-only warning flags: third-party C sources (sqlite3.c) are excluded
+    # (their own target sets /W3 PRIVATE below).
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:/W4;/permissive-;/utf-8;/FS>")
 else()
-    add_compile_options(-Wall -Wextra -Wpedantic)
+    add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wall;-Wextra;-Wpedantic>")
 endif()
 
 if (REALS_WARNINGS_AS_ERRORS)
@@ -56,15 +58,22 @@ if (MSVC)
 endif()
 
 # ---- SQLite3 Embedded Database ------------------------------------------------
+# Single compilation of sqlite3.c with the full feature set (FTS5, JSON1,
+# R*Tree, threadsafe). Every target that needs SQLite links this library —
+# previously sqlite3.c was ALSO compiled straight into reals_core without
+# these definitions, so the definitions never applied to the copy that was
+# actually linked and the sqlite3 target below was orphaned (CRIT-05).
 add_library(sqlite3 STATIC ${CMAKE_CURRENT_LIST_DIR}/libs/sqlite3/sqlite3.c)
 target_include_directories(sqlite3 PUBLIC ${CMAKE_CURRENT_LIST_DIR}/libs/sqlite3)
-target_compile_definitions(sqlite3 PRIVATE
-    SQLITE_THREADSAFE=1
-    SQLITE_ENABLE_FTS5=1
-    SQLITE_ENABLE_JSON1=1
-    SQLITE_ENABLE_RTREE=1
-    SQLITE_DEFAULT_MEMSTATUS=0
-    _CRT_SECURE_NO_WARNINGS
+target_compile_definitions(sqlite3
+    PUBLIC
+        SQLITE_THREADSAFE=1
+        SQLITE_ENABLE_FTS5=1
+        SQLITE_ENABLE_JSON1=1
+        SQLITE_ENABLE_RTREE=1
+        SQLITE_DEFAULT_MEMSTATUS=0
+    PRIVATE
+        _CRT_SECURE_NO_WARNINGS
 )
 if (MSVC)
     target_compile_options(sqlite3 PRIVATE /W3)
@@ -72,15 +81,14 @@ endif()
 
 # ---- Core library (no UI, no host deps) --------------------------------------
 file(GLOB_RECURSE REALS_CORE_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_LIST_DIR}/core/src/*.cpp)
-set(SQLITE3_SOURCES ${CMAKE_CURRENT_LIST_DIR}/libs/sqlite3/sqlite3.c)
 
-add_library(reals_core STATIC ${REALS_CORE_SOURCES} ${SQLITE3_SOURCES})
+add_library(reals_core STATIC ${REALS_CORE_SOURCES})
 target_include_directories(reals_core
     PUBLIC  ${CMAKE_CURRENT_LIST_DIR}/core/include
     PRIVATE ${miniaudio_SOURCE_DIR}
             ${CMAKE_CURRENT_LIST_DIR}/libs/soundtouch
             ${CMAKE_CURRENT_LIST_DIR}/libs/sqlite3)
-target_link_libraries(reals_core PUBLIC soundtouch nlohmann_json::nlohmann_json)
+target_link_libraries(reals_core PUBLIC sqlite3 soundtouch nlohmann_json::nlohmann_json)
 if (MSVC)
     target_compile_definitions(reals_core PRIVATE _CRT_SECURE_NO_WARNINGS)
     if (WIN32)
@@ -162,43 +170,9 @@ if (REALS_BUILD_EXTENSION)
 endif()
 
 # ---- Tests -------------------------------------------------------------------
+# Standalone legacy test binaries (tests/test_*.cpp) were consolidated into
+# the reals_tests suite (tests/suites/) — one binary, --suite filter flags.
 enable_testing()
-
-if (EXISTS ${CMAKE_CURRENT_LIST_DIR}/tests/test_soundtouch_processor.cpp)
-    add_executable(test_soundtouch_processor tests/test_soundtouch_processor.cpp)
-    target_include_directories(test_soundtouch_processor PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}/core/include
-        ${CMAKE_CURRENT_LIST_DIR}/tests)
-    target_link_libraries(test_soundtouch_processor PRIVATE reals_core)
-    add_test(NAME test_soundtouch_processor COMMAND test_soundtouch_processor)
-endif()
-
-if (EXISTS ${CMAKE_CURRENT_LIST_DIR}/tests/test_audio_engine.cpp)
-    add_executable(test_audio_engine tests/test_audio_engine.cpp)
-    target_include_directories(test_audio_engine PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}/core/include
-        ${CMAKE_CURRENT_LIST_DIR}/tests)
-    target_link_libraries(test_audio_engine PRIVATE reals_core)
-    add_test(NAME test_audio_engine COMMAND test_audio_engine)
-endif()
-
-if (EXISTS ${CMAKE_CURRENT_LIST_DIR}/tests/test_ai.cpp)
-    add_executable(test_ai tests/test_ai.cpp)
-    target_include_directories(test_ai PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}/core/include
-        ${CMAKE_CURRENT_LIST_DIR}/tests)
-    target_link_libraries(test_ai PRIVATE reals_core)
-    add_test(NAME test_ai COMMAND test_ai)
-endif()
-
-if (EXISTS ${CMAKE_CURRENT_LIST_DIR}/tests/test_db_scanner.cpp)
-    add_executable(test_db_scanner tests/test_db_scanner.cpp)
-    target_include_directories(test_db_scanner PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}/core/include
-        ${CMAKE_CURRENT_LIST_DIR}/tests)
-    target_link_libraries(test_db_scanner PRIVATE reals_core)
-    add_test(NAME test_db_scanner COMMAND test_db_scanner)
-endif()
 
 if (EXISTS ${CMAKE_CURRENT_LIST_DIR}/tests/CMakeLists.txt)
     add_subdirectory(tests)
