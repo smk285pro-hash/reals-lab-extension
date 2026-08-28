@@ -51,6 +51,7 @@ public:
         m_queuedSyncPitches.push_back(pitchSemitones);
         m_lastPlayrate = playrate;
         m_lastPitch = pitchSemitones;
+        (void)originalPath;
     }
 
     void revealInExplorer(const std::string& path) override {
