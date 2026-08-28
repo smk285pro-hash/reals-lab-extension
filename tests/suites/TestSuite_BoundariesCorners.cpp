@@ -211,10 +211,10 @@ TEST(BoundariesCorners, Corner_DB_ConcurrentReadWrite) {
 
     // Concurrent reader thread
     std::thread reader([&]() {
-        while (!done.load()) {
+        do {
             auto res = store.queryByFilter("", 100.0f, 150.0f, "", false);
             readsCount += res.size();
-        }
+        } while (!done.load());
     });
 
     // Writer thread

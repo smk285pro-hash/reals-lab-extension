@@ -30,8 +30,10 @@
 #include <windows.h>
 #include <winhttp.h>
 
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <map>
 #include <mutex>
 #include <sstream>
@@ -391,10 +393,10 @@ Response HttpClient::uploadFile(const std::string& url, const std::string& field
         if (sent)
             sent = writeAll(headPart.data(), static_cast<DWORD>(headPart.size()));
         if (sent) {
-            char chunk[1 << 20];
+            std::vector<char> chunk(64 * 1024);
             DWORD read = 0;
-            while (sent && ReadFile(hFile, chunk, sizeof(chunk), &read, nullptr) && read > 0)
-                sent = writeAll(chunk, read);
+            while (sent && ReadFile(hFile, chunk.data(), static_cast<DWORD>(chunk.size()), &read, nullptr) && read > 0)
+                sent = writeAll(chunk.data(), read);
         }
         if (sent)
             sent = writeAll(extraPart.data(), static_cast<DWORD>(extraPart.size()));
