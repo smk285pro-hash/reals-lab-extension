@@ -335,6 +335,7 @@ UPDATE samples SET
     camelot = ?,
     genre = ?,
     mood = ?,
+    ai_analyzed = ?,
     updated_at = ?
 WHERE id = ?;
 )sql";
@@ -356,8 +357,9 @@ WHERE id = ?;
         sqlite3_bind_text(updateStmt, 12, rec.camelot.c_str(), -1, SQLITE_STATIC);
         sqlite3_bind_text(updateStmt, 13, rec.genre.c_str(), -1, SQLITE_STATIC);
         sqlite3_bind_text(updateStmt, 14, rec.mood.c_str(), -1, SQLITE_STATIC);
-        sqlite3_bind_int64(updateStmt, 15, updatedAt);
-        sqlite3_bind_int64(updateStmt, 16, existingId);
+        sqlite3_bind_int(updateStmt, 15, rec.aiAnalyzed ? 1 : 0);
+        sqlite3_bind_int64(updateStmt, 16, updatedAt);
+        sqlite3_bind_int64(updateStmt, 17, existingId);
 
         if (sqlite3_step(updateStmt) != SQLITE_DONE)
             return -1;

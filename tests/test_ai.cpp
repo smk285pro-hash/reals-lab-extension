@@ -255,7 +255,8 @@ TEST(KeyDetectorSuite, DetectAMinorKey) {
     EXPECT_EQ(res.key, "A");
     EXPECT_EQ(res.mode, "Minor");
     EXPECT_EQ(res.camelot, "8A");
-    EXPECT_EQ(res.openKey, "4m");
+    // Standard OpenKey: relative pairs share the number — 1d = C major / 1m = A minor.
+    EXPECT_EQ(res.openKey, "1m");
     EXPECT_GT(res.confidence, 0.5f);
 }
 
@@ -280,9 +281,11 @@ TEST(KeyDetectorSuite, CamelotAndOpenKeyMappings) {
     EXPECT_EQ(KeyDetector::toCamelot("B", "Major"), "1B");
 
     EXPECT_EQ(KeyDetector::toOpenKey("C", "Major"), "1d");
-    EXPECT_EQ(KeyDetector::toOpenKey("C", "Minor"), "1m");
+    // Standard OpenKey wheel: C minor = 10m (relative pairing with Eb major).
+    EXPECT_EQ(KeyDetector::toOpenKey("C", "Minor"), "10m");
     EXPECT_EQ(KeyDetector::toOpenKey("A", "Major"), "4d");
-    EXPECT_EQ(KeyDetector::toOpenKey("A", "Minor"), "4m");
+    // A minor is the relative minor of C major -> 1m.
+    EXPECT_EQ(KeyDetector::toOpenKey("A", "Minor"), "1m");
     EXPECT_EQ(KeyDetector::toOpenKey("F#", "Major"), "7d");
 }
 

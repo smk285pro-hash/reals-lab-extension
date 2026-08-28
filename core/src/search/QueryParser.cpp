@@ -78,51 +78,56 @@ void QueryParser::parseKey(std::string_view keyStr, std::string& outRoot, std::s
 }
 
 std::string QueryParser::camelotToKey(std::string_view camelot) {
+    // Standard Camelot wheel (Mixed In Key). MUST stay in sync with
+    // ai::KeyDetector::toCamelot — the DB stores camelot values produced by
+    // KeyDetector, so a mismatched table here breaks /key: and /camelot:
+    // searches for every minor key.
     std::string c = toLower(trim(camelot));
     if (c == "8b") return "C Major";
-    if (c == "5a") return "A Minor";
+    if (c == "5a") return "C Minor";
     if (c == "3b") return "Db Major";
-    if (c == "12a") return "Bb Minor";
+    if (c == "12a") return "C# Minor";
     if (c == "10b") return "D Major";
-    if (c == "7a") return "B Minor";
+    if (c == "7a") return "D Minor";
     if (c == "5b") return "Eb Major";
-    if (c == "2a") return "C Minor";
+    if (c == "2a") return "D# Minor";
     if (c == "12b") return "E Major";
-    if (c == "9a") return "C# Minor";
+    if (c == "9a") return "E Minor";
     if (c == "7b") return "F Major";
-    if (c == "4a") return "D Minor";
+    if (c == "4a") return "F Minor";
     if (c == "2b") return "F# Major";
-    if (c == "11a") return "D# Minor";
+    if (c == "11a") return "F# Minor";
     if (c == "9b") return "G Major";
-    if (c == "6a") return "E Minor";
+    if (c == "6a") return "G Minor";
     if (c == "4b") return "Ab Major";
-    if (c == "1a") return "F Minor";
+    if (c == "1a") return "G# Minor";
     if (c == "11b") return "A Major";
-    if (c == "8a") return "F# Minor";
+    if (c == "8a") return "A Minor";
     if (c == "6b") return "Bb Major";
-    if (c == "3a") return "G Minor";
+    if (c == "3a") return "Bb Minor";
     if (c == "1b") return "B Major";
-    if (c == "10a") return "G# Minor";
+    if (c == "10a") return "B Minor";
     return "";
 }
 
 std::string QueryParser::keyToCamelot(std::string_view keyRoot, std::string_view keyMode) {
+    // Standard Camelot wheel (Mixed In Key) — mirrors ai::KeyDetector::toCamelot.
     std::string root = trim(keyRoot);
     std::string mode = toLower(trim(keyMode));
     bool isMinor = (mode == "minor" || mode == "m");
 
-    if (root == "C" || root == "B#") return isMinor ? "2A" : "8B";
-    if (root == "C#" || root == "Db") return isMinor ? "9A" : "3B";
-    if (root == "D") return isMinor ? "4A" : "10B";
-    if (root == "D#" || root == "Eb") return isMinor ? "11A" : "5B";
-    if (root == "E") return isMinor ? "6A" : "12B";
-    if (root == "F") return isMinor ? "1A" : "7B";
-    if (root == "F#" || root == "Gb") return isMinor ? "8A" : "2B";
-    if (root == "G") return isMinor ? "3A" : "9B";
-    if (root == "G#" || root == "Ab") return isMinor ? "10A" : "4B";
-    if (root == "A") return isMinor ? "5A" : "11B";
-    if (root == "A#" || root == "Bb") return isMinor ? "12A" : "6B";
-    if (root == "B" || root == "Cb") return isMinor ? "7A" : "1B";
+    if (root == "C" || root == "B#") return isMinor ? "5A" : "8B";
+    if (root == "C#" || root == "Db") return isMinor ? "12A" : "3B";
+    if (root == "D") return isMinor ? "7A" : "10B";
+    if (root == "D#" || root == "Eb") return isMinor ? "2A" : "5B";
+    if (root == "E") return isMinor ? "9A" : "12B";
+    if (root == "F") return isMinor ? "4A" : "7B";
+    if (root == "F#" || root == "Gb") return isMinor ? "11A" : "2B";
+    if (root == "G") return isMinor ? "6A" : "9B";
+    if (root == "G#" || root == "Ab") return isMinor ? "1A" : "4B";
+    if (root == "A") return isMinor ? "8A" : "11B";
+    if (root == "A#" || root == "Bb") return isMinor ? "3A" : "6B";
+    if (root == "B" || root == "Cb") return isMinor ? "10A" : "1B";
     return "";
 }
 

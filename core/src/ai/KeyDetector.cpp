@@ -153,19 +153,21 @@ std::string KeyDetector::toCamelot(const std::string& key, const std::string& mo
 std::string KeyDetector::toOpenKey(const std::string& key, const std::string& mode) {
     const bool isMajor = (mode == "Major");
 
-    // Standard OpenKey notation (1d-12d for major, 1m-12m for minor)
-    if (key == "C" || key == "B#") return isMajor ? "1d" : "1m";
-    if (key == "C#" || key == "Db") return isMajor ? "8d" : "8m";
-    if (key == "D") return isMajor ? "3d" : "3m";
-    if (key == "D#" || key == "Eb") return isMajor ? "10d" : "10m";
-    if (key == "E") return isMajor ? "5d" : "5m";
-    if (key == "F") return isMajor ? "12d" : "12m";
-    if (key == "F#" || key == "Gb") return isMajor ? "7d" : "7m";
-    if (key == "G") return isMajor ? "2d" : "2m";
-    if (key == "G#" || key == "Ab") return isMajor ? "9d" : "9m";
-    if (key == "A") return isMajor ? "4d" : "4m";
-    if (key == "A#" || key == "Bb") return isMajor ? "11d" : "11m";
-    if (key == "B" || key == "Cb") return isMajor ? "6d" : "6m";
+    // Standard OpenKey notation (1d-12d major, 1m-12m minor). Relative
+    // major/minor pairs share the same number (1d = C major, 1m = A minor),
+    // mirroring the Camelot wheel. This table matches ModelMocks/DbTestFixtures.
+    if (key == "C" || key == "B#") return isMajor ? "1d" : "10m";
+    if (key == "C#" || key == "Db") return isMajor ? "8d" : "5m";
+    if (key == "D") return isMajor ? "3d" : "12m";
+    if (key == "D#" || key == "Eb") return isMajor ? "10d" : "7m";
+    if (key == "E") return isMajor ? "5d" : "2m";
+    if (key == "F") return isMajor ? "12d" : "9m";
+    if (key == "F#" || key == "Gb") return isMajor ? "7d" : "4m";
+    if (key == "G") return isMajor ? "2d" : "11m";
+    if (key == "G#" || key == "Ab") return isMajor ? "9d" : "6m";
+    if (key == "A") return isMajor ? "4d" : "1m";
+    if (key == "A#" || key == "Bb") return isMajor ? "11d" : "8m";
+    if (key == "B" || key == "Cb") return isMajor ? "6d" : "3m";
 
     return isMajor ? "1d" : "1m";
 }

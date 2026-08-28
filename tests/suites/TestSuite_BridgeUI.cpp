@@ -419,10 +419,11 @@ TEST(BridgeUI, F18_PlayheadPhaseSync_ZeroBpmSampleFallback) {
 }
 
 // ============================================================================
-// Feature 16: Auto-Render Temp on Drag RPC Routing
+// Feature 16: Mechanism A drag RPC routing (SPEC.md: drag the ORIGINAL file
+// with zero lag; REAPER applies native take stretch via the queued playrate).
 // ============================================================================
 
-TEST(BridgeUI, F16_AutoRenderTemp_BeginDragWithSync) {
+TEST(BridgeUI, F16_MechanismA_BeginDragWithSync) {
     BridgeTestHarness harness(140.0);
     const std::string tmpDir = platform::joinPath(platform::tempDir(), "RealsLab", "tests");
     platform::ensureDir(tmpDir);
@@ -440,14 +441,17 @@ TEST(BridgeUI, F16_AutoRenderTemp_BeginDragWithSync) {
     EXPECT_TRUE(res.value("ok", false));
     auto dragged = harness.host().getDraggedPaths();
     EXPECT_EQ(dragged.size(), 1u);
-    EXPECT_NE(dragged[0].find("drag_export"), std::string::npos); // Mechanism C exports temp file
-    EXPECT_NE(harness.host().lastDraggedPath().find("drag_export"), std::string::npos);
+    // Mechanism A: the ORIGINAL file must be dragged — no temp render, zero lag.
+    EXPECT_EQ(dragged[0], samplePath);
+    EXPECT_EQ(harness.host().lastDraggedPath(), samplePath);
     EXPECT_NEAR(harness.host().lastQueuedPlayrate(), 140.0 / 120.0, 1e-4);
+    // The sync playrate is queued for the original path; REAPER applies the
+    // native take stretch (D_PLAYRATE/B_PPITCH/D_PITCH) when the drop lands.
     EXPECT_EQ(harness.host().queuedSyncPaths().size(), 1u);
-    EXPECT_NE(harness.host().queuedSyncPaths()[0].find("drag_export"), std::string::npos);
+    EXPECT_EQ(harness.host().queuedSyncPaths()[0], samplePath);
 }
 
-TEST(BridgeUI, F16_AutoRenderTemp_BeginDragWithPitchShift) {
+TEST(BridgeUI, F16_MechanismA_BeginDragWithPitchShift) {
     BridgeTestHarness harness(120.0);
     const std::string tmpDir = platform::joinPath(platform::tempDir(), "RealsLab", "tests");
     platform::ensureDir(tmpDir);
@@ -465,14 +469,15 @@ TEST(BridgeUI, F16_AutoRenderTemp_BeginDragWithPitchShift) {
     EXPECT_TRUE(res.value("ok", false));
     auto dragged = harness.host().getDraggedPaths();
     EXPECT_EQ(dragged.size(), 1u);
-    EXPECT_NE(dragged[0].find("drag_export"), std::string::npos); // Mechanism C exports temp file
-    EXPECT_NE(harness.host().lastDraggedPath().find("drag_export"), std::string::npos);
+    // Mechanism A: original file dragged, pitch queued for native REAPER transpose.
+    EXPECT_EQ(dragged[0], samplePath);
+    EXPECT_EQ(harness.host().lastDraggedPath(), samplePath);
     EXPECT_EQ(harness.host().queuedSyncPaths().size(), 1u);
-    EXPECT_NE(harness.host().queuedSyncPaths()[0].find("drag_export"), std::string::npos);
+    EXPECT_EQ(harness.host().queuedSyncPaths()[0], samplePath);
     EXPECT_NEAR(harness.host().lastPitch(), 5.0, 1e-4);
 }
 
-TEST(BridgeUI, F16_AutoRenderTemp_BypassWhenUnmodified) {
+TEST(BridgeUI, F16_MechanismA_BypassWhenUnmodified) {
     BridgeTestHarness harness(120.0);
     const std::string tmpDir = platform::joinPath(platform::tempDir(), "RealsLab", "tests");
     platform::ensureDir(tmpDir);
@@ -494,7 +499,7 @@ TEST(BridgeUI, F16_AutoRenderTemp_BypassWhenUnmodified) {
     EXPECT_EQ(dragged[0], samplePath);
 }
 
-TEST(BridgeUI, F16_AutoRenderTemp_DirectoryCreationAndSanitization) {
+TEST(BridgeUI, F16_DragExporter_TempDirectorySanitization) {
     EXPECT_NO_THROW(reals::audio::DragExporter::cleanupTempFiles(86400));
 }
 

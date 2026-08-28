@@ -638,6 +638,9 @@ bool Engine::isPlayingPath(const std::string& path) const {
 void Engine::setVolume(const float linear) {
     if (!m_impl)
         return;
+    // Lock for consistency with stop()/playFile() — setVolume can race with
+    // a playback switch from another thread and touch an uninitialized sound.
+    const std::lock_guard lock(m_impl->stateMutex);
     m_impl->volume = std::clamp(linear, 0.0f, 1.0f);
     if (m_impl->soundLoaded)
         ma_sound_set_volume(&m_impl->sound, m_impl->volume);
@@ -650,6 +653,9 @@ float Engine::volume() const {
 void Engine::setLoop(const bool loop) {
     if (!m_impl)
         return;
+    // Same lock order as playFile(): stateMutex -> dspMutex. Locking
+    // stateMutex first prevents m_impl->loop from racing stop()/playFile().
+    const std::lock_guard lock(m_impl->stateMutex);
     m_impl->loop = loop;
     if (m_impl->soundLoaded) {
         std::lock_guard dspLock(m_impl->dspSource.dspMutex);

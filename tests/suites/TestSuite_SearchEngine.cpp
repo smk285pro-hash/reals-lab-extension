@@ -146,7 +146,9 @@ TEST(SearchEngine, RealQueryParser_FullCoverage) {
     EXPECT_NEAR(p.maxBpm, 130.0f, 0.01f);
     EXPECT_EQ(p.keyRoot, "F#");
     EXPECT_EQ(p.keyMode, "minor");
-    EXPECT_EQ(p.camelot, "8A");
+    // Standard Camelot wheel: F# minor = 11A (must match KeyDetector::toCamelot
+    // and the values stored in the samples table).
+    EXPECT_EQ(p.camelot, "11A");
     EXPECT_TRUE(p.onlyFavorites);
     EXPECT_EQ(p.freeText, "punchy 808");
 

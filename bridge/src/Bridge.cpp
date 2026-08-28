@@ -4,7 +4,6 @@
 #include "reals/ai/KeyDetector.h"
 #include "reals/ai/MoodClassifier.h"
 #include "reals/ai/TempoDetector.h"
-#include "reals/audio/DragExporter.h"
 #include "reals/audio/Engine.h"
 #include "reals/browser/BrowserModel.h"
 #include "reals/config/Config.h"
@@ -31,8 +30,17 @@
 #include <regex>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <miniaudio.h>
 
 namespace fs = std::filesystem;
 
@@ -85,8 +93,16 @@ struct Bridge::Impl {
     // Workers are tracked so they are JOINED on destruction instead of
     // detaching: a detached thread still calling WinHTTP during DLL unload
     // can crash the host even when its captures stay alive.
+    // Each worker carries a completion flag so finished threads can be
+    // joined and removed during runtime — a finished-but-unjoined thread is
+    // still "joinable", so without the flag the vector (and its OS thread
+    // handles) would grow unbounded over a long session.
+    struct TrackedWorker {
+        std::thread th;
+        std::shared_ptr<std::atomic<bool>> done = std::make_shared<std::atomic<bool>>(false);
+    };
     std::mutex jobMutex;
-    std::vector<std::thread> workers;
+    std::vector<TrackedWorker> workers;
 
     ~Impl() {
         if (scanner) {
@@ -101,15 +117,34 @@ struct Bridge::Impl {
         if (state)
             state->abortJobs.store(true);
         const std::lock_guard lock(jobMutex);
-        for (auto& t : workers)
-            if (t.joinable())
-                t.join();
+        for (auto& w : workers)
+            if (w.th.joinable())
+                w.th.join();
     }
 
     void purgeFinishedWorkers() {
-        workers.erase(std::remove_if(workers.begin(), workers.end(),
-                                     [](std::thread& t) { return !t.joinable(); }),
-                      workers.end());
+        for (auto it = workers.begin(); it != workers.end();) {
+            if (it->done->load() && it->th.joinable()) {
+                it->th.join(); // finished -> join returns immediately
+                it = workers.erase(it);
+            } else if (!it->th.joinable()) {
+                it = workers.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    // Spawn a tracked worker that flips its done flag on exit.
+    template <typename F>
+    void spawnWorker(F&& fn) {
+        TrackedWorker tw;
+        const auto done = tw.done;
+        tw.th = std::thread([done, fn = std::forward<F>(fn)]() {
+            fn();
+            done->store(true);
+        });
+        workers.push_back(std::move(tw));
     }
 
     std::mutex cacheMutex;
@@ -217,7 +252,7 @@ struct Bridge::Impl {
         auto st = state;
         const std::lock_guard lock(jobMutex);
         purgeFinishedWorkers();
-        workers.emplace_back([this, st, path]() {
+        spawnWorker([this, st, path]() {
             if (!st || st->abortJobs)
                 return;
             const auto env = audio::Engine::computeEnvelope(path);
@@ -239,13 +274,9 @@ struct Bridge::Impl {
     void runLabJob(const std::string& job, const std::string& path, const int modeOrStrength) {
         auto st = state;
         const std::lock_guard lock(jobMutex);
-        // Purge finished threads so the vector cannot grow unbounded.
-        workers.erase(std::remove_if(workers.begin(), workers.end(),
-                                     [](std::thread& t) {
-                                         return !t.joinable();
-                                     }),
-                      workers.end());
-        workers.emplace_back([st, job, path, modeOrStrength]() {
+        // Join & purge finished workers so the vector cannot grow unbounded.
+        purgeFinishedWorkers();
+        spawnWorker([st, job, path, modeOrStrength]() {
             if (!st)
                 return;
             try {
@@ -575,7 +606,10 @@ std::string Bridge::handle(const std::string& requestJson) {
             res["ok"] = true;
             res["data"] = d;
         } else if (cmd == "config.set") {
-            cfg.set(args.value("key", ""), args["value"]);
+            // Guard against a missing "value" key: const operator[] on a
+            // nlohmann object with an absent key is undefined behaviour.
+            cfg.set(args.value("key", ""),
+                    args.contains("value") ? args["value"] : json(nullptr));
             res["ok"] = true;
         } else if (cmd == "fs.roots") {
             json arr = json::array();
@@ -1064,16 +1098,44 @@ std::string Bridge::handle(const std::string& requestJson) {
                 res["ok"] = false;
                 res["error"] = "file not found";
             } else {
-                const auto info = audio::Engine::probeFile(p);
-                int sr = info.sampleRate > 0 ? info.sampleRate : 44100;
-                size_t numFrames = static_cast<size_t>(std::max(1.0, info.durationSeconds) * sr);
-                if (numFrames > 44100 * 30) numFrames = 44100 * 30; // cap to 30s
-                std::vector<float> pcm(numFrames, 0.0f);
-                for (size_t i = 0; i < numFrames; ++i) {
-                    float phase = static_cast<float>(i) / static_cast<float>(sr);
-                    pcm[i] = std::sin(phase * 440.0f * 6.2831853f) * 0.5f;
+                // Decode the REAL audio (mono, capped at 30 s). The previous
+                // implementation synthesized a 440 Hz sine here, so every
+                // tempo/key/genre/mood/embedding result was fabricated.
+                std::vector<float> pcm;
+                int sr = 44100;
+                {
+                    constexpr ma_uint64 kMaxFrames = 44100ull * 30ull;
+                    ma_decoder_config cfg = ma_decoder_config_init(ma_format_f32, 1, 0);
+                    ma_decoder dec{};
+                    bool decOk = false;
+#ifdef _WIN32
+                    const std::wstring wpath = platform::u8path(p).wstring();
+                    decOk = ma_decoder_init_file_w(wpath.c_str(), &cfg, &dec) == MA_SUCCESS;
+#else
+                    decOk = ma_decoder_init_file(p.c_str(), &cfg, &dec) == MA_SUCCESS;
+#endif
+                    if (decOk) {
+                        sr = dec.outputSampleRate > 0 ? dec.outputSampleRate : 44100;
+                        std::vector<float> chunk(4096);
+                        ma_uint64 totalRead = 0;
+                        while (totalRead < kMaxFrames) {
+                            const ma_uint64 framesToRead =
+                                std::min<ma_uint64>(chunk.size(), kMaxFrames - totalRead);
+                            ma_uint64 framesRead = 0;
+                            if (ma_decoder_read_pcm_frames(&dec, chunk.data(), framesToRead, &framesRead) != MA_SUCCESS ||
+                                framesRead == 0)
+                                break;
+                            pcm.insert(pcm.end(), chunk.begin(), chunk.begin() + static_cast<ptrdiff_t>(framesRead));
+                            totalRead += framesRead;
+                        }
+                        ma_decoder_uninit(&dec);
+                    }
                 }
 
+                if (pcm.size() < 4096) {
+                    res["ok"] = false;
+                    res["error"] = "cannot decode audio";
+                } else {
                 auto tempoRes = ai::TempoDetector::detect(pcm.data(), pcm.size(), sr);
                 auto keyRes = ai::KeyDetector::detect(pcm.data(), pcm.size(), sr);
                 auto genreRes = ai::GenreClassifier::classify(pcm.data(), pcm.size(), sr, 5);
@@ -1126,6 +1188,7 @@ std::string Bridge::handle(const std::string& requestJson) {
 
                 res["ok"] = true;
                 res["data"] = {{"analysis", analysis}};
+                }
             }
         } else if (cmd == "ai.searchSemantic") {
             const std::string query = args.value("query", "");
@@ -1464,7 +1527,13 @@ std::string Bridge::handle(const std::string& requestJson) {
                 }
                 double pitchShift = args.value("pitchSemitones", static_cast<double>(eng.getPitchSemitones()));
 
-                std::string dragPath = p;
+                // Mechanism A (SPEC.md / PROJECT.md R2.1): drag the ORIGINAL
+                // file with zero lag and let REAPER apply the native take
+                // stretch (D_PLAYRATE / B_PPITCH / D_PITCH / D_LENGTH) via the
+                // queued sync playrate. Do NOT pre-render a temp WAV here —
+                // rendering synchronously on the WebView message thread adds
+                // drag latency and re-introduces the double-DSP problem the
+                // DragExporter safeguard (Mechanism B) exists to clean up.
                 if (syncOn || std::abs(pitchShift) > 0.001) {
                     float sampleBpm = args.value("sampleBpm", 0.0f);
                     if (sampleBpm <= 0.0f) {
@@ -1474,24 +1543,14 @@ std::string Bridge::handle(const std::string& requestJson) {
                     double playrate = 1.0;
                     if (sampleBpm > 30.0f && projectBpm > 30.0) {
                         playrate = projectBpm / sampleBpm;
-                        playrate = std::clamp(playrate, 0.25, 4.0);
                     } else if (std::abs(syncRatio - 1.0f) > 0.001f) {
-                        playrate = std::clamp(static_cast<double>(syncRatio), 0.25, 4.0);
+                        playrate = static_cast<double>(syncRatio);
                     }
-                    
-                    audio::DragExportOptions opts;
-                    opts.timeRatio = static_cast<float>(playrate);
-                    opts.pitchSemitones = static_cast<float>(pitchShift);
-                    auto exportRes = audio::DragExporter::exportTempWav(p, opts);
-                    
-                    if (exportRes.success) {
-                        dragPath = exportRes.renderedPath;
-                        m_actions->queueSyncPlayrate(dragPath, playrate, pitchShift, p);
-                    } else {
-                        m_actions->queueSyncPlayrate(p, playrate, pitchShift);
-                    }
+                    playrate = std::clamp(playrate, 0.25, 4.0);
+
+                    m_actions->queueSyncPlayrate(p, playrate, pitchShift);
                 }
-                m_actions->beginDrag(dragPath);
+                m_actions->beginDrag(p);
             }
             res["ok"] = true;
         } else if (cmd == "window.hide" || cmd == "window.close") {

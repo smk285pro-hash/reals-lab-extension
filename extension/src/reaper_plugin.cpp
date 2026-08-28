@@ -8,6 +8,10 @@
 #include <ole2.h>
 #include <shellapi.h>
 
+#include <algorithm>
+#include <cctype>
+#include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <memory>
 #include <mutex>
@@ -146,7 +150,15 @@ void processPendingSyncPlayrates() {
             if (!it->originalPath.empty() && PCM_Source_CreateFromFileEx && GetSetMediaItemTakeInfo) {
                 PCM_source* newSrc = PCM_Source_CreateFromFileEx(it->originalPath.c_str(), false);
                 if (newSrc) {
+                    // Fetch the old (pre-baked) source and destroy it after the
+                    // swap — replacing P_SOURCE without deleting the previous
+                    // source leaks a PCM_source on every drag.
+                    PCM_source* oldSrc = static_cast<PCM_source*>(
+                        GetSetMediaItemTakeInfo(take, "P_SOURCE", nullptr));
                     GetSetMediaItemTakeInfo(take, "P_SOURCE", newSrc);
+                    if (oldSrc && oldSrc != newSrc) {
+                        oldSrc->Delete();
+                    }
                     SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", it->playrate);
                     SetMediaItemTakeInfo_Value(take, "B_PPITCH", 1);
                     SetMediaItemTakeInfo_Value(take, "D_PITCH", it->pitchSemitones);

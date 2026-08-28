@@ -9,6 +9,7 @@
 //  - downloadToFile streams to disk instead of buffering up to 2 GB in RAM.
 #include "reals/net/HttpClient.h"
 
+#include "reals/platform/Path.h"
 #include "reals/util/Log.h"
 
 #ifndef NOMINMAX
@@ -275,10 +276,14 @@ long HttpClient::downloadToFile(const std::string& url, const std::string& destP
                                 WINHTTP_NO_HEADER_INDEX);
             if (statusDw >= 200 && statusDw < 300) {
                 std::error_code ec;
-                const fs::path parent = fs::path(destPath).parent_path();
+                // UTF-8 safe path handling: fs::path(std::string) would go
+                // through the ANSI code page on Windows and break Vietnamese
+                // destination folders.
+                const fs::path dest = platform::u8path(destPath);
+                const fs::path parent = dest.parent_path();
                 if (!parent.empty())
                     fs::create_directories(parent, ec);
-                std::ofstream out(fs::path(destPath), std::ios::binary);
+                std::ofstream out(dest, std::ios::binary);
                 if (out) {
                     Response res;
                     readResponse(hRequest, res, onProgress, &out);

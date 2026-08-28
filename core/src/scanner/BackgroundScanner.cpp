@@ -550,7 +550,10 @@ void BackgroundScanner::coordinatorThreadFunc(std::vector<std::string> roots, Sc
 
                 try {
                     const auto& entry = *iter;
-                    const auto filename = entry.path().filename().string();
+                    // UTF-8 safe filename: path().string() uses the ANSI code
+                    // page on Windows and throws for Vietnamese/Japanese/Emoji
+                    // names, silently skipping those files from the index.
+                    const auto filename = platform::pathToUtf8(entry.path().filename());
 
                     if (entry.is_directory(ec)) {
                         if (isIgnoredDir(filename)) {
@@ -631,15 +634,30 @@ void BackgroundScanner::workerThreadFunc(ScanOptions options) {
         try {
             checkPause();
 
-            // Dynamic concurrency gate
+            // Dynamic concurrency gate. The slot is claimed ATOMICALLY with
+            // the predicate check — otherwise every worker passes the check
+            // before the first increment lands and the CpuMode cap is violated
+            // by the entire first wave of workers.
             {
                 std::unique_lock lock(m_activeWorkersMutex);
                 m_activeWorkersCv.wait(lock, [this]() {
                     return m_currentActiveWorkers.load() < m_maxActiveWorkers.load() || m_isCancelled.load();
                 });
+                if (m_isCancelled.load())
+                    break;
+                m_currentActiveWorkers++;
             }
 
-            if (m_isCancelled.load()) break;
+            struct ActiveWorkerScopeGuard {
+                std::atomic<size_t>& counter;
+                std::condition_variable& cv;
+                std::mutex& mtx;
+                ~ActiveWorkerScopeGuard() {
+                    counter--;
+                    std::lock_guard lock(mtx);
+                    cv.notify_one();
+                }
+            } activeGuard{m_currentActiveWorkers, m_activeWorkersCv, m_activeWorkersMutex};
 
             std::string filePath;
             {
@@ -662,19 +680,6 @@ void BackgroundScanner::workerThreadFunc(ScanOptions options) {
 
             if (filePath.empty())
                 continue;
-
-            m_currentActiveWorkers++;
-
-            struct ActiveWorkerScopeGuard {
-                std::atomic<size_t>& counter;
-                std::condition_variable& cv;
-                std::mutex& mtx;
-                ~ActiveWorkerScopeGuard() {
-                    counter--;
-                    std::lock_guard lock(mtx);
-                    cv.notify_one();
-                }
-            } activeGuard{m_currentActiveWorkers, m_activeWorkersCv, m_activeWorkersMutex};
 
             std::error_code ec;
             const auto u8p = platform::u8path(filePath);
@@ -702,10 +707,15 @@ void BackgroundScanner::workerThreadFunc(ScanOptions options) {
             }
 
             if (isSkipped) {
-                const std::lock_guard lock(m_progressMutex);
-                m_progress.processedFiles++;
-                m_progress.skippedCount++;
-                m_progress.currentFile = filename;
+                {
+                    const std::lock_guard lock(m_progressMutex);
+                    m_progress.processedFiles++;
+                    m_progress.skippedCount++;
+                    m_progress.currentFile = filename;
+                }
+                // NOTE: emitProgress() locks m_progressMutex itself — it must
+                // NEVER be called while holding the lock above (self-deadlock
+                // on a non-recursive std::mutex hangs the whole scan).
                 emitProgress();
                 continue;
             }

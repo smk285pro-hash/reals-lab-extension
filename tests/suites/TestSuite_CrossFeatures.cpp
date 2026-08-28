@@ -215,7 +215,7 @@ TEST(CrossFeatures, CrossFeatures_PlayheadPhaseSync_TransportRunning_SoundTouchS
     EXPECT_NEAR(playRes["data"].value("loopBeats", 0.0), 16.0, 0.1);
 }
 
-TEST(CrossFeatures, CrossFeatures_AutoRenderOnDrag_DawGridMatch) {
+TEST(CrossFeatures, CrossFeatures_MechanismADrag_DawGridMatch) {
     BridgeTestHarness harness(140.0);
     const std::string tmpDir = platform::joinPath(platform::tempDir(), "RealsLab", "tests");
     platform::ensureDir(tmpDir);
@@ -235,13 +235,14 @@ TEST(CrossFeatures, CrossFeatures_AutoRenderOnDrag_DawGridMatch) {
     EXPECT_TRUE(dragRes.value("ok", false));
     auto draggedPaths = harness.host().getDraggedPaths();
     EXPECT_EQ(draggedPaths.size(), 1u);
-    EXPECT_NE(draggedPaths[0].find("drag_export"), std::string::npos);
+    // Mechanism A (SPEC.md): the ORIGINAL file is dragged with zero lag.
+    EXPECT_EQ(draggedPaths[0], samplePath);
 
     // Verify take playrate was queued with 60s window (140/120 = 1.16667)
     EXPECT_NEAR(harness.host().lastPlayrate(), 140.0 / 120.0, 0.01);
 }
 
-TEST(CrossFeatures, CrossFeatures_AutoRenderOnDrag_CombinedSyncAndPitchShift) {
+TEST(CrossFeatures, CrossFeatures_MechanismADrag_CombinedSyncAndPitchShift) {
     BridgeTestHarness harness(140.0);
     const std::string tmpDir = platform::joinPath(platform::tempDir(), "RealsLab", "tests");
     platform::ensureDir(tmpDir);
@@ -262,7 +263,9 @@ TEST(CrossFeatures, CrossFeatures_AutoRenderOnDrag_CombinedSyncAndPitchShift) {
     EXPECT_TRUE(dragRes.value("ok", false));
     auto dragged = harness.host().lastDraggedPath();
     EXPECT_FALSE(dragged.empty());
-    EXPECT_NE(dragged.find("drag_export"), std::string::npos);
+    // Mechanism A: original file dragged; stretch + transpose are queued for
+    // REAPER's native take properties.
+    EXPECT_EQ(dragged, samplePath);
     EXPECT_NEAR(harness.host().lastPlayrate(), 140.0 / 120.0, 0.01);
     EXPECT_NEAR(harness.host().lastPitch(), 5.0, 1e-4);
 }
