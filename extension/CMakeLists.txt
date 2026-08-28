@@ -25,7 +25,7 @@ endif()
 if (WIN32)
     add_custom_command(TARGET reaper_realslab POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "$ENV{APPDATA}/REAPER/UserPlugins"
-        COMMAND powershell -NoProfile -ExecutionPolicy Bypass -Command "\"if (Test-Path '$ENV{APPDATA}/REAPER/UserPlugins/$<TARGET_FILE_NAME:reaper_realslab>') { Move-Item -Force '$ENV{APPDATA}/REAPER/UserPlugins/$<TARGET_FILE_NAME:reaper_realslab>' '$ENV{APPDATA}/REAPER/UserPlugins/$<TARGET_FILE_NAME:reaper_realslab>.old' -ErrorAction SilentlyContinue }; Copy-Item -Force '$<TARGET_FILE:reaper_realslab>' '$ENV{APPDATA}/REAPER/UserPlugins/$<TARGET_FILE_NAME:reaper_realslab>'\""
+        COMMAND powershell -NoProfile -ExecutionPolicy Bypass -Command "\"Get-ChildItem '$ENV{APPDATA}/REAPER/UserPlugins/$<TARGET_FILE_NAME:reaper_realslab>*.old' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue; if (Test-Path '$ENV{APPDATA}/REAPER/UserPlugins/$<TARGET_FILE_NAME:reaper_realslab>') { Move-Item -Force '$ENV{APPDATA}/REAPER/UserPlugins/$<TARGET_FILE_NAME:reaper_realslab>' ('$ENV{APPDATA}/REAPER/UserPlugins/$<TARGET_FILE_NAME:reaper_realslab>.' + (Get-Random) + '.old') -ErrorAction SilentlyContinue }; Copy-Item -Force '$<TARGET_FILE:reaper_realslab>' '$ENV{APPDATA}/REAPER/UserPlugins/$<TARGET_FILE_NAME:reaper_realslab>'\""
         COMMENT "Deploying reaper_realslab.dll to %APPDATA%/REAPER/UserPlugins"
     )
 endif()

@@ -157,7 +157,7 @@ void processPendingSyncPlayrates() {
                         GetSetMediaItemTakeInfo(take, "P_SOURCE", nullptr));
                     GetSetMediaItemTakeInfo(take, "P_SOURCE", newSrc);
                     if (oldSrc && oldSrc != newSrc) {
-                        oldSrc->Delete();
+                        delete oldSrc;
                     }
                     SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", it->playrate);
                     SetMediaItemTakeInfo_Value(take, "B_PPITCH", 1);

@@ -1,86 +1,77 @@
-# BRIEFING — 2026-08-28T22:41:00+07:00
+# BRIEFING — 2026-08-28T18:56:50Z
 
 ## Mission
-Orchestrate the design, implementation, and verification of Playhead Phase Synchronization (R1/A1) and DAW Drag & Drop Alignment without Double-DSP (R2/A2) with 183+ automated tests, zero-warning C++20 build, and REAPER plugin deployment for Reals Lab.
+Comprehensive multi-agent audit and code inspection of all files across the entire codebase at c:/Users/smk28/Desktop/reals lab extension to produce CODEBASE_AUDIT_REPORT.md.
 
 ## 🔒 My Identity
 - Archetype: orchestrator
 - Roles: orchestrator, user_liaison, human_reporter, successor
-- Working directory: c:\Users\smk28\Desktop\reals lab extension\.agents\orchestrator_1
+- Working directory: c:/Users/smk28/Desktop/reals lab extension/.agents/orchestrator_1
 - Original parent: parent
-- Original parent conversation ID: 85b9e298-f26b-4f87-b0f4-4872c94d081d
+- Original parent conversation ID: 09c0011f-644e-44cd-a442-c4b85b5e9485
 
 ## 🔒 My Workflow
-- **Pattern**: Project Pattern
-- **Scope document**: c:\Users\smk28\Desktop\reals lab extension\PROJECT.md
-1. **Decompose**: Survey codebase via 3 Explorers, create/update PROJECT.md with architecture, feature inventory, milestones, and interface contracts.
+- **Pattern**: Project Orchestration (Audit & Code Inspection)
+- **Scope document**: c:/Users/smk28/Desktop/reals lab extension/.agents/ORIGINAL_REQUEST.md
+1. **Decompose**:
+   - Track 1 (R1): Architecture & Layer Boundary Audit (core/, ui/, app/, extension/, bridge/, shell/, i18n, file lengths)
+   - Track 2 (R2): Code Quality, Memory & Concurrency (C++20, smart pointers, audio thread realtime safety, error handling)
+   - Track 3 (R3): Build & Test Diagnostics (CMake config, test suite coverage and edge cases)
+   - Track 4 (Adversarial): Security, Web/IPC validation & API contracts
+   - Track 5 (Synthesis): Generate CODEBASE_AUDIT_REPORT.md and verify
 2. **Dispatch & Execute**:
-   - Implementation Track: Worker (`worker_impl_1`) executing M1, M2, M3, M4.
-   - Review & Challenge: 2 Reviewers, 2 Challengers, 1 Forensic Auditor.
-   - Direct iteration loop: Explorer -> Worker -> Reviewer -> Challenger -> Auditor -> Gate.
-3. **On failure**: Retry -> Replace -> Skip -> Redistribute -> Redesign.
-4. **Succession**: At 16 spawns, write handoff.md, spawn successor.
+   - Dispatched 4 parallel subagents (Explorers R1, R2, R3 + Adversarial Reviewer).
+   - Await completion reports.
+   - Aggregate findings and dispatch Synthesis Worker to write `CODEBASE_AUDIT_REPORT.md`.
+   - Dispatch Auditor / Reviewer to verify audit report completeness.
+3. **On failure**:
+   - Retry: nudge stuck agent or re-send task
+   - Replace: spawn fresh agent
+4. **Succession**:
+   - Trigger at 16 spawns if needed.
 - **Work items**:
-  1. Survey codebase (3 Explorers) [done]
-  2. Decomposition & Project Index (PROJECT.md) [done]
-  3. Milestone Implementation & 183+ Test Expansion (Worker) [done]
-  4. Review, Challenge, Audit & Gate Evaluation [done - Gate PASS]
-  5. Final Sign-off, Deployment & Human Report [done]
-- **Current phase**: 4 (Gate Passed & Complete)
-- **Current focus**: Final Human Report to Parent
+  1. Survey and file enumeration [done]
+  2. Subagent dispatch for Tracks 1, 2, 3, 4 [in-progress]
+  3. Aggregate findings and dispatch Synthesis Worker for CODEBASE_AUDIT_REPORT.md [pending]
+  4. Final Review and Report to Sentinel [pending]
+- **Current phase**: 2
+- **Current focus**: Monitoring 4 dispatched audit agents
 
 ## 🔒 Key Constraints
-- DISPATCH-ONLY orchestrator: delegate ALL work to subagents.
-- NEVER write source code or execute build/test commands directly.
-- GitNexus usage mandatory for subagents.
-- Maintain architecture boundaries: core/ (no GUI/DAW), ui/ (no GLFW/Reaper), extension/app/ shells.
-- Zero-warning C++20 build and 100% test pass (183+ tests).
-- Communicate with user/liaison in Vietnamese (friendly tone).
-- Forensic Auditor is non-negotiable hard veto.
+- NEVER write, modify, or create source code files directly.
+- NEVER run build/test commands yourself — require workers to do so.
+- Inspect codebase directly using file and search tools WITHOUT using GitNexus tools.
+- Maintain BRIEFING.md and progress.md.
+- Synthesize all findings into CODEBASE_AUDIT_REPORT.md at project root.
 
 ## Current Parent
-- Conversation ID: 85b9e298-f26b-4f87-b0f4-4872c94d081d
-- Updated: 2026-08-28T23:08:00+07:00
+- Conversation ID: 09c0011f-644e-44cd-a442-c4b85b5e9485
+- Updated: 2026-08-28T18:55:41Z
 
 ## Key Decisions Made
-- Mechanism A: `browser.beginDrag` passes original sample path `p` to `m_actions->beginDrag(p)` and `m_actions->queueSyncPlayrate(p, playrate, pitchShift)`. Zero lag, no temp file render, REAPER stretches cleanly.
-- Mechanism B: If `drag_xxx.wav` is imported, ensure `D_PLAYRATE = 1.0` and `D_PITCH = 0.0`.
-- Phase Sync: Normalized formula verified with `loopBeats` rounding, negative beat wrap-around, and synchronous SoundTouch buffer clear.
-- 183+ tests confirmed across 11 test suites passing 100% (191 tests executed in challenger runs).
-- Post-build DLL deployment into `%APPDATA%\REAPER\UserPlugins\reaper_realslab.dll` (7.5 MB).
+- Decomposed audit into 4 concurrent specialized tracks: Layer Isolation & Localization, Memory & Audio Realtime Safety, Build & Test Diagnostics, and Adversarial API/Security.
 
 ## Team Roster
 | Agent | Type | Work Item | Status | Conv ID |
 |-------|------|-----------|--------|---------|
-| explorer_survey_1 | teamwork_preview_explorer | Survey Drag & Drop Alignment & Double-DSP | completed | 7cbcda7d-c903-401d-a51d-9a9da936e32a |
-| explorer_survey_2 | teamwork_preview_explorer | Survey Playhead Phase Sync & Audio Engine | completed | fa078f38-673e-499d-86ac-7b866091a3b5 |
-| explorer_survey_3 | teamwork_preview_explorer | Survey Test Suites (183+) & DLL Deploy | completed | 1e13f721-1375-4e17-8546-030eb7ee92d4 |
-| worker_impl_1 | teamwork_preview_worker | Implement M1-M4, Fix Double-DSP, DLL Deploy | completed | 6c96e9bf-92f4-4034-bb1f-930e6b9e18d3 |
-| reviewer_1 | teamwork_preview_reviewer | Code & Architecture Review | completed (APPROVE) | 2bcd8105-b91f-49ba-9ed4-afed2aee9798 |
-| reviewer_2 | teamwork_preview_reviewer | Test & Deployment Review | completed (APPROVE) | 5617dba8-5ed5-4929-8c32-57d36208e654 |
-| challenger_1 | teamwork_preview_challenger | Phase Sync Math & Audio Seek Verification | completed (APPROVE) | 11b82aa7-131f-443c-ae5b-1a3dbb3a365b |
-| challenger_2 | teamwork_preview_challenger | Drag Alignment & Double-DSP Prevention Verification | completed (APPROVE) | 9f2dc8a6-f83f-4c14-9f47-24b133fe76ab |
-| auditor_1 | teamwork_preview_auditor | Forensic Integrity Audit | completed (CLEAN) | feb49860-d48a-451f-85fe-2673d6a85142 |
+| explorer_r1_1 | teamwork_preview_explorer | Track 1: Architecture & Layer Boundary Audit | in-progress | 18440252-4635-470d-826a-b73984966034 |
+| explorer_r2_1 | teamwork_preview_explorer | Track 2: Code Quality, Memory & Concurrency | in-progress | 94f25b04-832d-4804-a005-5ac440d17586 |
+| explorer_r3_1 | teamwork_preview_explorer | Track 3: Build & Test Diagnostics | in-progress | 617d1d1d-aca8-4c15-9f4e-066b20473175 |
+| reviewer_audit_1 | teamwork_preview_reviewer | Track 4: Adversarial API & Security Audit | in-progress | d7208f5c-4ed0-437f-b75c-ce9c0c1ce7f1 |
 
 ## Succession Status
 - Succession required: no
-- Spawn count: 9 / 16
-- Pending subagents: none
+- Spawn count: 4 / 16
+- Pending subagents: 18440252-4635-470d-826a-b73984966034, 94f25b04-832d-4804-a005-5ac440d17586, 617d1d1d-aca8-4c15-9f4e-066b20473175, d7208f5c-4ed0-437f-b75c-ce9c0c1ce7f1
 - Predecessor: none
 - Successor: not yet spawned
 
-
-
-
 ## Active Timers
-- Heartbeat cron: task-25
+- Heartbeat cron: 0e22fc1e-b14d-48e6-9fe5-a29519ebfe12/task-29
 - Safety timer: none
 
 ## Artifact Index
-- ORIGINAL_REQUEST.md — Authoritative user requirements
-- DISPATCH.md — Dispatch log
-- BRIEFING.md — Persistent working memory
-- progress.md — Liveness & task progress
-- PROJECT.md — Global architecture and milestone plan
-- GATE_STATUS.md — Gate evaluation record
-
+- c:/Users/smk28/Desktop/reals lab extension/.agents/ORIGINAL_REQUEST.md — Initial user requirements
+- c:/Users/smk28/Desktop/reals lab extension/.agents/orchestrator_1/DISPATCH.md — Task assignment
+- c:/Users/smk28/Desktop/reals lab extension/.agents/orchestrator_1/progress.md — Execution heartbeat
+- c:/Users/smk28/Desktop/reals lab extension/CODEBASE_AUDIT_REPORT.md — Final deliverable

@@ -95,7 +95,9 @@ endif()
 # ---- Bridge (JS <-> C++ dispatcher, shell-agnostic) ---------------------------
 add_library(reals_bridge STATIC
     bridge/src/Bridge.cpp)
-target_include_directories(reals_bridge PUBLIC ${CMAKE_CURRENT_LIST_DIR}/bridge/include)
+target_include_directories(reals_bridge
+    PUBLIC  ${CMAKE_CURRENT_LIST_DIR}/bridge/include
+    PRIVATE ${miniaudio_SOURCE_DIR})
 target_link_libraries(reals_bridge PUBLIC reals_core)
 
 # ---- Legacy ImGui UI (deprecated — kept for reference until parity) ----------

@@ -1105,14 +1105,14 @@ std::string Bridge::handle(const std::string& requestJson) {
                 int sr = 44100;
                 {
                     constexpr ma_uint64 kMaxFrames = 44100ull * 30ull;
-                    ma_decoder_config cfg = ma_decoder_config_init(ma_format_f32, 1, 0);
+                    ma_decoder_config decCfg = ma_decoder_config_init(ma_format_f32, 1, 0);
                     ma_decoder dec{};
                     bool decOk = false;
 #ifdef _WIN32
                     const std::wstring wpath = platform::u8path(p).wstring();
-                    decOk = ma_decoder_init_file_w(wpath.c_str(), &cfg, &dec) == MA_SUCCESS;
+                    decOk = ma_decoder_init_file_w(wpath.c_str(), &decCfg, &dec) == MA_SUCCESS;
 #else
-                    decOk = ma_decoder_init_file(p.c_str(), &cfg, &dec) == MA_SUCCESS;
+                    decOk = ma_decoder_init_file(p.c_str(), &decCfg, &dec) == MA_SUCCESS;
 #endif
                     if (decOk) {
                         sr = dec.outputSampleRate > 0 ? dec.outputSampleRate : 44100;
