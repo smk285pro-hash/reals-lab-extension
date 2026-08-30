@@ -401,22 +401,39 @@ static void ReaperOnAudioBuffer(bool isPost, int len, double srate, struct audio
     // Mix preview audio on top of master hardware output buffer!
     ReaSample* outL = reg->GetBuffer(true, 0);
     ReaSample* outR = reg->GetBuffer(true, 1);
-    if (outL && outR) {
-        thread_local std::vector<float> tempL;
-        thread_local std::vector<float> tempR;
-        if (tempL.size() < static_cast<size_t>(len)) tempL.resize(len, 0.0f);
-        if (tempR.size() < static_cast<size_t>(len)) tempR.resize(len, 0.0f);
-        
-        std::fill_n(tempL.data(), len, 0.0f);
-        std::fill_n(tempR.data(), len, 0.0f);
+    if (outL || outR) {
+        constexpr int kMaxHookFrames = 8192;
+        static thread_local float tempL[kMaxHookFrames];
+        static thread_local float tempR[kMaxHookFrames];
 
-        // renderFrames outputs 32-bit floats
-        reals::audio::Engine::instance().renderFrames(tempL.data(), tempR.data(), len);
-        
-        // Mix into REAPER's 64-bit ReaSample buffer
-        for (int i = 0; i < len; ++i) {
-            outL[i] += static_cast<ReaSample>(tempL[i]);
-            outR[i] += static_cast<ReaSample>(tempR[i]);
+        int framesRemaining = len;
+        int frameOffset = 0;
+        while (framesRemaining > 0) {
+            const int chunk = std::min(framesRemaining, kMaxHookFrames);
+            std::memset(tempL, 0, chunk * sizeof(float));
+            std::memset(tempR, 0, chunk * sizeof(float));
+
+            // renderFrames outputs 32-bit floats
+            reals::audio::Engine::instance().renderFrames(tempL, tempR, chunk);
+
+            // Mix into REAPER's 64-bit ReaSample buffer
+            if (outL && outR) {
+                for (int i = 0; i < chunk; ++i) {
+                    outL[frameOffset + i] += static_cast<ReaSample>(tempL[i]);
+                    outR[frameOffset + i] += static_cast<ReaSample>(tempR[i]);
+                }
+            } else if (outL) {
+                for (int i = 0; i < chunk; ++i) {
+                    outL[frameOffset + i] += static_cast<ReaSample>(tempL[i]);
+                }
+            } else if (outR) {
+                for (int i = 0; i < chunk; ++i) {
+                    outR[frameOffset + i] += static_cast<ReaSample>(tempR[i]);
+                }
+            }
+
+            frameOffset += chunk;
+            framesRemaining -= chunk;
         }
     }
 }
@@ -562,7 +579,34 @@ public:
     }
 
     double projectTempo() const override {
-        return Master_GetTempo ? Master_GetTempo() : 0.0;
+        double bpm = g_liveTransport.bpm.load(std::memory_order_relaxed);
+        if (bpm > 30.0) return bpm;
+
+        double playPos = 0.0;
+        const int playState = GetPlayState ? GetPlayState() : 0;
+        if (playState & 1) {
+            if (GetPlayPosition2Ex) {
+                ReaProject* proj = EnumProjects ? EnumProjects(-1, nullptr, 0) : nullptr;
+                playPos = GetPlayPosition2Ex(proj);
+            } else if (GetPlayPosition2) {
+                playPos = GetPlayPosition2();
+            } else if (GetPlayPosition) {
+                playPos = GetPlayPosition();
+            }
+        } else {
+            if (GetCursorPosition) playPos = GetCursorPosition();
+        }
+
+        if (TimeMap_GetDividedBpmAtTime) {
+            bpm = TimeMap_GetDividedBpmAtTime(playPos);
+            if (bpm > 30.0) return bpm;
+        }
+
+        if (Master_GetTempo) {
+            bpm = Master_GetTempo();
+            if (bpm > 30.0) return bpm;
+        }
+        return 120.0;
     }
 
     void togglePlay() override {
@@ -1254,6 +1298,16 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
             return -1;
         }
         LOG_INFO(kTag, "entry: api loaded");
+
+        if (GetAudioDeviceInfo) {
+            char srateBuf[64] = {0};
+            GetAudioDeviceInfo("SRATE", srateBuf, sizeof(srateBuf));
+            int devSr = std::atoi(srateBuf);
+            if (devSr > 0) {
+                reals::audio::Engine::instance().setTargetSampleRate(devSr);
+                LOG_INFO(kTag, "entry: seeded host sample rate devSr=" + std::to_string(devSr));
+            }
+        }
 
         if (Audio_RegHardwareHook) {
             memset(&g_audioHook.hook, 0, sizeof(g_audioHook.hook));

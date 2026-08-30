@@ -836,8 +836,13 @@ std::string Bridge::handle(const std::string& requestJson) {
                     sampleBpm = m_impl->detectBpmForPath(p);
                 }
                 double projectBpm = 0.0;
-                if (m_actions) projectBpm = m_actions->projectTempo();
-                else if (args.contains("bpm")) projectBpm = args.value("bpm", 0.0);
+                if (args.contains("bpm") && args.value("bpm", 0.0) > 30.0) {
+                    projectBpm = args.value("bpm", 0.0);
+                } else if (m_actions) {
+                    const auto transport = m_actions->hostTransport();
+                    if (transport.bpm > 30.0) projectBpm = transport.bpm;
+                    else projectBpm = m_actions->projectTempo();
+                }
 
                 if (sampleBpm <= 0.0f && projectBpm > 0.0) {
                     sampleBpm = static_cast<float>(projectBpm);
@@ -1037,7 +1042,9 @@ std::string Bridge::handle(const std::string& requestJson) {
             float ratio = 1.0f;
             float projectBpm = args.value("bpm", 0.0f);
             if (projectBpm <= 0.0f && m_actions) {
-                projectBpm = static_cast<float>(m_actions->projectTempo());
+                const auto transport = m_actions->hostTransport();
+                if (transport.bpm > 30.0) projectBpm = static_cast<float>(transport.bpm);
+                else projectBpm = static_cast<float>(m_actions->projectTempo());
             }
             float sampleBpm = args.value("sampleBpm", 0.0f);
             std::string syncPath = args.value("path", "");
@@ -1110,8 +1117,9 @@ std::string Bridge::handle(const std::string& requestJson) {
                         if (beatInLoop < 0.0) beatInLoop += resolvedBeats;
                         const double syncFrac = std::clamp(beatInLoop / resolvedBeats, 0.0, 0.999);
                         const double nominalLoopSec = (resolvedBeats * 60.0) / sampleBpm;
-                        if (trk.sampleRate > 0) {
-                            eng.setLoopBoundaryFrames(static_cast<uint64_t>(nominalLoopSec * trk.sampleRate));
+                        const int effectiveSr = (eng.targetSampleRate() > 0) ? eng.targetSampleRate() : trk.sampleRate;
+                        if (effectiveSr > 0) {
+                            eng.setLoopBoundaryFrames(static_cast<uint64_t>(nominalLoopSec * effectiveSr));
                         }
                         eng.seekFraction(syncFrac);
                     }

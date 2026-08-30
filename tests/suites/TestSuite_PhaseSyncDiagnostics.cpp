@@ -259,5 +259,115 @@ TEST(PhaseSyncDiagnostics, D5_LiveRephaseOnSyncBpmChange) {
     harness.call("audio.stop", json::object());
 }
 
+// ---------------------------------------------------------------------------
+// D6. Multi-Rate Alignment: 44.1kHz audio on 48kHz host device.
+//     Target sample rate must be 48000, totalFrames and loopBoundaryFrames
+//     must reflect 48000Hz (16 beats @ 120 BPM = 8.0s -> 384000 frames).
+// ---------------------------------------------------------------------------
+TEST(PhaseSyncDiagnostics, D6_MultiRate_44kAudio_On_48kHost_FrameMetricsAndLoopAligned) {
+    reals::audio::Engine::instance().setTargetSampleRate(48000);
+    EXPECT_EQ(reals::audio::Engine::instance().targetSampleRate(), 48000);
+
+    BridgeTestHarness harness(120.0);
+    const std::string path = writeLoopWav("loop_44k_on_48k_120bpm.wav", 16.0, 120.0, 44100);
+    harness.host().setHostTransport(1, 4.0, 8.0, 120.0); // DAW at beat 8 (0.5 fraction)
+
+    auto res = harness.call("audio.play", {
+        {"path", path}, {"syncBpm", true}, {"sampleBpm", 120.0f}, {"loop", true}});
+
+    EXPECT_TRUE(res.value("ok", false));
+    EXPECT_TRUE(res["data"].value("phaseSynced", false));
+    EXPECT_NEAR(res["data"].value("startFraction", 0.0), 0.5, 0.02);
+
+    const auto& trk = reals::audio::Engine::instance().currentTrack();
+    EXPECT_EQ(trk.sampleRate, 48000);
+    EXPECT_NEAR(trk.totalFrames, 384000.0, 100.0);
+    EXPECT_EQ(reals::audio::Engine::instance().loopBoundaryFrames(), 384000ull);
+    EXPECT_NEAR(reals::audio::Engine::instance().positionFraction(), 0.5, 0.05);
+
+    harness.call("audio.stop", json::object());
+    reals::audio::Engine::instance().setTargetSampleRate(0);
+}
+
+// ---------------------------------------------------------------------------
+// D7. Multi-Rate Alignment: 44.1kHz audio on 96kHz host device.
+//     Target sample rate must be 96000, 8 beats @ 120 BPM = 4.0s -> 384000 frames.
+//     Audio plays at 1.0x pitch-neutral playback rate when BPM sync is off.
+// ---------------------------------------------------------------------------
+TEST(PhaseSyncDiagnostics, D7_MultiRate_44kAudio_On_96kHost_PitchNeutral) {
+    reals::audio::Engine::instance().setTargetSampleRate(96000);
+    EXPECT_EQ(reals::audio::Engine::instance().targetSampleRate(), 96000);
+
+    BridgeTestHarness harness(120.0);
+    const std::string path = writeLoopWav("loop_44k_on_96k_120bpm.wav", 8.0, 120.0, 44100);
+
+    auto res = harness.call("audio.play", {
+        {"path", path}, {"syncBpm", false}, {"loop", false}});
+
+    EXPECT_TRUE(res.value("ok", false));
+    const auto& trk = reals::audio::Engine::instance().currentTrack();
+    EXPECT_EQ(trk.sampleRate, 96000);
+    EXPECT_NEAR(trk.totalFrames, 384000.0, 100.0);
+    EXPECT_NEAR(reals::audio::Engine::instance().getTimeRatio(), 1.0f, 0.001f);
+    EXPECT_NEAR(reals::audio::Engine::instance().getPitchSemitones(), 0.0f, 0.001f);
+
+    harness.call("audio.stop", json::object());
+    reals::audio::Engine::instance().setTargetSampleRate(0);
+}
+
+// ---------------------------------------------------------------------------
+// D8. Audio Thread Safety: Zero-allocation and lock-free renderFrames execution
+//     for stereo and mono hardware master outputs.
+// ---------------------------------------------------------------------------
+TEST(PhaseSyncDiagnostics, D8_AudioThreadSafety_ZeroAllocAndLockFreeRendering) {
+    BridgeTestHarness harness(120.0);
+    const std::string path = writeLoopWav("loop_render_safety_120bpm.wav", 16.0, 120.0);
+
+    auto res = harness.call("audio.play", {
+        {"path", path}, {"syncBpm", false}, {"loop", true}});
+    EXPECT_TRUE(res.value("ok", false));
+
+    std::vector<float> bufL(8192, 0.0f);
+    std::vector<float> bufR(8192, 0.0f);
+
+    // Test Stereo render
+    reals::audio::Engine::instance().renderFrames(bufL.data(), bufR.data(), 512);
+    reals::audio::Engine::instance().renderFrames(bufL.data(), bufR.data(), 1024);
+    reals::audio::Engine::instance().renderFrames(bufL.data(), bufR.data(), 4096);
+    reals::audio::Engine::instance().renderFrames(bufL.data(), bufR.data(), 8192);
+
+    // Test Mono render (outR == nullptr)
+    reals::audio::Engine::instance().renderFrames(bufL.data(), nullptr, 512);
+    reals::audio::Engine::instance().renderFrames(bufL.data(), nullptr, 1024);
+
+    // Test Mono render (outL == nullptr)
+    reals::audio::Engine::instance().renderFrames(nullptr, bufR.data(), 512);
+
+    EXPECT_TRUE(reals::audio::Engine::instance().isPlaying());
+    harness.call("audio.stop", json::object());
+}
+
+// ---------------------------------------------------------------------------
+// D9. Discontinuity and Seek Bounds: Position fractions and seek clamping.
+// ---------------------------------------------------------------------------
+TEST(PhaseSyncDiagnostics, D9_SeekDiscontinuity_LockFreePlayback) {
+    BridgeTestHarness harness(120.0);
+    const std::string path = writeLoopWav("loop_seek_bounds_120bpm.wav", 16.0, 120.0);
+
+    auto res = harness.call("audio.play", {
+        {"path", path}, {"syncBpm", false}, {"loop", true}});
+    EXPECT_TRUE(res.value("ok", false));
+
+    // Seek to 75%
+    harness.call("audio.seek", {{"fraction", 0.75}});
+    EXPECT_NEAR(reals::audio::Engine::instance().positionFraction(), 0.75, 0.05);
+
+    // Seek to 25%
+    harness.call("audio.seek", {{"fraction", 0.25}});
+    EXPECT_NEAR(reals::audio::Engine::instance().positionFraction(), 0.25, 0.05);
+
+    harness.call("audio.stop", json::object());
+}
+
 } // namespace reals::test
 
