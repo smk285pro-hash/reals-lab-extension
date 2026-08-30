@@ -179,9 +179,11 @@ TEST(PhaseSyncDiagnostics, D2_TransportSnapshotTakenAfterDecode_PreviewNotStale)
     reals::bridge::Bridge bridge(hostPtr);
     bridge.init();
 
-    const std::string req = R"({"id":1,"cmd":"audio.play","args":{"path":")" + path +
-                            R"(","syncBpm":true,"sampleBpm":120.0,"loop":false}})";
-    auto res = json::parse(bridge.handle(req));
+    json req;
+    req["id"] = 1;
+    req["cmd"] = "audio.play";
+    req["args"] = {{"path", path}, {"syncBpm", true}, {"sampleBpm", 120.0}, {"loop", false}};
+    auto res = json::parse(bridge.handle(req.dump()));
 
     EXPECT_TRUE(res.value("ok", false));
     EXPECT_TRUE(res["data"].value("phaseSynced", false));
