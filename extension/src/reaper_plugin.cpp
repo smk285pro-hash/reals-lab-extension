@@ -337,68 +337,75 @@ struct ReaperAudioHookState {
 static ReaperAudioHookState g_audioHook;
 
 static void ReaperOnAudioBuffer(bool isPost, int len, double srate, struct audio_hook_register_t* reg) {
-    // REAPER Rule 5: Only process during pre-processing (isPost == false)
-    if (isPost || len <= 0 || !reg) return;
+    if (len <= 0 || !reg) return;
 
-    const int playState = GetPlayState ? GetPlayState() : 0;
-    g_liveTransport.playState.store(playState, std::memory_order_relaxed);
+    if (!isPost) {
+        // Pre-processing: Track transport and sample-accurate phase
+        const int playState = GetPlayState ? GetPlayState() : 0;
+        g_liveTransport.playState.store(playState, std::memory_order_relaxed);
 
-    const bool isPlaying = (playState & 1) != 0;
-    
-    // 1. Exact audio block position for DSP (GetPlayPosition2Ex)
-    double playPos = 0.0;
-    if (isPlaying) {
-        if (GetPlayPosition2Ex) {
-            ReaProject* proj = EnumProjects ? EnumProjects(-1, nullptr, 0) : nullptr;
-            playPos = GetPlayPosition2Ex(proj);
-        } else if (GetPlayPosition2) {
-            playPos = GetPlayPosition2();
+        const bool isPlaying = (playState & 1) != 0;
+        
+        // 1. Exact audio block position for DSP (GetPlayPosition2Ex)
+        double playPos = 0.0;
+        if (isPlaying) {
+            if (GetPlayPosition2Ex) {
+                ReaProject* proj = EnumProjects ? EnumProjects(-1, nullptr, 0) : nullptr;
+                playPos = GetPlayPosition2Ex(proj);
+            } else if (GetPlayPosition2) {
+                playPos = GetPlayPosition2();
+            }
+        } else {
+            if (GetCursorPosition) playPos = GetCursorPosition();
         }
-    } else {
-        if (GetCursorPosition) playPos = GetCursorPosition();
-    }
 
-    // 2. Exact tempo & continuous beats
-    double bpm = 120.0;
-    if (TimeMap_GetDividedBpmAtTime) {
-        bpm = TimeMap_GetDividedBpmAtTime(playPos);
-    } else if (Master_GetTempo) {
-        bpm = Master_GetTempo();
-    }
-
-    int m = 0, cml = 4, cdenom = 4;
-    double beats = 0.0;
-    if (TimeMap2_timeToBeats) {
-        TimeMap2_timeToBeats(nullptr, playPos, &m, &cml, &beats, &cdenom);
-    }
-
-    double phase = beats - floor(beats); // 0.0 - 1.0
-
-    // 3. Discontinuity detection (seek/loop/rewind)
-    if (isPlaying) {
-        double expectedDelta = (srate > 0.0) ? ((double)len / srate) : 0.0;
-        if (g_liveTransport.lastPos >= 0.0 && fabs((playPos - g_liveTransport.lastPos) - expectedDelta) > 0.01) {
-            g_liveTransport.discontinuityCounter.fetch_add(1, std::memory_order_relaxed);
+        // 2. Exact tempo & continuous beats
+        double bpm = 120.0;
+        if (TimeMap_GetDividedBpmAtTime) {
+            bpm = TimeMap_GetDividedBpmAtTime(playPos);
+        } else if (Master_GetTempo) {
+            bpm = Master_GetTempo();
         }
+
+        int m = 0, cml = 4, cdenom = 4;
+        double beats = 0.0;
+        if (TimeMap2_timeToBeats) {
+            TimeMap2_timeToBeats(nullptr, playPos, &m, &cml, &beats, &cdenom);
+        }
+
+        double phase = beats - floor(beats); // 0.0 - 1.0
+
+        // 3. Discontinuity detection (seek/loop/rewind)
+        if (isPlaying) {
+            double expectedDelta = (srate > 0.0) ? ((double)len / srate) : 0.0;
+            if (g_liveTransport.lastPos >= 0.0 && fabs((playPos - g_liveTransport.lastPos) - expectedDelta) > 0.01) {
+                g_liveTransport.discontinuityCounter.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+        g_liveTransport.lastPos = playPos;
+
+        // 4. Update lock-free atomic transport values
+        g_liveTransport.playPos.store(playPos, std::memory_order_relaxed);
+        g_liveTransport.fullBeats.store(beats, std::memory_order_relaxed);
+        g_liveTransport.beatPhase.store(phase, std::memory_order_relaxed);
+        g_liveTransport.bpm.store(bpm, std::memory_order_relaxed);
+        g_liveTransport.blockCounter.fetch_add(1, std::memory_order_relaxed);
+        return;
     }
-    g_liveTransport.lastPos = playPos;
 
-    // 4. Update lock-free atomic transport values
-    g_liveTransport.playPos.store(playPos, std::memory_order_relaxed);
-    g_liveTransport.fullBeats.store(beats, std::memory_order_relaxed);
-    g_liveTransport.beatPhase.store(phase, std::memory_order_relaxed);
-    g_liveTransport.bpm.store(bpm, std::memory_order_relaxed);
-    g_liveTransport.blockCounter.fetch_add(1, std::memory_order_relaxed);
-
+    // Post-processing (isPost == true): REAPER has finished mixing all tracks.
+    // Mix preview audio on top of master hardware output buffer!
     ReaSample* outL = reg->GetBuffer(true, 0);
     ReaSample* outR = reg->GetBuffer(true, 1);
     if (outL && outR) {
-        // Use thread_local vectors to avoid allocation in the audio thread
         thread_local std::vector<float> tempL;
         thread_local std::vector<float> tempR;
-        if (tempL.size() < static_cast<size_t>(len)) tempL.resize(len);
-        if (tempR.size() < static_cast<size_t>(len)) tempR.resize(len);
+        if (tempL.size() < static_cast<size_t>(len)) tempL.resize(len, 0.0f);
+        if (tempR.size() < static_cast<size_t>(len)) tempR.resize(len, 0.0f);
         
+        std::fill_n(tempL.data(), len, 0.0f);
+        std::fill_n(tempR.data(), len, 0.0f);
+
         // renderFrames outputs 32-bit floats
         reals::audio::Engine::instance().renderFrames(tempL.data(), tempR.data(), len);
         

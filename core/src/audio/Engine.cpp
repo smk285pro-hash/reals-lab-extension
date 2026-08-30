@@ -382,8 +382,10 @@ void Engine::stop() {
     const std::lock_guard lock(m_impl->stateMutex);
     if (!m_impl->soundLoaded)
         return;
-    ma_sound_stop(&m_impl->sound);
-    ma_sound_uninit(&m_impl->sound);
+    if (m_impl->dspSource.useDevice) {
+        ma_sound_stop(&m_impl->sound);
+        ma_sound_uninit(&m_impl->sound);
+    }
     m_impl->dspSource.close();
     m_impl->soundLoaded = false;
     m_impl->track = TrackInfo{};
@@ -486,23 +488,25 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
         ? static_cast<ma_uint64>(clampedFraction * refFrames)
         : 0;
 
-    if (startFrame > 0) {
-        ma_decoder_seek_to_pcm_frame(&m_impl->dspSource.decoder, startFrame);
-    }
-    m_impl->dspSource.cursorFrames.store(startFrame);
+    m_impl->dspSource.cursorFrames.store(startFrame, std::memory_order_relaxed);
 
     const bool isBypass = (std::abs(m_impl->timeRatio - 1.0f) < 0.001f && std::abs(m_impl->pitchSemitones) < 0.01f);
     if (!isBypass) {
         std::lock_guard dspLock(m_impl->dspSource.dspMutex);
         const int lat = m_impl->dspSource.processor.latencyFrames();
-        if (lat > 0) {
-            std::vector<float> primeBuf(static_cast<size_t>(lat) * static_cast<size_t>(m_impl->track.channels));
-            ma_uint64 primeRead = 0;
-            if (ma_decoder_read_pcm_frames(&m_impl->dspSource.decoder, primeBuf.data(), static_cast<ma_uint64>(lat), &primeRead) == MA_SUCCESS && primeRead > 0) {
-                m_impl->dspSource.processor.putSamples(primeBuf.data(), static_cast<size_t>(primeRead));
-                m_impl->dspSource.cursorFrames.fetch_add(primeRead, std::memory_order_relaxed);
+        if (lat > 0 && !m_impl->dspSource.pcmData.empty()) {
+            const size_t ch = static_cast<size_t>(m_impl->track.channels);
+            const size_t totalAvailable = (m_impl->dspSource.pcmData.size() / ch);
+            const size_t cur = static_cast<size_t>(startFrame);
+            const size_t availFrames = (totalAvailable > cur) ? (totalAvailable - cur) : 0;
+            const size_t primeCount = std::min<size_t>(static_cast<size_t>(lat), availFrames);
+            if (primeCount > 0) {
+                m_impl->dspSource.processor.putSamples(
+                    &m_impl->dspSource.pcmData[cur * ch],
+                    primeCount);
+                m_impl->dspSource.cursorFrames.fetch_add(primeCount, std::memory_order_relaxed);
             }
-            LOG_INFO(kTag, "playFile: SoundTouch pre-roll primed " + std::to_string(primeRead) +
+            LOG_INFO(kTag, "playFile: SoundTouch pre-roll primed " + std::to_string(primeCount) +
                            " frames (lat=" + std::to_string(lat) + " avail=" +
                            std::to_string(m_impl->dspSource.processor.numSamplesAvailable()) + ")");
         }
@@ -520,18 +524,25 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
     m_impl->dspSource.baseInited = true;
     LOG_INFO(kTag, "playFile: data source base initialized");
 
-    const ma_result soundRes = ma_sound_init_from_data_source(
-        &m_impl->engine,
-        &m_impl->dspSource.base,
-        0,
-        nullptr,
-        &m_impl->sound);
-    if (soundRes != MA_SUCCESS) {
-        m_impl->dspSource.close();
-        LOG_ERROR(kTag, "playFile: ma_sound_init_from_data_source failed with res=" + std::to_string(soundRes));
-        return false;
+    if (m_impl->dspSource.useDevice) {
+        const ma_result soundRes = ma_sound_init_from_data_source(
+            &m_impl->engine,
+            &m_impl->dspSource.base,
+            0,
+            nullptr,
+            &m_impl->sound);
+        if (soundRes != MA_SUCCESS) {
+            m_impl->dspSource.close();
+            LOG_ERROR(kTag, "playFile: ma_sound_init_from_data_source failed with res=" + std::to_string(soundRes));
+            return false;
+        }
+        LOG_INFO(kTag, "playFile: sound initialized from data source");
+        ma_sound_set_volume(&m_impl->sound, m_impl->volume);
+        if (ma_sound_start(&m_impl->sound) != MA_SUCCESS) {
+            LOG_ERROR(kTag, "playFile: ma_sound_start failed");
+            return false;
+        }
     }
-    LOG_INFO(kTag, "playFile: sound initialized from data source");
 
     m_impl->soundLoaded = true;
     m_impl->loop = loop;
@@ -544,12 +555,7 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
                    " loopBoundary=" + std::to_string(m_impl->dspSource.loopBoundaryFrames.load()) +
                    " totalFrames=" + std::to_string(totalF));
 
-    ma_sound_set_volume(&m_impl->sound, m_impl->volume);
-    if (ma_sound_start(&m_impl->sound) != MA_SUCCESS) {
-        LOG_ERROR(kTag, "playFile: ma_sound_start failed");
-        return false;
-    }
-    LOG_INFO(kTag, "playFile: sound started successfully!");
+    LOG_INFO(kTag, "playFile: playback active successfully!");
     return true;
 }
 
@@ -809,7 +815,11 @@ void Engine::toggle(const std::string& path, const bool loop) {
 }
 
 bool Engine::isPlaying() const {
-    return m_impl && m_impl->soundLoaded && ma_sound_is_playing(&m_impl->sound) == MA_TRUE;
+    if (!m_impl || !m_impl->soundLoaded) return false;
+    if (m_impl->dspSource.useDevice) {
+        return ma_sound_is_playing(&m_impl->sound) == MA_TRUE;
+    }
+    return m_impl->soundLoaded;
 }
 
 bool Engine::isPlayingPath(const std::string& path) const {
@@ -823,7 +833,7 @@ void Engine::setVolume(const float linear) {
     // a playback switch from another thread and touch an uninitialized sound.
     const std::lock_guard lock(m_impl->stateMutex);
     m_impl->volume = std::clamp(linear, 0.0f, 1.0f);
-    if (m_impl->soundLoaded)
+    if (m_impl->soundLoaded && m_impl->dspSource.useDevice)
         ma_sound_set_volume(&m_impl->sound, m_impl->volume);
 }
 
@@ -901,23 +911,28 @@ double Engine::positionFraction() const {
 
 
 void Engine::renderFrames(float* outL, float* outR, size_t frames) {
-    if (!m_impl || !m_impl->dspSource.pcmLoaded || m_impl->dspSource.useDevice) {
-        memset(outL, 0, frames * sizeof(float));
-        memset(outR, 0, frames * sizeof(float));
+    if (!m_impl || !m_impl->soundLoaded || !m_impl->dspSource.pcmLoaded || m_impl->dspSource.useDevice) {
+        if (outL && frames > 0) std::memset(outL, 0, frames * sizeof(float));
+        if (outR && frames > 0) std::memset(outR, 0, frames * sizeof(float));
         return;
     }
     
-    std::vector<float> interleaved(frames * 2, 0.0f);
+    thread_local std::vector<float> interleaved;
+    if (interleaved.size() < frames * 2) {
+        interleaved.resize(frames * 2, 0.0f);
+    }
+    
     ma_uint64 framesRead = 0;
     dsp_on_read(&m_impl->dspSource.base, interleaved.data(), frames, &framesRead);
     
     if (framesRead < frames) {
-        memset(interleaved.data() + framesRead * 2, 0, (frames - framesRead) * 2 * sizeof(float));
+        std::memset(interleaved.data() + framesRead * 2, 0, (frames - framesRead) * 2 * sizeof(float));
     }
     
+    const float vol = m_impl->volume;
     for (size_t i = 0; i < frames; ++i) {
-        outL[i] += interleaved[i * 2];
-        outR[i] += interleaved[i * 2 + 1];
+        outL[i] = interleaved[i * 2] * vol;
+        outR[i] = interleaved[i * 2 + 1] * vol;
     }
 }
 } // namespace reals::audio
