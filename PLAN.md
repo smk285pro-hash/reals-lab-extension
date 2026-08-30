@@ -352,6 +352,14 @@ Audit tìm thấy ~25 lỗi (9 nghiêm trọng), đã sửa hết, build zero-wa
     5. Cập nhật metric Peak, RMS và con trỏ vị trí atomic thời gian thực về UI để hiển thị sóng âm và volume meter mượt mà 100%.
   - **Kiểm thử**: 256/256 tests pass 100%, MSVC /W4 zero-warning. DLL đã được tự động deploy vào `%APPDATA%\REAPER\UserPlugins`.
 
+- **[P1.21] Định hướng Mô hình Thương mại & Lộ trình Tính năng (2026-08-31)**:
+  - **Mô hình Hybrid B2C**:
+    - **Tier Local (Extension/Client)**: Preview sample, Phase Sync 0ms, Local DSP, Local SQLite scanner -> Bán mua đứt trọn đời (Perpetual $39 - $59) hoặc bản Free câu khách (không tốn chi phí server).
+    - **Tier Cloud (AI Lab trên Server)**: Tách stem, AI generation, Cloud semantic search -> Bán dạng Subscription ($7.99 - $9.99/tháng) hoặc Credit / Token (Pay-as-you-go, ví dụ $5/50 credits), tuyệt đối không bán vĩnh viễn để tránh rủi ro chi phí server/GPU.
+  - **Lộ trình Tính năng**:
+    - Ưu tiên số 1: Ổn định lõi âm thanh, Playhead Phase Sync sample-accurate, DSP SoundTouch và AI Lab.
+    - Các tính năng duyệt file nâng cao (File Browser UX chuyên sâu) tạm thời gác lại xử lý ở phase sau.
+
 ## Ghi chú làm việc
 - Trả lời ngắn gọn, kiểu 2 thằng bạn trò chuyện.
 - Làm từng bước, bàn bạc kỹ trước khi code.
