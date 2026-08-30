@@ -343,17 +343,19 @@ static void ReaperOnAudioBuffer(bool isPost, int len, double srate, struct audio
     const int playState = GetPlayState ? GetPlayState() : 0;
     g_liveTransport.playState.store(playState, std::memory_order_relaxed);
 
-    if (!(playState & 1)) {
-        return; // DAW transport stopped
-    }
-
+    const bool isPlaying = (playState & 1) != 0;
+    
     // 1. Exact audio block position for DSP (GetPlayPosition2Ex)
     double playPos = 0.0;
-    if (GetPlayPosition2Ex) {
-        ReaProject* proj = EnumProjects ? EnumProjects(-1, nullptr, 0) : nullptr;
-        playPos = GetPlayPosition2Ex(proj);
-    } else if (GetPlayPosition2) {
-        playPos = GetPlayPosition2();
+    if (isPlaying) {
+        if (GetPlayPosition2Ex) {
+            ReaProject* proj = EnumProjects ? EnumProjects(-1, nullptr, 0) : nullptr;
+            playPos = GetPlayPosition2Ex(proj);
+        } else if (GetPlayPosition2) {
+            playPos = GetPlayPosition2();
+        }
+    } else {
+        if (GetCursorPosition) playPos = GetCursorPosition();
     }
 
     // 2. Exact tempo & continuous beats
@@ -373,9 +375,11 @@ static void ReaperOnAudioBuffer(bool isPost, int len, double srate, struct audio
     double phase = beats - floor(beats); // 0.0 - 1.0
 
     // 3. Discontinuity detection (seek/loop/rewind)
-    double expectedDelta = (srate > 0.0) ? ((double)len / srate) : 0.0;
-    if (g_liveTransport.lastPos >= 0.0 && fabs((playPos - g_liveTransport.lastPos) - expectedDelta) > 0.01) {
-        g_liveTransport.discontinuityCounter.fetch_add(1, std::memory_order_relaxed);
+    if (isPlaying) {
+        double expectedDelta = (srate > 0.0) ? ((double)len / srate) : 0.0;
+        if (g_liveTransport.lastPos >= 0.0 && fabs((playPos - g_liveTransport.lastPos) - expectedDelta) > 0.01) {
+            g_liveTransport.discontinuityCounter.fetch_add(1, std::memory_order_relaxed);
+        }
     }
     g_liveTransport.lastPos = playPos;
 
