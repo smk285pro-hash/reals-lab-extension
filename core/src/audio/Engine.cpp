@@ -110,9 +110,16 @@ ma_result dsp_on_read(ma_data_source* pDataSource, void* pFramesOut, ma_uint64 f
     }
 
     // Apply parameter changes published by the UI thread through atomics
-    // (CRIT-03): the UI setters no longer touch dspMutex, so the realtime
-    // path cannot be blocked by a parameter update. SoundTouch state is
-    // mutated here on the audio thread only.
+    // (CRIT-03): the UI *setters* (setTimeRatio/setPitchSemitones/setLoop) no
+    // longer touch dspMutex, so a plain parameter update from the UI thread
+    // cannot block waiting on this callback. SoundTouch state is mutated here
+    // on the audio thread only.
+    // NOTE: this function as a whole still takes dspMutex above (see the
+    // lock_guard before this block) — that part is intentionally NOT
+    // lock-free, because seek() and close() need to serialize with reads to
+    // keep cursor/processor state consistent. Critical sections on both sides
+    // are short, so contention should be rare/brief, but this is a real mutex
+    // and can, in principle, stall this callback if held elsewhere for long.
     {
         const float desiredRatio = ds->timeRatio.load(std::memory_order_relaxed);
         const float desiredPitch = ds->pitchSemitones.load(std::memory_order_relaxed);
@@ -149,7 +156,16 @@ ma_result dsp_on_read(ma_data_source* pDataSource, void* pFramesOut, ma_uint64 f
     if (isBypass) {
         // Fast-path: Direct decoder reading with zero DSP overhead, zero latency, and bit-perfect quality
         ma_uint64 framesReadTotal = 0;
+        // SAFETY: guard against spinning forever on the audio thread if pcmData
+        // ever ends up inconsistent with cursor/channel state (avail stuck at 0
+        // every iteration). frameCount+2 is generous headroom for the normal
+        // "one wrap mid-block" case while still bounding worst case.
+        ma_uint64 guardIterations = frameCount + 2;
         while (framesReadTotal < frameCount) {
+            if (guardIterations-- == 0) {
+                LOG_ERROR("AUDIO_CALLBACK", "BYPASS_READ: aborting stalled loop-wrap, no progress");
+                break;
+            }
             const ma_uint64 currentCursor = ds->cursorFrames.load(std::memory_order_relaxed);
             ma_uint64 framesToRead = frameCount - framesReadTotal;
             if (ds->loop.load(std::memory_order_relaxed) && effectiveLoopFrames > 0 && currentCursor + framesToRead > effectiveLoopFrames) {
@@ -193,7 +209,13 @@ ma_result dsp_on_read(ma_data_source* pDataSource, void* pFramesOut, ma_uint64 f
 
     // DSP mode: Time-Stretch / Pitch-Shift path via SoundTouch
     size_t totalReceived = 0;
+    // SAFETY: same stall guard as the bypass path above.
+    size_t dspGuardIterations = frameCount + 2;
     while (totalReceived < frameCount) {
+        if (dspGuardIterations-- == 0) {
+            LOG_ERROR("AUDIO_CALLBACK", "DSP_READ: aborting stalled loop-wrap, no progress");
+            break;
+        }
         const size_t needed = frameCount - totalReceived;
         const size_t rec = ds->processor.receiveSamples(out + totalReceived * channels, needed);
         totalReceived += rec;
@@ -382,10 +404,8 @@ void Engine::stop() {
     const std::lock_guard lock(m_impl->stateMutex);
     if (!m_impl->soundLoaded)
         return;
-    if (m_impl->dspSource.useDevice) {
-        ma_sound_stop(&m_impl->sound);
-        ma_sound_uninit(&m_impl->sound);
-    }
+    ma_sound_stop(&m_impl->sound);
+    ma_sound_uninit(&m_impl->sound);
     m_impl->dspSource.close();
     m_impl->soundLoaded = false;
     m_impl->track = TrackInfo{};
@@ -401,7 +421,9 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
     }
     stop();
 
-    const std::lock_guard lock(m_impl->stateMutex);
+    // unique_lock (not lock_guard) so the lock can be released around the
+    // phaseAnchor() callback below — see rationale at that call site.
+    std::unique_lock lock(m_impl->stateMutex);
 
     m_impl->track = probeFile(path);
     if (m_impl->track.sampleRate <= 0) {
@@ -433,13 +455,22 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
     LOG_INFO(kTag, "playFile: decoder initialized, buffering to RAM...");
 
     std::vector<float> tempPcm;
-    tempPcm.reserve(m_impl->track.totalFrames * m_impl->track.channels);
-    float readBuf[4096];
+    tempPcm.reserve(static_cast<size_t>(m_impl->track.totalFrames) *
+                     static_cast<size_t>(m_impl->track.channels));
+
+    // BUGFIX: the old fixed-size `float readBuf[4096]` combined with a
+    // hardcoded 2048-frame read request was only safe for stereo (2048*2 ==
+    // 4096). Any file with >2 channels would overrun the stack buffer. Size
+    // the chunk from the actual channel count instead.
+    const ma_uint32 decodeChannels =
+        static_cast<ma_uint32>((m_impl->track.channels > 0) ? m_impl->track.channels : 2);
+    constexpr ma_uint64 kDecodeBufFrames = 2048;
+    std::vector<float> readBuf(static_cast<size_t>(kDecodeBufFrames) * decodeChannels);
     while (true) {
         ma_uint64 framesRead = 0;
-        ma_decoder_read_pcm_frames(&localDec, readBuf, 2048, &framesRead);
+        ma_decoder_read_pcm_frames(&localDec, readBuf.data(), kDecodeBufFrames, &framesRead);
         if (framesRead == 0) break;
-        tempPcm.insert(tempPcm.end(), readBuf, readBuf + framesRead * m_impl->track.channels);
+        tempPcm.insert(tempPcm.end(), readBuf.data(), readBuf.data() + framesRead * decodeChannels);
     }
     ma_decoder_uninit(&localDec);
     
@@ -473,7 +504,19 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
     // phase lag. Only the seek and sound start remain after this.
     double clampedFraction = std::clamp(startFraction, 0.0, 0.999);
     if (phaseAnchor) {
+        // Release stateMutex before calling out. phaseAnchor is caller-supplied
+        // (e.g. it may query a host transport/tempo, such as REAPER's
+        // GetPlayPosition2Ex/TimeMap_GetDividedBpmAtTime for phase sync) and we
+        // have no guarantee it returns quickly or never re-enters Engine. Holding
+        // stateMutex here would otherwise stall unrelated calls like
+        // positionFraction()/level() that UI code may be polling concurrently.
+        // dspSource/track state needed below is already fully written at this
+        // point, so releasing the lock here is safe; we just need to keep the
+        // *value semantics* — no other thread will start a conflicting playFile()
+        // until stop()'s own locking coordinates that.
+        lock.unlock();
         const double resolved = phaseAnchor(clampedFraction);
+        lock.lock();
         if (std::isfinite(resolved)) {
             clampedFraction = std::clamp(resolved, 0.0, 0.999);
         }
