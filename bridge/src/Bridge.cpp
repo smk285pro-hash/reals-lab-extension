@@ -810,10 +810,6 @@ std::string Bridge::handle(const std::string& requestJson) {
             const std::string p = narrowPath(args.value("path", ""));
             LOG_INFO("bridge", "handling audio.play for path: " + p);
 
-            double startFraction = 0.0;
-            bool phaseSynced = false;
-            double loopBeats = 4.0;
-
             bool syncOn = args.value("syncBpm", false);
             {
                 const std::lock_guard lock(m_impl->syncMutex);
@@ -851,36 +847,79 @@ std::string Bridge::handle(const std::string& requestJson) {
 
             const auto info = audio::Engine::probeFile(p);
 
-            // Phase synchronization: fetch fresh DAW transport right before starting playback
+            // Phase synchronization via a late PhaseAnchor: the anchor runs
+            // inside Engine::playFile AFTER the file is decoded and the DSP
+            // chain is configured, but BEFORE the seek and sound start. The
+            // DAW transport is sampled there — the last possible moment — so
+            // the preview cannot lag behind the playhead by the decode time.
+            bool phaseSynced = false;
+            double loopBeats = 4.0;
+            double startFraction = 0.0;
+            audio::Engine::PhaseAnchor phaseAnchor;
             if (syncOn && m_actions && sampleBpm > 30.0f && info.durationSeconds >= 1.0) {
-                const auto transport = m_actions->hostTransport();
-                if (transport.isPlaying() && transport.bpm > 30.0) {
-                    const double rawBeats = (info.durationSeconds * sampleBpm) / 60.0;
+                phaseAnchor = [this, &eng, &phaseSynced, &loopBeats, &startFraction,
+                               durationSec = info.durationSeconds,
+                               sampleBpm](double /*presetFraction*/) -> double {
+                    const auto transport = m_actions->hostTransport();
+                    if (!transport.isPlaying() || transport.bpm <= 30.0) {
+                        phaseSynced = false;
+                        startFraction = 0.0;
+                        return 0.0;
+                    }
+                    const double rawBeats = (durationSec * sampleBpm) / 60.0;
                     const int timeSig = transport.beatsPerMeasure > 0 ? transport.beatsPerMeasure : 4;
 
-                    // Musical Bar Quantizer (snap to 0.5, 1, 2, 4, 8, 16, 32, 64 bars)
-                    const double rawBars = rawBeats / static_cast<double>(timeSig);
+                    // Musical Bar Quantizer: snap to standard bar counts only
+                    // for near-exact matches (encoder padding / trimmed tails).
+                    // Tolerance is tight — max(1/16 bar, 4%) — so genuine
+                    // 3/6/12-bar phrases are NOT forced onto a power-of-2 grid
+                    // (the old 35% tolerance misclassified them and offset the
+                    // whole preview by whole bars).
                     static const double kStandardBars[] = { 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0 };
-                    double bestBars = std::max(1.0, std::round(rawBars));
-                    double minDiff = 1e9;
+                    double resolvedBeats = 0.0;
                     for (double sb : kStandardBars) {
-                        double diff = std::abs(rawBars - sb);
-                        if (diff < minDiff && diff <= (sb * 0.35)) {
-                            minDiff = diff;
-                            bestBars = sb;
+                        const double target = sb * static_cast<double>(timeSig);
+                        const double tol = std::max(static_cast<double>(timeSig) / 16.0, target * 0.04);
+                        if (std::abs(rawBeats - target) <= tol) {
+                            resolvedBeats = target;
+                            break;
                         }
                     }
-                    loopBeats = std::max(1.0, bestBars * timeSig);
+                    if (resolvedBeats <= 0.0) {
+                        // Not a standard power-of-2 bar loop: fall back to the
+                        // nearest INTEGER beat count so the sample's transients
+                        // still land on the DAW's beat grid.
+                        resolvedBeats = std::max(1.0, std::round(rawBeats));
+                    }
+                    loopBeats = resolvedBeats;
 
                     double beatInLoop = std::fmod(transport.fullBeats, loopBeats);
                     if (beatInLoop < 0.0)
                         beatInLoop += loopBeats;
+
+                    // Latency compensation: the first audible sample exits the
+                    // playback pipeline `pipelineLatencySeconds()` AFTER it is
+                    // fed, while the DAW keeps advancing. Start the content
+                    // that far AHEAD in the loop so the audible output lands
+                    // exactly on the DAW grid (SoundTouch initial latency,
+                    // active in DSP time-stretch / pitch mode).
+                    const double latencyBeats =
+                        eng.pipelineLatencySeconds() * transport.bpm / 60.0;
+                    beatInLoop = std::fmod(beatInLoop + latencyBeats, loopBeats);
+                    if (beatInLoop < 0.0)
+                        beatInLoop += loopBeats;
+
                     startFraction = std::clamp(beatInLoop / loopBeats, 0.0, 0.999);
                     phaseSynced = true;
-                }
+                    return startFraction;
+                };
             }
 
-            const bool ok = eng.playFile(p, args.value("loop", false), startFraction);
+            // Pass the PhaseAnchor: startFraction here is only a preset (0.0);
+            // the anchor re-resolves it inside playFile after the decode is
+            // done and fills startFraction/loopBeats/phaseSynced for the
+            // response below.
+            const bool ok = eng.playFile(p, args.value("loop", false), startFraction, phaseAnchor);
             LOG_INFO("bridge", "audio.play returned ok=" + std::to_string(ok));
             model.addRecent(p);
             json d;

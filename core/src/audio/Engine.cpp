@@ -326,7 +326,8 @@ void Engine::stop() {
     m_impl->env.clear();
 }
 
-bool Engine::playFile(const std::string& path, const bool loop, const double startFraction) {
+bool Engine::playFile(const std::string& path, const bool loop, const double startFraction,
+                      const PhaseAnchor& phaseAnchor) {
     LOG_INFO(kTag, "playFile: entering for path: " + path);
     if (!init()) {
         LOG_ERROR(kTag, "playFile: init() failed");
@@ -363,22 +364,12 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
     }
     LOG_INFO(kTag, "playFile: decoder initialized");
 
-    const double clampedFraction = std::clamp(startFraction, 0.0, 0.999);
-    const ma_uint64 startFrame = (m_impl->track.totalFrames > 0 && clampedFraction > 0.0)
-        ? static_cast<ma_uint64>(clampedFraction * m_impl->track.totalFrames)
-        : 0;
-
-    if (startFrame > 0) {
-        ma_decoder_seek_to_pcm_frame(&m_impl->dspSource.decoder, startFrame);
-    }
-
     m_impl->dspSource.decoderInited = true;
     m_impl->dspSource.loop.store(loop, std::memory_order_relaxed);
     m_impl->dspSource.channels = m_impl->track.channels;
     m_impl->dspSource.sampleRate = m_impl->track.sampleRate;
     m_impl->dspSource.timeRatio.store(m_impl->timeRatio, std::memory_order_relaxed);
     m_impl->dspSource.pitchSemitones.store(m_impl->pitchSemitones, std::memory_order_relaxed);
-    m_impl->dspSource.cursorFrames.store(startFrame);
     m_impl->dspSource.totalFrames.store(static_cast<ma_uint64>(m_impl->track.totalFrames));
     {
         std::lock_guard dspLock(m_impl->dspSource.dspMutex);
@@ -393,6 +384,28 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
         m_impl->dspSource.appliedTimeRatio = m_impl->timeRatio;
         m_impl->dspSource.appliedPitchSemitones = m_impl->pitchSemitones;
     }
+
+    // Phase anchor: all file I/O and DSP configuration is done at this point
+    // (the SoundTouch latency query inside the anchor reflects the active
+    // tempo) — re-resolve the start fraction NOW so the caller's DAW transport
+    // snapshot is taken at the last possible moment, eliminating decode-time
+    // phase lag. Only the seek and sound start remain after this.
+    double clampedFraction = std::clamp(startFraction, 0.0, 0.999);
+    if (phaseAnchor) {
+        const double resolved = phaseAnchor(clampedFraction);
+        if (std::isfinite(resolved)) {
+            clampedFraction = std::clamp(resolved, 0.0, 0.999);
+        }
+    }
+
+    const ma_uint64 startFrame = (m_impl->track.totalFrames > 0 && clampedFraction > 0.0)
+        ? static_cast<ma_uint64>(clampedFraction * m_impl->track.totalFrames)
+        : 0;
+
+    if (startFrame > 0) {
+        ma_decoder_seek_to_pcm_frame(&m_impl->dspSource.decoder, startFrame);
+    }
+    m_impl->dspSource.cursorFrames.store(startFrame);
 
     ma_data_source_config baseConfig = ma_data_source_config_init();
     baseConfig.vtable = &g_dspDataSourceVtable;
@@ -601,6 +614,30 @@ void Engine::seekFraction(const double fraction) {
     const double f = std::clamp(fraction, 0.0, 1.0);
     const ma_uint64 frame = static_cast<ma_uint64>(f * m_impl->track.totalFrames);
     ma_data_source_seek_to_pcm_frame(&m_impl->dspSource.base, frame);
+}
+
+double Engine::pipelineLatencySeconds() const {
+    if (!m_impl || !m_impl->engineInited)
+        return 0.0;
+    // SoundTouch pipeline delay — only active when DSP (time-stretch / pitch)
+    // is engaged; the bypass fast-path has zero processing latency. The value
+    // is exact (reported by SETTING_INITIAL_LATENCY for the active tempo), so
+    // compensating it is always correct.
+    //
+    // Note: the device output buffer is deliberately NOT included. miniaudio
+    // 0.11.x exposes no true driver latency — period-size estimates vary per
+    // backend (e.g. the null backend reports ~60ms) and over-compensating a
+    // wrong estimate would shift the preview AHEAD of the grid, which is
+    // musically worse than the small residual backend latency (~10-20ms on
+    // WASAPI shared) left uncompensated.
+    const bool dspActive =
+        (std::abs(m_impl->timeRatio - 1.0f) > 0.001f || std::abs(m_impl->pitchSemitones) > 0.01f);
+    if (dspActive && m_impl->dspSource.sampleRate > 0) {
+        const double frames = static_cast<double>(m_impl->dspSource.processor.latencyFrames());
+        if (frames > 0.0)
+            return frames / static_cast<double>(m_impl->dspSource.sampleRate);
+    }
+    return 0.0;
 }
 
 void Engine::setTimeRatio(const float ratio) {

@@ -169,7 +169,12 @@ TEST(ChallengerR1, BridgeRPC_ComprehensivePhaseSyncExecution) {
             {"path", path},
             {"syncBpm", true},
             {"sampleBpm", 128.0f},
-            {"loop", true}
+            {"loop", true},
+            // Engine is a process-wide singleton: earlier suites may have
+            // left a pitch shift active, which would engage the DSP path
+            // (and its latency compensation). Pin the pitch so this test
+            // verifies the pure phase-sync math deterministically.
+            {"pitchSemitones", 0.0}
         });
 
         EXPECT_TRUE(res.value("ok", false));

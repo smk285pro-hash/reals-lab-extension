@@ -4,6 +4,7 @@
 // Rules (AGENTS.md): no locks/allocations inside realtime callbacks.
 // Metering is data-driven: the played file is decoded once into a peak
 // envelope used for the waveform and level meter.
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -32,8 +33,17 @@ public:
     void shutdown();
     [[nodiscard]] bool isReady() const;
 
+    // Phase anchor: invoked by playFile AFTER the file is fully decoded and
+    // the DSP chain is configured but BEFORE the start position is applied
+    // and playback begins. Receives the preset startFraction and returns the
+    // fraction to actually use. This lets the caller re-sample the DAW
+    // transport at the last possible moment, eliminating decode-time phase
+    // lag (playhead phase sync fix).
+    using PhaseAnchor = std::function<double(double presetFraction)>;
+
     // Playback of a decoded file with optional phase/start fraction [0.0..1.0). Returns false if the file cannot be decoded.
-    bool playFile(const std::string& path, bool loop = false, double startFraction = 0.0);
+    bool playFile(const std::string& path, bool loop = false, double startFraction = 0.0,
+                  const PhaseAnchor& phaseAnchor = nullptr);
     void stop();
     // Play the file; if it is already playing, stop it instead.
     void toggle(const std::string& path, bool loop);
@@ -50,6 +60,13 @@ public:
 
     // Seek to a fraction of duration (0..1). No-op if nothing is loaded.
     void seekFraction(double fraction);
+
+    // Latency (seconds) between the moment content is fed into the playback
+    // pipeline and the moment it becomes audible: the SoundTouch initial
+    // latency, active in DSP (time-stretch / pitch) mode. The bypass
+    // fast-path reports 0. Callers advance the phase anchor position by this
+    // amount so the audible output lands exactly on the DAW grid.
+    [[nodiscard]] double pipelineLatencySeconds() const;
 
     // DAW BPM Sync: Time-stretch playback without affecting pitch (1.0 = original tempo).
     void setTimeRatio(float ratio);
