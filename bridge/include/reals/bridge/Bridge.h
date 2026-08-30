@@ -20,6 +20,7 @@ struct HostTransport {
     int beatsPerMeasure = 4;    // time signature numerator (cml)
     int denom = 4;              // time signature denominator
     double bpm = 120.0;         // project tempo
+    double blockLatencySeconds = 0.0; // host audio block anticipation latency (pos2 - pos1)
 
     [[nodiscard]] bool isPlaying() const { return (playState & 1) != 0; }
 };
@@ -64,6 +65,17 @@ struct IHostActions {
     virtual void togglePlay() = 0;
     // Query current host DAW transport (play state, playhead position in seconds & beats, tempo)
     virtual HostTransport hostTransport() const { return {}; }
+
+    // Native host audio preview (e.g. REAPER Audio Hook routed through Master Hardware Output)
+    virtual bool playHostPreview(const std::string& path, bool loop, double startPosSeconds, double volume, double playrate, double pitchSemitones, double sampleBpm = 120.0, double loopBeats = 16.0, uint64_t nominalLoopFrames = 0) {
+        (void)path; (void)loop; (void)startPosSeconds; (void)volume; (void)playrate; (void)pitchSemitones; (void)sampleBpm; (void)loopBeats; (void)nominalLoopFrames;
+        return false;
+    }
+    virtual void stopHostPreview() {}
+    virtual bool isHostPreviewPlaying() const { return false; }
+    virtual double hostPreviewPositionFraction() const { return 0.0; }
+    virtual float hostPreviewPeak() const { return 0.0f; }
+    virtual float hostPreviewRms() const { return 0.0f; }
 };
 
 class Bridge {

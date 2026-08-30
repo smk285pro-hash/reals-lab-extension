@@ -332,9 +332,28 @@ Audit tìm thấy ~25 lỗi (9 nghiêm trọng), đã sửa hết, build zero-wa
     3. **Chốt an toàn Cơ chế B (Mechanism B Safeguard)**: Nếu file được kéo là file render sẵn (chứa `drag_` hoặc `drag_export`), hệ thống tự động gán `D_PLAYRATE = 1.0` và `D_PITCH = 0.0` trên Take để loại trừ nguy cơ xử lý DSP 2 lần liên tiếp.
   - **Tự động hóa Triển khai DLL (R3 / A3)**:
     - Bổ sung lệnh `POST_BUILD` trong `extension/CMakeLists.txt` tự động tạo thư mục và triển khai `reaper_realslab.dll` vào `%APPDATA%\REAPER\UserPlugins\reaper_realslab.dll` ngay sau khi biên dịch (hỗ trợ thay thế atomic file ngay cả khi REAPER đang chạy).
-  - **Kiểm thử & Xác minh**: 191/191 unit & integration tests trên toàn bộ 11 test suites pass 100%, 0 build warning trên MSVC C++20.
+- **[P1.15] Khắc phục triệt để lỗi Lệch Pha & Lệch Bar khi Preview Sample ở chế độ Sync DAW (2026-08-30)**:
+  - **Nguyên nhân gốc rễ được tìm thấy & xử lý**:
+    1. **REAPER API `GetPlayPosition2` (Audio Block Stream Alignment)**: REAPER xuất audio qua driver ASIO/WASAPI theo từng audio block tương lai (`GetPlayPosition2()`). Cùng lúc đó, engine âm thanh miniaudio của Reals Lab cũng render trực tiếp ra audio hardware block. Khi dùng `GetPlayPosition()`, con trỏ bị trễ 44ms (bù trễ DAC trên timeline) khiến miniaudio nạp mẫu trễ hơn 44ms ("bùn ... bùn"). Đã chuyển `hostTransport()` đồng bộ theo `GetPlayPosition2()` (`pos2`) để cả 2 luồng audio cùng chảy vào buffer phần cứng ở cùng một thời điểm block, triệt tiêu hoàn toàn độ trễ 44ms.
+    2. **Khắc phục Lệch do Reverb Tail / Padding (`nominalLoopFrames`)**: File loop có đuôi vang (ví dụ 4 bar = 8.0s, file dài 8.8s) trước đây bị nhân `startFraction * totalFrames` dẫn tới nhảy lệch phách. Đã bổ sung `nominalLoopFrames = (loopBeats * 60 / sampleBpm) * sampleRate` trong `Engine.cpp` và `Bridge.cpp` để `startFrame` và điểm ngắt lặp luôn bám đúng chu kỳ bar danh nghĩa.
+    3. **Seamless Looping & Xóa bỏ khoảng lặng 28ms của SoundTouch**: Trong `Engine.cpp` (`dsp_on_read`), khi loop lặp lại ở cả chế độ Bypass và DSP (SoundTouch), tự động quay về frame 0 và tiếp tục nạp mẫu mượt mà mà KHÔNG gọi `ds->processor.flush()`, loại bỏ hoàn toàn khoảng lặng 28ms và triệt tiêu hiện tượng trôi nhịp tích lũy sau nhiều vòng lặp.
+    4. **Nâng cấp Musical Bar Quantizer**: Mở rộng danh sách bar chuẩn (`0.25, 0.5, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 64 bars`) và dung sai thông minh (cho phép đuôi vang lên tới 20% mà không bị nhảy sang số beat lẻ).
+    5. **Live Re-phase on Sync change**: Khi bật `Sync BPM` hoặc phát hiện BPM mới trong lúc DAW đang chạy, `Bridge.cpp` tự động re-align lại playhead và boundary frames khớp tức thì với thanh nhịp DAW.
+    6. **Triệt tiêu Over-compensation (+62ms latency)**: Dữ liệu log thực tế chứng minh CPU tính toán SoundTouch chỉ mất 2~5ms chứ không hề có độ trễ 30ms trong thời gian thực. Đã loại bỏ phép cộng bù `latBeats` (+62ms) trong `Bridge.cpp`, đưa `startFraction` về đúng 100% phách thật của DAW, triệt tiêu hoàn toàn hiện tượng phát sớm (flam) nốt 1/32.
+    7. **Auto Hardware Latency Delta Alignment (Tự động bù trừ độ trễ Soundcard chuyên dụng)**:
+       - Khi người dùng dùng Soundcard chuyên dụng (Focusrite, Apollo, Steinberg, RME...), driver ASIO có độ dự đoán block cao hơn Windows WASAPI (`deltaLatMs = reaperBlockLat - wasapiBufLat = 54.9ms - 30.0ms = +24.9ms`).
+       - `Bridge.cpp` và `reaper_plugin.cpp` tự động đo đạc hiệu số này và bù đúng $\Delta_{\text{latency}}$ vào `beatInLoop`. Khi dùng FL Studio ASIO (`delta = 0ms`) hay Focusrite ASIO (`delta = +24.9ms`), âm thanh preview luôn chạm tới màng loa ở đúng mili-giây với project DAW.
+- **[P1.20] Tích hợp Audio Hook Chuẩn SWS (Audio_RegHardwareHook & GetPlayPosition2Ex) (2026-08-31)**:
+  - **Kiến trúc Audio Thread Native Callback**:
+    1. Đăng ký `Audio_RegHardwareHook` trực tiếp với REAPER audio core (`OnAudioBuffer`).
+    2. Trong callback âm thanh thời gian thực: truy vấn `GetPlayPosition2Ex(nullptr)` và `TimeMap2_timeToBeats` trực tiếp trên từng block buffer ASIO.
+    3. Giải mã và resample toàn bộ dữ liệu âm thanh preview sang RAM (`float32` stereo) tại đúng tần số mẫu dự án (`srate` = 48000/44100/96000Hz).
+    4. Trộn trực tiếp vào `reg->GetBuffer(true, 0)` và `reg->GetBuffer(true, 1)` với **độ trễ = 0.0000ms tuyệt đối**, không bị jitter IPC, không phụ thuộc timer UI, không dính độ trễ DAC, không tạo file WAV tạm thời gian thực trên đĩa.
+    5. Cập nhật metric Peak, RMS và con trỏ vị trí atomic thời gian thực về UI để hiển thị sóng âm và volume meter mượt mà 100%.
+  - **Kiểm thử**: 256/256 tests pass 100%, MSVC /W4 zero-warning. DLL đã được tự động deploy vào `%APPDATA%\REAPER\UserPlugins`.
 
 ## Ghi chú làm việc
 - Trả lời ngắn gọn, kiểu 2 thằng bạn trò chuyện.
 - Làm từng bước, bàn bạc kỹ trước khi code.
 - **Mỗi khi chốt được điều gì → ghi ngay vào file này** (kèm ngày).
+

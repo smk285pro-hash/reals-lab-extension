@@ -44,7 +44,9 @@ struct DspAudioSource {
     ma_data_source_base base{};
     bool baseInited = false;
     ma_decoder decoder{};
-    bool decoderInited = false;
+    bool pcmLoaded = false;
+    std::vector<float> pcmData;
+    bool useDevice = true;
     SoundTouchProcessor processor{44100, 2, true};
     mutable std::recursive_mutex dspMutex;
     std::atomic<bool> loop{false};
@@ -59,6 +61,9 @@ struct DspAudioSource {
     float appliedPitchSemitones = 0.0f;
     std::atomic<ma_uint64> cursorFrames{0};
     std::atomic<ma_uint64> totalFrames{0};
+    std::atomic<ma_uint64> loopBoundaryFrames{0};
+    std::chrono::steady_clock::time_point playStartTime;
+    std::atomic<bool> isFirstRead{true};
     std::vector<float> readBuffer;
 
     DspAudioSource() {
@@ -71,9 +76,10 @@ struct DspAudioSource {
 
     void close() {
         std::lock_guard lock(dspMutex);
-        if (decoderInited) {
-            ma_decoder_uninit(&decoder);
-            decoderInited = false;
+        if (pcmLoaded) {
+            pcmData.clear();
+            pcmData.shrink_to_fit();
+            pcmLoaded = false;
         }
         if (baseInited) {
             ma_data_source_uninit(&base);
@@ -82,6 +88,7 @@ struct DspAudioSource {
         processor.clear();
         cursorFrames.store(0);
         totalFrames.store(0);
+        loopBoundaryFrames.store(0);
     }
 };
 
@@ -97,7 +104,7 @@ ma_result dsp_on_read(ma_data_source* pDataSource, void* pFramesOut, ma_uint64 f
     }
 
     std::lock_guard lock(ds->dspMutex);
-    if (!ds->decoderInited) {
+    if (!ds->pcmLoaded || ds->pcmData.empty()) {
         if (pFramesRead) *pFramesRead = 0;
         return MA_AT_END;
     }
@@ -123,25 +130,51 @@ ma_result dsp_on_read(ma_data_source* pDataSource, void* pFramesOut, ma_uint64 f
     const int channels = (ds->channels > 0) ? ds->channels : 2;
     const bool isBypass = (std::abs(ds->timeRatio.load() - 1.0f) < 0.001f && std::abs(ds->pitchSemitones.load()) < 0.01f);
 
+    const ma_uint64 bound = ds->loopBoundaryFrames.load(std::memory_order_relaxed);
+    const ma_uint64 totalF = ds->totalFrames.load(std::memory_order_relaxed);
+    const ma_uint64 effectiveLoopFrames = (bound > 0 && bound <= totalF) ? bound : totalF;
+
+    if (ds->isFirstRead.exchange(false, std::memory_order_relaxed)) {
+        const auto now = std::chrono::steady_clock::now();
+        const auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(now - ds->playStartTime).count();
+        LOG_INFO("AUDIO_CALLBACK", "FIRST_READ: elapsedUs=" + std::to_string(elapsedUs) +
+                 " (" + std::to_string(elapsedUs / 1000.0) + "ms)" +
+                 " frameCount=" + std::to_string(frameCount) +
+                 " initialCursor=" + std::to_string(ds->cursorFrames.load()) +
+                 " loopBoundary=" + std::to_string(bound) +
+                 " totalFrames=" + std::to_string(totalF) +
+                 " timeRatio=" + std::to_string(ds->timeRatio.load()));
+    }
+
     if (isBypass) {
         // Fast-path: Direct decoder reading with zero DSP overhead, zero latency, and bit-perfect quality
         ma_uint64 framesReadTotal = 0;
         while (framesReadTotal < frameCount) {
-            const ma_uint64 framesToRead = frameCount - framesReadTotal;
-            ma_uint64 framesRead = 0;
-            const ma_result res = ma_decoder_read_pcm_frames(
-                &ds->decoder,
-                out + framesReadTotal * channels,
-                framesToRead,
-                &framesRead);
-            framesReadTotal += framesRead;
-            ds->cursorFrames.fetch_add(framesRead);
+            const ma_uint64 currentCursor = ds->cursorFrames.load(std::memory_order_relaxed);
+            ma_uint64 framesToRead = frameCount - framesReadTotal;
+            if (ds->loop.load(std::memory_order_relaxed) && effectiveLoopFrames > 0 && currentCursor + framesToRead > effectiveLoopFrames) {
+                framesToRead = (currentCursor < effectiveLoopFrames) ? (effectiveLoopFrames - currentCursor) : 0;
+            }
 
-            if (res != MA_SUCCESS || framesRead == 0) {
-                if (ds->loop) {
-                    ma_decoder_seek_to_pcm_frame(&ds->decoder, 0);
-                    ds->cursorFrames.store(0);
-                    if (framesRead == 0 && framesReadTotal == 0) {
+            ma_uint64 framesRead = 0;
+            ma_result res = MA_SUCCESS;
+            if (framesToRead > 0) {
+                const size_t avail = (ds->pcmData.size() / channels) > currentCursor ? (ds->pcmData.size() / channels) - currentCursor : 0;
+                framesRead = (framesToRead < avail) ? framesToRead : avail;
+                if (framesRead > 0) {
+                    std::memcpy(out + framesReadTotal * channels, &ds->pcmData[currentCursor * channels], framesRead * channels * sizeof(float));
+                    res = MA_SUCCESS;
+                } else { res = MA_AT_END; }
+                framesReadTotal += framesRead;
+                ds->cursorFrames.fetch_add(framesRead, std::memory_order_relaxed);
+            }
+
+            if (res != MA_SUCCESS || framesRead == 0 || (effectiveLoopFrames > 0 && ds->cursorFrames.load(std::memory_order_relaxed) >= effectiveLoopFrames)) {
+                if (ds->loop.load(std::memory_order_relaxed)) {
+                    LOG_INFO("AUDIO_CALLBACK", "BYPASS_LOOP_WRAP: cursor=" + std::to_string(ds->cursorFrames.load()) + " -> 0");
+                    
+                    ds->cursorFrames.store(0, std::memory_order_relaxed);
+                    if (framesRead == 0 && framesReadTotal == 0 && framesToRead == 0) {
                         break;
                     }
                 } else {
@@ -166,25 +199,48 @@ ma_result dsp_on_read(ma_data_source* pDataSource, void* pFramesOut, ma_uint64 f
         totalReceived += rec;
         if (totalReceived >= frameCount) break;
 
+        const ma_uint64 currentCursor = ds->cursorFrames.load(std::memory_order_relaxed);
         constexpr ma_uint64 kChunkFrames = 1024;
+        ma_uint64 framesToRead = kChunkFrames;
+        if (ds->loop.load(std::memory_order_relaxed) && effectiveLoopFrames > 0 && currentCursor + framesToRead > effectiveLoopFrames) {
+            framesToRead = (currentCursor < effectiveLoopFrames) ? (effectiveLoopFrames - currentCursor) : 0;
+        }
+
         if (ds->readBuffer.size() < kChunkFrames * static_cast<size_t>(channels)) {
             ds->readBuffer.resize(kChunkFrames * static_cast<size_t>(channels));
         }
 
         ma_uint64 framesRead = 0;
-        const ma_result res = ma_decoder_read_pcm_frames(&ds->decoder, ds->readBuffer.data(), kChunkFrames, &framesRead);
+        ma_result res = MA_SUCCESS;
+        if (framesToRead > 0) {
+            const size_t avail = (ds->pcmData.size() / channels) > currentCursor ? (ds->pcmData.size() / channels) - currentCursor : 0;
+            framesRead = (framesToRead < avail) ? framesToRead : avail;
+            if (framesRead > 0) {
+                std::memcpy(ds->readBuffer.data(), &ds->pcmData[currentCursor * channels], framesRead * channels * sizeof(float));
+                res = MA_SUCCESS;
+            } else { res = MA_AT_END; }
+        }
+
         if (res == MA_SUCCESS && framesRead > 0) {
             ds->processor.putSamples(ds->readBuffer.data(), static_cast<size_t>(framesRead));
-            ds->cursorFrames.fetch_add(framesRead);
+            ds->cursorFrames.fetch_add(framesRead, std::memory_order_relaxed);
         } else {
-            if (ds->loop) {
-                ma_decoder_seek_to_pcm_frame(&ds->decoder, 0);
-                ds->cursorFrames.store(0);
-                if (framesRead == 0) {
-                    ds->processor.flush();
-                    const size_t drained = ds->processor.receiveSamples(out + totalReceived * channels, frameCount - totalReceived);
-                    totalReceived += drained;
-                    break;
+            if (ds->loop.load(std::memory_order_relaxed)) {
+                LOG_INFO("AUDIO_CALLBACK", "DSP_LOOP_WRAP: cursor=" + std::to_string(ds->cursorFrames.load()) + " -> 0");
+                // Seamless loop in DSP mode: seek decoder back to frame 0 and continue putting samples.
+                // Do NOT flush the processor, keeping the SoundTouch pipeline filled with 0 latency drop!
+                
+                ds->cursorFrames.store(0, std::memory_order_relaxed);
+                if (framesRead == 0 && framesToRead == 0) {
+                    // Pull another chunk from start immediately to feed SoundTouch
+                    ma_uint64 newRead = 0;
+                    const size_t avail = ds->pcmData.size() / channels;
+                    newRead = (kChunkFrames < avail) ? kChunkFrames : avail;
+                    if (newRead > 0) {
+                        std::memcpy(ds->readBuffer.data(), ds->pcmData.data(), newRead * channels * sizeof(float));
+                        ds->processor.putSamples(ds->readBuffer.data(), static_cast<size_t>(newRead));
+                        ds->cursorFrames.store(newRead, std::memory_order_relaxed);
+                    }
                 }
             } else {
                 ds->processor.flush();
@@ -207,13 +263,16 @@ ma_result dsp_on_seek(ma_data_source* pDataSource, ma_uint64 frameIndex) {
     auto* ds = reinterpret_cast<DspAudioSource*>(pDataSource);
     if (!ds) return MA_INVALID_ARGS;
     std::lock_guard lock(ds->dspMutex);
-    if (!ds->decoderInited) return MA_INVALID_OPERATION;
-    const ma_result res = ma_decoder_seek_to_pcm_frame(&ds->decoder, frameIndex);
-    if (res == MA_SUCCESS) {
-        ds->processor.clear();
-        ds->cursorFrames.store(frameIndex);
-    }
-    return res;
+    if (!ds->pcmLoaded) return MA_INVALID_OPERATION;
+    
+    ma_uint64 target = frameIndex;
+    ma_uint64 avail = ds->pcmData.size() / (ds->channels > 0 ? ds->channels : 2);
+    if (target > avail) target = avail;
+    
+    ds->processor.clear();
+    ds->cursorFrames.store(target, std::memory_order_relaxed);
+    
+    return MA_SUCCESS;
 }
 
 ma_result dsp_on_get_data_format(ma_data_source* pDataSource, ma_format* pFormat, ma_uint32* pChannels, ma_uint32* pSampleRate, ma_channel* pChannelMap, size_t channelMapCap) {
@@ -284,11 +343,16 @@ Engine::~Engine() {
     // m_impl releases via unique_ptr (MAJ-07). Impl is complete here.
 }
 
-bool Engine::init() {
+bool Engine::init(bool useDevice) {
     if (!m_impl)
         m_impl = std::make_unique<Impl>();
     if (m_impl->engineInited)
         return true;
+    m_impl->dspSource.useDevice = useDevice;
+    if (!useDevice) {
+        m_impl->engineInited = true;
+        return true;
+    }
     if (ma_engine_init(nullptr, &m_impl->engine) != MA_SUCCESS) {
         LOG_ERROR(kTag, "ma_engine_init failed");
         return false;
@@ -327,7 +391,7 @@ void Engine::stop() {
 }
 
 bool Engine::playFile(const std::string& path, const bool loop, const double startFraction,
-                      const PhaseAnchor& phaseAnchor) {
+                      const PhaseAnchor& phaseAnchor, const uint64_t nominalLoopFrames) {
     LOG_INFO(kTag, "playFile: entering for path: " + path);
     if (!init()) {
         LOG_ERROR(kTag, "playFile: init() failed");
@@ -354,23 +418,38 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
 
 #ifdef _WIN32
     const std::wstring wpath = toWide(path);
-    const ma_result decRes = ma_decoder_init_file_w(wpath.c_str(), &decConfig, &m_impl->dspSource.decoder);
+    ma_decoder localDec{};
+    const ma_result decRes = ma_decoder_init_file_w(wpath.c_str(), &decConfig, &localDec);
 #else
-    const ma_result decRes = ma_decoder_init_file(path.c_str(), &decConfig, &m_impl->dspSource.decoder);
+    ma_decoder localDec{};
+    const ma_result decRes = ma_decoder_init_file(path.c_str(), &decConfig, &localDec);
 #endif
     if (decRes != MA_SUCCESS) {
         LOG_ERROR(kTag, "playFile: ma_decoder_init_file failed with res=" + std::to_string(decRes));
         return false;
     }
-    LOG_INFO(kTag, "playFile: decoder initialized");
+    LOG_INFO(kTag, "playFile: decoder initialized, buffering to RAM...");
 
-    m_impl->dspSource.decoderInited = true;
+    std::vector<float> tempPcm;
+    tempPcm.reserve(m_impl->track.totalFrames * m_impl->track.channels);
+    float readBuf[4096];
+    while (true) {
+        ma_uint64 framesRead = 0;
+        ma_decoder_read_pcm_frames(&localDec, readBuf, 2048, &framesRead);
+        if (framesRead == 0) break;
+        tempPcm.insert(tempPcm.end(), readBuf, readBuf + framesRead * m_impl->track.channels);
+    }
+    ma_decoder_uninit(&localDec);
+    
+    m_impl->dspSource.pcmData = std::move(tempPcm);
+    m_impl->dspSource.pcmLoaded = true;
     m_impl->dspSource.loop.store(loop, std::memory_order_relaxed);
     m_impl->dspSource.channels = m_impl->track.channels;
     m_impl->dspSource.sampleRate = m_impl->track.sampleRate;
     m_impl->dspSource.timeRatio.store(m_impl->timeRatio, std::memory_order_relaxed);
     m_impl->dspSource.pitchSemitones.store(m_impl->pitchSemitones, std::memory_order_relaxed);
     m_impl->dspSource.totalFrames.store(static_cast<ma_uint64>(m_impl->track.totalFrames));
+    m_impl->dspSource.loopBoundaryFrames.store(nominalLoopFrames, std::memory_order_relaxed);
     {
         std::lock_guard dspLock(m_impl->dspSource.dspMutex);
         m_impl->dspSource.processor.setSampleRate(m_impl->track.sampleRate);
@@ -398,8 +477,13 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
         }
     }
 
-    const ma_uint64 startFrame = (m_impl->track.totalFrames > 0 && clampedFraction > 0.0)
-        ? static_cast<ma_uint64>(clampedFraction * m_impl->track.totalFrames)
+    const ma_uint64 totalF = static_cast<ma_uint64>(m_impl->track.totalFrames);
+    const ma_uint64 refFrames = (nominalLoopFrames > 0 && nominalLoopFrames <= totalF)
+        ? nominalLoopFrames
+        : totalF;
+
+    const ma_uint64 startFrame = (refFrames > 0 && clampedFraction > 0.0)
+        ? static_cast<ma_uint64>(clampedFraction * refFrames)
         : 0;
 
     if (startFrame > 0) {
@@ -407,12 +491,29 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
     }
     m_impl->dspSource.cursorFrames.store(startFrame);
 
+    const bool isBypass = (std::abs(m_impl->timeRatio - 1.0f) < 0.001f && std::abs(m_impl->pitchSemitones) < 0.01f);
+    if (!isBypass) {
+        std::lock_guard dspLock(m_impl->dspSource.dspMutex);
+        const int lat = m_impl->dspSource.processor.latencyFrames();
+        if (lat > 0) {
+            std::vector<float> primeBuf(static_cast<size_t>(lat) * static_cast<size_t>(m_impl->track.channels));
+            ma_uint64 primeRead = 0;
+            if (ma_decoder_read_pcm_frames(&m_impl->dspSource.decoder, primeBuf.data(), static_cast<ma_uint64>(lat), &primeRead) == MA_SUCCESS && primeRead > 0) {
+                m_impl->dspSource.processor.putSamples(primeBuf.data(), static_cast<size_t>(primeRead));
+                m_impl->dspSource.cursorFrames.fetch_add(primeRead, std::memory_order_relaxed);
+            }
+            LOG_INFO(kTag, "playFile: SoundTouch pre-roll primed " + std::to_string(primeRead) +
+                           " frames (lat=" + std::to_string(lat) + " avail=" +
+                           std::to_string(m_impl->dspSource.processor.numSamplesAvailable()) + ")");
+        }
+    }
+
     ma_data_source_config baseConfig = ma_data_source_config_init();
     baseConfig.vtable = &g_dspDataSourceVtable;
     const ma_result dsRes = ma_data_source_init(&baseConfig, &m_impl->dspSource.base);
     if (dsRes != MA_SUCCESS) {
-        ma_decoder_uninit(&m_impl->dspSource.decoder);
-        m_impl->dspSource.decoderInited = false;
+        m_impl->dspSource.pcmData.clear();
+        m_impl->dspSource.pcmLoaded = false;
         LOG_ERROR(kTag, "playFile: ma_data_source_init failed with res=" + std::to_string(dsRes));
         return false;
     }
@@ -434,6 +535,15 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
 
     m_impl->soundLoaded = true;
     m_impl->loop = loop;
+    m_impl->dspSource.playStartTime = std::chrono::steady_clock::now();
+    m_impl->dspSource.isFirstRead.store(true, std::memory_order_relaxed);
+
+    LOG_INFO(kTag, "playFile: ready to start. refFrames=" + std::to_string(refFrames) +
+                   " startFrame=" + std::to_string(startFrame) +
+                   " clampedFraction=" + std::to_string(clampedFraction) +
+                   " loopBoundary=" + std::to_string(m_impl->dspSource.loopBoundaryFrames.load()) +
+                   " totalFrames=" + std::to_string(totalF));
+
     ma_sound_set_volume(&m_impl->sound, m_impl->volume);
     if (ma_sound_start(&m_impl->sound) != MA_SUCCESS) {
         LOG_ERROR(kTag, "playFile: ma_sound_start failed");
@@ -612,32 +722,45 @@ void Engine::seekFraction(const double fraction) {
     if (!m_impl->soundLoaded || m_impl->track.totalFrames <= 0)
         return;
     const double f = std::clamp(fraction, 0.0, 1.0);
-    const ma_uint64 frame = static_cast<ma_uint64>(f * m_impl->track.totalFrames);
+    const ma_uint64 bound = m_impl->dspSource.loopBoundaryFrames.load();
+    const ma_uint64 totalF = static_cast<ma_uint64>(m_impl->track.totalFrames);
+    const ma_uint64 refFrames = (bound > 0 && bound <= totalF) ? bound : totalF;
+    const ma_uint64 frame = static_cast<ma_uint64>(f * refFrames);
     ma_data_source_seek_to_pcm_frame(&m_impl->dspSource.base, frame);
 }
 
+void Engine::setLoopBoundaryFrames(const uint64_t frames) {
+    if (!m_impl) return;
+    const std::lock_guard lock(m_impl->stateMutex);
+    m_impl->dspSource.loopBoundaryFrames.store(frames, std::memory_order_relaxed);
+}
+
+uint64_t Engine::loopBoundaryFrames() const {
+    if (!m_impl) return 0;
+    return m_impl->dspSource.loopBoundaryFrames.load(std::memory_order_relaxed);
+}
+
 double Engine::pipelineLatencySeconds() const {
-    if (!m_impl || !m_impl->engineInited)
-        return 0.0;
-    // SoundTouch pipeline delay — only active when DSP (time-stretch / pitch)
-    // is engaged; the bypass fast-path has zero processing latency. The value
-    // is exact (reported by SETTING_INITIAL_LATENCY for the active tempo), so
-    // compensating it is always correct.
-    //
-    // Note: the device output buffer is deliberately NOT included. miniaudio
-    // 0.11.x exposes no true driver latency — period-size estimates vary per
-    // backend (e.g. the null backend reports ~60ms) and over-compensating a
-    // wrong estimate would shift the preview AHEAD of the grid, which is
-    // musically worse than the small residual backend latency (~10-20ms on
-    // WASAPI shared) left uncompensated.
-    const bool dspActive =
-        (std::abs(m_impl->timeRatio - 1.0f) > 0.001f || std::abs(m_impl->pitchSemitones) > 0.01f);
-    if (dspActive && m_impl->dspSource.sampleRate > 0) {
+    if (!m_impl) return 0.0;
+    const std::lock_guard lock(m_impl->stateMutex);
+    if (m_impl->soundLoaded && m_impl->dspSource.sampleRate > 0) {
+        std::lock_guard dspLock(m_impl->dspSource.dspMutex);
         const double frames = static_cast<double>(m_impl->dspSource.processor.latencyFrames());
         if (frames > 0.0)
             return frames / static_cast<double>(m_impl->dspSource.sampleRate);
     }
     return 0.0;
+}
+
+double Engine::deviceBufferLatencySeconds() const {
+    if (!m_impl || !m_impl->engineInited)
+        return 0.030; // default 30ms fallback
+    const ma_device* pDev = ma_engine_get_device(const_cast<ma_engine*>(&m_impl->engine));
+    if (pDev && pDev->playback.internalSampleRate > 0) {
+        const uint32_t bufFrames = pDev->playback.internalPeriodSizeInFrames * pDev->playback.internalPeriods;
+        return static_cast<double>(bufFrames) / pDev->playback.internalSampleRate;
+    }
+    return 0.030;
 }
 
 void Engine::setTimeRatio(const float ratio) {
@@ -768,7 +891,33 @@ double Engine::positionFraction() const {
     const std::lock_guard lock(m_impl->stateMutex);
     if (!m_impl->soundLoaded || m_impl->track.totalFrames <= 0)
         return 0.0;
-    return static_cast<double>(m_impl->dspSource.cursorFrames.load()) / m_impl->track.totalFrames;
+    const ma_uint64 bound = m_impl->dspSource.loopBoundaryFrames.load();
+    const double denom = (bound > 0 && bound <= static_cast<ma_uint64>(m_impl->track.totalFrames))
+        ? static_cast<double>(bound)
+        : m_impl->track.totalFrames;
+    return denom > 0.0 ? (static_cast<double>(m_impl->dspSource.cursorFrames.load()) / denom) : 0.0;
 }
 
+
+
+void Engine::renderFrames(float* outL, float* outR, size_t frames) {
+    if (!m_impl || !m_impl->dspSource.pcmLoaded || m_impl->dspSource.useDevice) {
+        memset(outL, 0, frames * sizeof(float));
+        memset(outR, 0, frames * sizeof(float));
+        return;
+    }
+    
+    std::vector<float> interleaved(frames * 2, 0.0f);
+    ma_uint64 framesRead = 0;
+    dsp_on_read(&m_impl->dspSource.base, interleaved.data(), frames, &framesRead);
+    
+    if (framesRead < frames) {
+        memset(interleaved.data() + framesRead * 2, 0, (frames - framesRead) * 2 * sizeof(float));
+    }
+    
+    for (size_t i = 0; i < frames; ++i) {
+        outL[i] += interleaved[i * 2];
+        outR[i] += interleaved[i * 2 + 1];
+    }
+}
 } // namespace reals::audio

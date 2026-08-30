@@ -29,9 +29,10 @@ public:
     static Engine& instance();
 
     // Initialize/teardown the output device (default device).
-    bool init();
+    bool init(bool useDevice = true);
     void shutdown();
     [[nodiscard]] bool isReady() const;
+    void renderFrames(float* outL, float* outR, size_t frames);
 
     // Phase anchor: invoked by playFile AFTER the file is fully decoded and
     // the DSP chain is configured but BEFORE the start position is applied
@@ -41,9 +42,11 @@ public:
     // lag (playhead phase sync fix).
     using PhaseAnchor = std::function<double(double presetFraction)>;
 
-    // Playback of a decoded file with optional phase/start fraction [0.0..1.0). Returns false if the file cannot be decoded.
+    // Playback of a decoded file with optional phase/start fraction [0.0..1.0) and optional nominal loop frames boundary. Returns false if the file cannot be decoded.
     bool playFile(const std::string& path, bool loop = false, double startFraction = 0.0,
-                  const PhaseAnchor& phaseAnchor = nullptr);
+                  const PhaseAnchor& phaseAnchor = nullptr, uint64_t nominalLoopFrames = 0);
+    void setLoopBoundaryFrames(uint64_t frames);
+    [[nodiscard]] uint64_t loopBoundaryFrames() const;
     void stop();
     // Play the file; if it is already playing, stop it instead.
     void toggle(const std::string& path, bool loop);
@@ -67,6 +70,7 @@ public:
     // fast-path reports 0. Callers advance the phase anchor position by this
     // amount so the audible output lands exactly on the DAW grid.
     [[nodiscard]] double pipelineLatencySeconds() const;
+    [[nodiscard]] double deviceBufferLatencySeconds() const;
 
     // DAW BPM Sync: Time-stretch playback without affecting pitch (1.0 = original tempo).
     void setTimeRatio(float ratio);

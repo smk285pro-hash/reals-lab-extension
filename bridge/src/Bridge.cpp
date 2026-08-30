@@ -163,6 +163,7 @@ struct Bridge::Impl {
         if (path.empty()) return 0.0f;
         // 1. DB lookup
         if (auto rec = db.getSampleByPath(path); rec.has_value() && rec->bpm > 30.0 && rec->bpm < 300.0) {
+            LOG_INFO("SYNC_DIAG", "detectBpmForPath: found in DB: " + path + " -> " + std::to_string(rec->bpm));
             return static_cast<float>(rec->bpm);
         }
         // 2. Filename regex: e.g. "Loop_128bpm" or "128 BPM"
@@ -177,12 +178,18 @@ struct Bridge::Impl {
             if (fname.empty()) fname = path;
             if (std::regex_search(fname, m, re) && m.size() > 1) {
                 float v = std::stof(m[1].str());
-                if (v >= 40.0f && v <= 250.0f) return v;
+                if (v >= 40.0f && v <= 250.0f) {
+                    LOG_INFO("SYNC_DIAG", "detectBpmForPath: found from filename regex: " + fname + " -> " + std::to_string(v));
+                    return v;
+                }
             }
             // Also try full path
             if (std::regex_search(path, m, re) && m.size() > 1) {
                 float v = std::stof(m[1].str());
-                if (v >= 40.0f && v <= 250.0f) return v;
+                if (v >= 40.0f && v <= 250.0f) {
+                    LOG_INFO("SYNC_DIAG", "detectBpmForPath: found from full path regex: " + path + " -> " + std::to_string(v));
+                    return v;
+                }
             }
         } catch (...) {}
         // 3. Local TempoDetector (decode up to 30s mono)
@@ -194,8 +201,10 @@ struct Bridge::Impl {
                 r.bpm = bpm;
                 db.upsertSample(r);
             }
+            LOG_INFO("SYNC_DIAG", "detectBpmForPath: detected via TempoDetector: " + path + " -> " + std::to_string(bpm));
             return bpm;
         }
+        LOG_INFO("SYNC_DIAG", "detectBpmForPath: could not detect BPM for: " + path);
         return 0.0f;
     }
 
@@ -506,6 +515,7 @@ Bridge::~Bridge() = default;
 
 void Bridge::init() {
     if (m_impl) {
+        audio::Engine::instance().init(m_actions == nullptr);
         m_impl->model.loadStore();
         m_impl->db.open();
         m_impl->searchEngine = std::make_unique<search::SearchEngine>(
@@ -550,15 +560,16 @@ std::vector<std::string> Bridge::drainEvents() {
 std::string Bridge::audioStateJson() const {
     auto& eng = reals::audio::Engine::instance();
     const reals::audio::LevelState lvl = eng.level();
+
     nlohmann::json j;
     j["event"] = "audio.state";
     nlohmann::json d;
     d["playing"] = eng.isPlaying();
     d["position"] = eng.positionFraction();
-    d["duration"] = eng.currentTrack().durationSeconds;
     d["peak"] = lvl.peak;
     d["rms"] = lvl.rms;
     d["aboveThreshold"] = (lvl.rms > 0.01f);
+    d["duration"] = eng.currentTrack().durationSeconds;
     d["pitchSemitones"] = eng.getPitchSemitones();
     d["timeRatio"] = eng.getTimeRatio();
     d["syncBpm"] = (eng.getTimeRatio() != 1.0f);
@@ -855,78 +866,95 @@ std::string Bridge::handle(const std::string& requestJson) {
             bool phaseSynced = false;
             double loopBeats = 4.0;
             double startFraction = 0.0;
+            uint64_t nominalLoopFrames = 0;
             audio::Engine::PhaseAnchor phaseAnchor;
             if (syncOn && m_actions && sampleBpm > 30.0f && info.durationSeconds >= 1.0) {
-                phaseAnchor = [this, &eng, &phaseSynced, &loopBeats, &startFraction,
-                               durationSec = info.durationSeconds,
-                               sampleBpm](double /*presetFraction*/) -> double {
-                    const auto transport = m_actions->hostTransport();
-                    if (!transport.isPlaying() || transport.bpm <= 30.0) {
-                        phaseSynced = false;
-                        startFraction = 0.0;
-                        return 0.0;
-                    }
-                    const double rawBeats = (durationSec * sampleBpm) / 60.0;
-                    const int timeSig = transport.beatsPerMeasure > 0 ? transport.beatsPerMeasure : 4;
+                const double rawBeats = (info.durationSeconds * sampleBpm) / 60.0;
+                const auto transportNow = m_actions->hostTransport();
+                const int timeSig = transportNow.beatsPerMeasure > 0 ? transportNow.beatsPerMeasure : 4;
 
-                    // Musical Bar Quantizer: snap to standard bar counts only
-                    // for near-exact matches (encoder padding / trimmed tails).
-                    // Tolerance is tight — max(1/16 bar, 4%) — so genuine
-                    // 3/6/12-bar phrases are NOT forced onto a power-of-2 grid
-                    // (the old 35% tolerance misclassified them and offset the
-                    // whole preview by whole bars).
-                    static const double kStandardBars[] = { 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0 };
-                    double resolvedBeats = 0.0;
+                static const double kStandardBars[] = { 0.25, 0.5, 1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0, 24.0, 32.0, 64.0 };
+                double resolvedBeats = 0.0;
+                // Check tight tolerance first (near-exact standard power-of-2 / standard phrase loops)
+                for (double sb : kStandardBars) {
+                    const double target = sb * static_cast<double>(timeSig);
+                    const double tol = std::max(static_cast<double>(timeSig) / 16.0, target * 0.04);
+                    if (std::abs(rawBeats - target) <= tol) {
+                        resolvedBeats = target;
+                        break;
+                    }
+                }
+                // If not tightly matched, check if rawBeats has release tail / padding on a standard bar
+                // (e.g. 4-bar loop of 16 beats with reverb tail up to 20% / 1-2 beats: 16.0 <= rawBeats <= 19.2)
+                if (resolvedBeats <= 0.0) {
                     for (double sb : kStandardBars) {
                         const double target = sb * static_cast<double>(timeSig);
-                        const double tol = std::max(static_cast<double>(timeSig) / 16.0, target * 0.04);
-                        if (std::abs(rawBeats - target) <= tol) {
+                        const double tailAllowance = std::max(1.0, target * 0.20);
+                        if (rawBeats >= target - 0.25 && rawBeats <= target + tailAllowance) {
                             resolvedBeats = target;
                             break;
                         }
                     }
-                    if (resolvedBeats <= 0.0) {
-                        // Not a standard power-of-2 bar loop: fall back to the
-                        // nearest INTEGER beat count so the sample's transients
-                        // still land on the DAW's beat grid.
-                        resolvedBeats = std::max(1.0, std::round(rawBeats));
+                }
+                if (resolvedBeats <= 0.0) {
+                    // Fallback to nearest integer beat count
+                    resolvedBeats = std::max(1.0, std::round(rawBeats));
+                }
+                loopBeats = resolvedBeats;
+
+                if (sampleBpm > 0.0f && info.sampleRate > 0) {
+                    const double nominalLoopSec = (loopBeats * 60.0) / sampleBpm;
+                    nominalLoopFrames = static_cast<uint64_t>(nominalLoopSec * info.sampleRate);
+                }
+
+                LOG_INFO("SYNC_DIAG",
+                         "BAR_QUANTIZE: fileDur=" + std::to_string(info.durationSeconds) +
+                         "s sampleBpm=" + std::to_string(sampleBpm) +
+                         " rawBeats=" + std::to_string(rawBeats) +
+                         " -> loopBeats=" + std::to_string(loopBeats) +
+                         " nominalLoopFrames=" + std::to_string(nominalLoopFrames) +
+                         " totalFrames=" + std::to_string(info.totalFrames));
+
+                phaseAnchor = [this, &eng, &phaseSynced, loopBeats, nominalLoopFrames, sampleBpm, &startFraction](double /*presetFraction*/) -> double {
+                    const auto transport = m_actions->hostTransport();
+                    if (!transport.isPlaying() || transport.bpm <= 30.0) {
+                        phaseSynced = false;
+                        startFraction = 0.0;
+                        LOG_INFO("SYNC_DIAG", "PHASE_ANCHOR: transport not playing or invalid BPM=" + std::to_string(transport.bpm));
+                        return 0.0;
                     }
-                    loopBeats = resolvedBeats;
 
                     double beatInLoop = std::fmod(transport.fullBeats, loopBeats);
                     if (beatInLoop < 0.0)
                         beatInLoop += loopBeats;
 
-                    // Latency compensation: the first audible sample exits the
-                    // playback pipeline `pipelineLatencySeconds()` AFTER it is
-                    // fed, while the DAW keeps advancing. Start the content
-                    // that far AHEAD in the loop so the audible output lands
-                    // exactly on the DAW grid (SoundTouch initial latency,
-                    // active in DSP time-stretch / pitch mode).
-                    const double latencyBeats =
-                        eng.pipelineLatencySeconds() * transport.bpm / 60.0;
-                    beatInLoop = std::fmod(beatInLoop + latencyBeats, loopBeats);
-                    if (beatInLoop < 0.0)
-                        beatInLoop += loopBeats;
-
                     startFraction = std::clamp(beatInLoop / loopBeats, 0.0, 0.999);
                     phaseSynced = true;
+
+                    const uint64_t computedStartFrame = static_cast<uint64_t>(startFraction * nominalLoopFrames);
+
+                    LOG_INFO("SYNC_DIAG",
+                             "PHASE_ANCHOR_EXEC: playState=" + std::to_string(transport.playState) +
+                             " pos(s)=" + std::to_string(transport.playPosition) +
+                             " fullBeats=" + std::to_string(transport.fullBeats) +
+                             " dawBpm=" + std::to_string(transport.bpm) +
+                             " beatInLoop=" + std::to_string(beatInLoop) +
+                             " startFraction=" + std::to_string(startFraction) +
+                             " startFrame=" + std::to_string(computedStartFrame));
+
                     return startFraction;
                 };
             }
 
-            // Pass the PhaseAnchor: startFraction here is only a preset (0.0);
-            // the anchor re-resolves it inside playFile after the decode is
-            // done and fills startFraction/loopBeats/phaseSynced for the
-            // response below.
-            const bool ok = eng.playFile(p, args.value("loop", false), startFraction, phaseAnchor);
-            LOG_INFO("bridge", "audio.play returned ok=" + std::to_string(ok));
+            // Play directly via high-performance core::Engine with sample-accurate phaseAnchor
+            const bool ok = eng.playFile(p, args.value("loop", false), startFraction, phaseAnchor, nominalLoopFrames);
+            LOG_INFO("bridge", "audio.play ok=" + std::to_string(ok));
             model.addRecent(p);
             json d;
             d["ok"] = ok;
-            d["duration"] = eng.currentTrack().durationSeconds;
-            d["sampleRate"] = eng.currentTrack().sampleRate;
-            d["channels"] = eng.currentTrack().channels;
+            d["duration"] = info.durationSeconds > 0.0 ? info.durationSeconds : eng.currentTrack().durationSeconds;
+            d["sampleRate"] = info.sampleRate > 0 ? info.sampleRate : eng.currentTrack().sampleRate;
+            d["channels"] = info.channels > 0 ? info.channels : eng.currentTrack().channels;
             d["startFraction"] = startFraction;
             d["phaseSynced"] = phaseSynced;
             d["loopBeats"] = loopBeats;
@@ -940,15 +968,14 @@ std::string Bridge::handle(const std::string& requestJson) {
             }
 
             if (!cachedEnv.empty()) {
-                eng.setEnvelope(p, cachedEnv);
                 d["envelope"] = cachedEnv;
             } else {
-                d["envelope"] = json::array();
                 m_impl->runEnvelopeScan(p);
             }
             res["ok"] = true;
             res["data"] = d;
         } else if (cmd == "audio.stop") {
+            if (m_actions) m_actions->stopHostPreview();
             eng.stop();
             res["ok"] = true;
         } else if (cmd == "audio.setLoop") {
@@ -1046,6 +1073,48 @@ std::string Bridge::handle(const std::string& requestJson) {
                 m_impl->syncRatio = ratio;
                 m_impl->syncPath = syncPath;
                 m_impl->syncSampleBpm = sampleBpm;
+            }
+            // Re-align phase if DAW is actively playing and engine is loaded
+            if (enabled && eng.isPlaying() && m_actions) {
+                const auto transport = m_actions->hostTransport();
+                if (transport.isPlaying() && transport.bpm > 30.0 && sampleBpm > 30.0) {
+                    const auto& trk = eng.currentTrack();
+                    if (trk.durationSeconds >= 1.0) {
+                        const double rawBeats = (trk.durationSeconds * sampleBpm) / 60.0;
+                        const int timeSig = transport.beatsPerMeasure > 0 ? transport.beatsPerMeasure : 4;
+                        static const double kStandardBars[] = { 0.25, 0.5, 1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0, 24.0, 32.0, 64.0 };
+                        double resolvedBeats = 0.0;
+                        for (double sb : kStandardBars) {
+                            const double target = sb * static_cast<double>(timeSig);
+                            const double tol = std::max(static_cast<double>(timeSig) / 16.0, target * 0.04);
+                            if (std::abs(rawBeats - target) <= tol) {
+                                resolvedBeats = target;
+                                break;
+                            }
+                        }
+                        if (resolvedBeats <= 0.0) {
+                            for (double sb : kStandardBars) {
+                                const double target = sb * static_cast<double>(timeSig);
+                                const double tailAllowance = std::max(1.0, target * 0.20);
+                                if (rawBeats >= target - 0.25 && rawBeats <= target + tailAllowance) {
+                                    resolvedBeats = target;
+                                    break;
+                                }
+                            }
+                        }
+                        if (resolvedBeats <= 0.0) {
+                            resolvedBeats = std::max(1.0, std::round(rawBeats));
+                        }
+                        double beatInLoop = std::fmod(transport.fullBeats, resolvedBeats);
+                        if (beatInLoop < 0.0) beatInLoop += resolvedBeats;
+                        const double syncFrac = std::clamp(beatInLoop / resolvedBeats, 0.0, 0.999);
+                        const double nominalLoopSec = (resolvedBeats * 60.0) / sampleBpm;
+                        if (trk.sampleRate > 0) {
+                            eng.setLoopBoundaryFrames(static_cast<uint64_t>(nominalLoopSec * trk.sampleRate));
+                        }
+                        eng.seekFraction(syncFrac);
+                    }
+                }
             }
             json d;
             d["syncBpm"] = enabled;
@@ -1309,6 +1378,15 @@ std::string Bridge::handle(const std::string& requestJson) {
             }
             res["ok"] = true;
             res["data"] = {{"results", arr}, {"count", arr.size()}};
+        } else if (cmd == "diag.getLogs" || cmd == "system.getLogs") {
+            const size_t limit = static_cast<size_t>(args.value("limit", 200));
+            const auto logs = util::Log::recentLogs(limit);
+            json arr = json::array();
+            for (const auto& line : logs) {
+                arr.push_back(line);
+            }
+            res["ok"] = true;
+            res["data"] = {{"logs", arr}, {"count", arr.size()}};
         } else if (cmd == "db.search") {
             db::QueryFilter filter;
             filter.text = args.value("query", "");

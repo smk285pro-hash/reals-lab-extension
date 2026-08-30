@@ -12,7 +12,7 @@ target_link_libraries(reals_shell_win PUBLIC "${REALS_WEBVIEW2_DIR}/x64/WebView2
 target_compile_definitions(reals_shell_win PUBLIC _CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
 
 add_library(reaper_realslab SHARED src/reaper_plugin.cpp res/resource.rc)
-target_include_directories(reaper_realslab PRIVATE ${REALS_SDK_DIR} res)
+target_include_directories(reaper_realslab PRIVATE ${REALS_SDK_DIR} res ${miniaudio_SOURCE_DIR})
 target_link_libraries(reaper_realslab PRIVATE reals_shell_win reals_bridge reals_core dwmapi)
 target_compile_definitions(reaper_realslab PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_definitions(reaper_realslab PRIVATE

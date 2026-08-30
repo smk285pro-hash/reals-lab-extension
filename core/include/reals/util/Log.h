@@ -2,6 +2,7 @@
 
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace reals::util {
 
@@ -15,6 +16,7 @@ public:
     static void write(LogLevel level, std::string_view tag, std::string_view message);
 
     static void setMinLevel(LogLevel level);
+    static std::vector<std::string> recentLogs(size_t maxCount = 200);
 };
 
 } // namespace reals::util

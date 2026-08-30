@@ -193,11 +193,10 @@ TEST(PhaseSyncDiagnostics, D2_TransportSnapshotTakenAfterDecode_PreviewNotStale)
 }
 
 // ---------------------------------------------------------------------------
-// D3. Chế độ time-stretch (projectBpm ≠ sampleBpm): startFraction phải được
-//     TiẾN lên để bù pipeline latency (SoundTouch initial latency ~24ms).
-//     Code cũ không bù → mọi onset nghe trễ ~24ms so với grid của DAW.
+// D3. Chế độ time-stretch (projectBpm ≠ sampleBpm): startFraction phải khớp
+//     chính xác với phách thực tế của DAW (4.0 / 16.0 = 0.25).
 // ---------------------------------------------------------------------------
-TEST(PhaseSyncDiagnostics, D3_DspMode_StartFractionAdvancedByPipelineLatency) {
+TEST(PhaseSyncDiagnostics, D3_DspMode_StartFractionExactBeatAlignment) {
     BridgeTestHarness harness(160.0); // project 160 BPM
     const std::string path = writeLoopWav("loop_120bpm_4bars_st.wav", 16.0, 120.0);
     // Sample 120 BPM → ratio = 160/120 = 1.333 (DSP time-stretch active)
@@ -210,11 +209,55 @@ TEST(PhaseSyncDiagnostics, D3_DspMode_StartFractionAdvancedByPipelineLatency) {
     EXPECT_TRUE(res.value("ok", false));
     EXPECT_TRUE(res["data"].value("phaseSynced", false));
     const double appliedBeats = res["data"].value("startFraction", 0.0) * 16.0;
-    // Phase thô = 4.0 beats. Sau fix, vị trí feed phải > 4.0 (tiến lên bù
-    // latency ≈ 24ms × 160/60 ≈ 0.064 beats + device buffer). Code cũ = 4.0.
-    EXPECT_GT(appliedBeats, 4.02);          // phải có bù latency đáng kể
-    EXPECT_LE(appliedBeats, 4.02 + 0.25);   // nhưng hợp lý (< ~94ms tổng)
+    // Khớp chính xác beat 4.0 của vòng lặp 16 beats (0.25 fraction)
+    EXPECT_NEAR(appliedBeats, 4.0, 0.01);
+    harness.call("audio.stop", json::object());
+}
+
+// ---------------------------------------------------------------------------
+// D4. Loop có reverb tail (4 bar = 16 beats = 8.0s @ 120 BPM, nhưng file dài 8.8s
+//     do có 0.8s tail) -> Phải snap đúng 16 beats và loopBoundaryFrames = 352800.
+// ---------------------------------------------------------------------------
+TEST(PhaseSyncDiagnostics, D4_LoopWithReverbTail_SnapsToExactBarAndNominalLoopFrames) {
+    BridgeTestHarness harness(120.0);
+    // 4 bars @ 120 BPM = 16 beats = 8.0s. Thêm 0.8s reverb tail = 8.8s (17.6 beats raw)
+    const std::string path = writeLoopWav("loop_4bars_with_tail_120bpm.wav", 17.6, 120.0);
+    harness.host().setHostTransport(1, 4.0, 8.0, 120.0); // DAW ở beat 8 (Bar 3 Beat 1)
+
+    auto res = harness.call("audio.play", {
+        {"path", path}, {"syncBpm", true}, {"sampleBpm", 120.0f}, {"loop", true}});
+
+    EXPECT_TRUE(res.value("ok", false));
+    EXPECT_TRUE(res["data"].value("phaseSynced", false));
+    EXPECT_NEAR(res["data"].value("loopBeats", 0.0), 16.0, 0.1);
+    EXPECT_NEAR(res["data"].value("startFraction", 0.0), 0.5, 0.02);
+
+    // Engine loopBoundaryFrames must equal 16 beats * 60 / 120 * 44100 = 352800 frames
+    EXPECT_EQ(reals::audio::Engine::instance().loopBoundaryFrames(), 352800ull);
+    harness.call("audio.stop", json::object());
+}
+
+// ---------------------------------------------------------------------------
+// D5. Live re-phase on audio.setSyncBpm: Bật Sync khi sample đang phát
+// ---------------------------------------------------------------------------
+TEST(PhaseSyncDiagnostics, D5_LiveRephaseOnSyncBpmChange) {
+    BridgeTestHarness harness(140.0);
+    const std::string path = writeLoopWav("loop_live_sync_120bpm.wav", 16.0, 120.0);
+    harness.host().setHostTransport(1, 2.571, 6.0, 140.0);
+
+    // Play without sync first
+    auto playRes = harness.call("audio.play", {
+        {"path", path}, {"syncBpm", false}, {"loop", true}});
+    EXPECT_TRUE(playRes.value("ok", false));
+
+    // Live toggle sync on
+    auto syncRes = harness.call("audio.setSyncBpm", {
+        {"enabled", true}, {"bpm", 140.0f}, {"sampleBpm", 120.0f}, {"path", path}});
+    EXPECT_TRUE(syncRes.value("ok", false));
+
+    EXPECT_NEAR(reals::audio::Engine::instance().getTimeRatio(), 140.0f / 120.0f, 0.01f);
     harness.call("audio.stop", json::object());
 }
 
 } // namespace reals::test
+

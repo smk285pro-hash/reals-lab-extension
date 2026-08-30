@@ -34,9 +34,25 @@
 #define REAPERAPI_WANT_GetPlayState
 #define REAPERAPI_WANT_GetPlayPosition
 #define REAPERAPI_WANT_GetPlayPosition2
+#define REAPERAPI_WANT_GetPlayPosition2Ex
+#define REAPERAPI_WANT_GetCursorPosition
+#define REAPERAPI_WANT_EnumProjects
+#define REAPERAPI_WANT_GetAudioDeviceInfo
+#define REAPERAPI_WANT_GetMasterTrack
+#define REAPERAPI_WANT_Audio_RegHardwareHook
 #define REAPERAPI_WANT_PCM_Source_CreateFromFileEx
+#define REAPERAPI_WANT_PCM_Source_Destroy
+#define REAPERAPI_WANT_PlayTrackPreview
+#define REAPERAPI_WANT_PlayTrackPreview2
+#define REAPERAPI_WANT_PlayTrackPreview2Ex
+#define REAPERAPI_WANT_PlayPreview
+#define REAPERAPI_WANT_PlayPreviewEx
+#define REAPERAPI_WANT_StopTrackPreview
+#define REAPERAPI_WANT_StopTrackPreview2
+#define REAPERAPI_WANT_StopPreview
 #define REAPERAPI_WANT_GetSetMediaItemTakeInfo
 #define REAPERAPI_WANT_TimeMap2_timeToBeats
+#define REAPERAPI_WANT_TimeMap_GetDividedBpmAtTime
 #define REAPERAPI_WANT_DockWindowAddEx
 #define REAPERAPI_WANT_DockWindowRemove
 #define REAPERAPI_WANT_DockWindowActivate
@@ -59,6 +75,8 @@
 #define REAPERAPI_IMPLEMENT
 #include <reaper_plugin_functions.h>
 
+#include <miniaudio.h>
+#include "reals/audio/DragExporter.h"
 #include "reals/audio/Engine.h"
 #include "reals/bridge/Bridge.h"
 #include "reals/config/Config.h"
@@ -291,6 +309,103 @@ bool isDockedInternal();
 void toggleDockInternal();
 void applyDwmDarkTitle(HWND hwnd);
 
+struct LiveAudioTransportState {
+    std::atomic<double> playPos{0.0};
+    std::atomic<double> fullBeats{0.0};
+    std::atomic<double> beatPhase{0.0}; // 0.0 - 1.0 within 1 beat
+    std::atomic<double> bpm{120.0};
+    std::atomic<int> playState{0};
+    std::atomic<uint64_t> blockCounter{0};
+    std::atomic<uint64_t> discontinuityCounter{0};
+    double lastPos = -1.0;
+};
+
+static LiveAudioTransportState g_liveTransport;
+
+struct ReaperAudioHookState {
+    audio_hook_register_t hook{};
+    bool isRegistered = false;
+
+    void cleanup() {
+        if (isRegistered && Audio_RegHardwareHook) {
+            Audio_RegHardwareHook(false, &hook);
+            isRegistered = false;
+        }
+    }
+};
+
+static ReaperAudioHookState g_audioHook;
+
+static void ReaperOnAudioBuffer(bool isPost, int len, double srate, struct audio_hook_register_t* reg) {
+    // REAPER Rule 5: Only process during pre-processing (isPost == false)
+    if (isPost || len <= 0 || !reg) return;
+
+    const int playState = GetPlayState ? GetPlayState() : 0;
+    g_liveTransport.playState.store(playState, std::memory_order_relaxed);
+
+    if (!(playState & 1)) {
+        return; // DAW transport stopped
+    }
+
+    // 1. Exact audio block position for DSP (GetPlayPosition2Ex)
+    double playPos = 0.0;
+    if (GetPlayPosition2Ex) {
+        ReaProject* proj = EnumProjects ? EnumProjects(-1, nullptr, 0) : nullptr;
+        playPos = GetPlayPosition2Ex(proj);
+    } else if (GetPlayPosition2) {
+        playPos = GetPlayPosition2();
+    }
+
+    // 2. Exact tempo & continuous beats
+    double bpm = 120.0;
+    if (TimeMap_GetDividedBpmAtTime) {
+        bpm = TimeMap_GetDividedBpmAtTime(playPos);
+    } else if (Master_GetTempo) {
+        bpm = Master_GetTempo();
+    }
+
+    int m = 0, cml = 4, cdenom = 4;
+    double beats = 0.0;
+    if (TimeMap2_timeToBeats) {
+        TimeMap2_timeToBeats(nullptr, playPos, &m, &cml, &beats, &cdenom);
+    }
+
+    double phase = beats - floor(beats); // 0.0 - 1.0
+
+    // 3. Discontinuity detection (seek/loop/rewind)
+    double expectedDelta = (srate > 0.0) ? ((double)len / srate) : 0.0;
+    if (g_liveTransport.lastPos >= 0.0 && fabs((playPos - g_liveTransport.lastPos) - expectedDelta) > 0.01) {
+        g_liveTransport.discontinuityCounter.fetch_add(1, std::memory_order_relaxed);
+    }
+    g_liveTransport.lastPos = playPos;
+
+    // 4. Update lock-free atomic transport values
+    g_liveTransport.playPos.store(playPos, std::memory_order_relaxed);
+    g_liveTransport.fullBeats.store(beats, std::memory_order_relaxed);
+    g_liveTransport.beatPhase.store(phase, std::memory_order_relaxed);
+    g_liveTransport.bpm.store(bpm, std::memory_order_relaxed);
+    g_liveTransport.blockCounter.fetch_add(1, std::memory_order_relaxed);
+
+    ReaSample* outL = reg->GetBuffer(true, 0);
+    ReaSample* outR = reg->GetBuffer(true, 1);
+    if (outL && outR) {
+        // Use thread_local vectors to avoid allocation in the audio thread
+        thread_local std::vector<float> tempL;
+        thread_local std::vector<float> tempR;
+        if (tempL.size() < static_cast<size_t>(len)) tempL.resize(len);
+        if (tempR.size() < static_cast<size_t>(len)) tempR.resize(len);
+        
+        // renderFrames outputs 32-bit floats
+        reals::audio::Engine::instance().renderFrames(tempL.data(), tempR.data(), len);
+        
+        // Mix into REAPER's 64-bit ReaSample buffer
+        for (int i = 0; i < len; ++i) {
+            outL[i] += static_cast<ReaSample>(tempL[i]);
+            outR[i] += static_cast<ReaSample>(tempR[i]);
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Bridge host actions (touch REAPER)
 // ---------------------------------------------------------------------------
@@ -442,23 +557,76 @@ public:
 
     reals::bridge::HostTransport hostTransport() const override {
         reals::bridge::HostTransport t;
-        if (GetPlayState)
+        t.playState = g_liveTransport.playState.load(std::memory_order_relaxed);
+        if (t.playState == 0 && GetPlayState) {
             t.playState = GetPlayState();
-        if ((t.playState & 1) && GetPlayPosition2)
-            t.playPosition = GetPlayPosition2();
-        else if (GetPlayPosition)
-            t.playPosition = GetPlayPosition();
-        if (Master_GetTempo)
-            t.bpm = Master_GetTempo();
-        if (TimeMap2_timeToBeats) {
-            int m = 0, cml = 4, cdenom = 4;
-            double fb = 0.0;
-            TimeMap2_timeToBeats(nullptr, t.playPosition, &m, &cml, &fb, &cdenom);
-            t.measure = m;
-            t.beatsPerMeasure = cml > 0 ? cml : 4;
-            t.denom = cdenom > 0 ? cdenom : 4;
-            t.fullBeats = fb;
         }
+
+        if (t.playState & 1) {
+            t.playPosition = g_liveTransport.playPos.load(std::memory_order_relaxed);
+            t.fullBeats = g_liveTransport.fullBeats.load(std::memory_order_relaxed);
+            t.bpm = g_liveTransport.bpm.load(std::memory_order_relaxed);
+
+            if (t.playPosition <= 0.0) {
+                if (GetPlayPosition2Ex) {
+                    ReaProject* proj = EnumProjects ? EnumProjects(-1, nullptr, 0) : nullptr;
+                    t.playPosition = GetPlayPosition2Ex(proj);
+                } else if (GetPlayPosition2) {
+                    t.playPosition = GetPlayPosition2();
+                } else if (GetPlayPosition) {
+                    t.playPosition = GetPlayPosition();
+                }
+            }
+            if (t.bpm <= 0.0) {
+                if (TimeMap_GetDividedBpmAtTime) t.bpm = TimeMap_GetDividedBpmAtTime(t.playPosition);
+                else if (Master_GetTempo) t.bpm = Master_GetTempo();
+            }
+            if (TimeMap2_timeToBeats) {
+                int m = 0, cml = 4, cdenom = 4;
+                double fb = 0.0;
+                TimeMap2_timeToBeats(nullptr, t.playPosition, &m, &cml, &fb, &cdenom);
+                t.measure = m;
+                t.beatsPerMeasure = cml > 0 ? cml : 4;
+                t.denom = cdenom > 0 ? cdenom : 4;
+                if (t.fullBeats <= 0.0) t.fullBeats = fb;
+            }
+        } else {
+            double cursorPos = 0.0;
+            if (GetCursorPosition) cursorPos = GetCursorPosition();
+            t.playPosition = cursorPos;
+            if (Master_GetTempo) t.bpm = Master_GetTempo();
+            if (TimeMap2_timeToBeats) {
+                int m = 0, cml = 4, cdenom = 4;
+                double fb = 0.0;
+                TimeMap2_timeToBeats(nullptr, t.playPosition, &m, &cml, &fb, &cdenom);
+                t.measure = m;
+                t.beatsPerMeasure = cml > 0 ? cml : 4;
+                t.denom = cdenom > 0 ? cdenom : 4;
+                t.fullBeats = fb;
+            }
+        }
+
+        char modeBuf[128] = {0};
+        char srateBuf[64] = {0};
+        char bsizeBuf[64] = {0};
+        char outLatBuf[64] = {0};
+        if (GetAudioDeviceInfo) {
+            GetAudioDeviceInfo("MODE", modeBuf, sizeof(modeBuf));
+            GetAudioDeviceInfo("SRATE", srateBuf, sizeof(srateBuf));
+            GetAudioDeviceInfo("BSIZE", bsizeBuf, sizeof(bsizeBuf));
+            GetAudioDeviceInfo("OUT_LAT", outLatBuf, sizeof(outLatBuf));
+        }
+
+        LOG_INFO("REAPER_TRANSPORT",
+                 "playState=" + std::to_string(t.playState) +
+                 " audiblePos=" + std::to_string(t.playPosition) +
+                 " devMode=" + std::string(modeBuf) +
+                 " bsize=" + std::string(bsizeBuf) +
+                 " srate=" + std::string(srateBuf) +
+                 " bpm=" + std::to_string(t.bpm) +
+                 " fullBeats=" + std::to_string(t.fullBeats) +
+                 " measure=" + std::to_string(t.measure) +
+                 " sig=" + std::to_string(t.beatsPerMeasure) + "/" + std::to_string(t.denom));
         return t;
     }
 
@@ -1053,6 +1221,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
             DestroyIcon(g_hIconSm);
             g_hIconSm = nullptr;
         }
+        g_audioHook.cleanup();
         OleUninitialize();
         if (g_comOwned)
             CoUninitialize();
@@ -1070,6 +1239,16 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
             return -1;
         }
         LOG_INFO(kTag, "entry: api loaded");
+
+        if (Audio_RegHardwareHook) {
+            memset(&g_audioHook.hook, 0, sizeof(g_audioHook.hook));
+            g_audioHook.hook.OnAudioBuffer = ReaperOnAudioBuffer;
+            int hookRes = Audio_RegHardwareHook(true, &g_audioHook.hook);
+            g_audioHook.isRegistered = (hookRes != 0);
+            LOG_INFO(kTag, "entry: Audio_RegHardwareHook registered res=" + std::to_string(hookRes));
+        } else {
+            LOG_ERROR(kTag, "entry: Audio_RegHardwareHook API not available");
+        }
 
         reals::config::Config::instance().load();
         LOG_INFO(kTag, "entry: config ok");

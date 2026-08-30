@@ -182,8 +182,7 @@ FILE* openAppend(std::string_view utf8Path) {
     const std::wstring w = u8path(utf8Path).wstring();
     if (w.empty())
         return nullptr;
-    FILE* f = nullptr;
-    return _wfopen_s(&f, w.c_str(), L"a") == 0 ? f : nullptr;
+    return _wfsopen(w.c_str(), L"a", _SH_DENYNO);
 #else
     return std::fopen(std::string(utf8Path).c_str(), "a");
 #endif
