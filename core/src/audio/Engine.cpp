@@ -353,11 +353,21 @@ struct Engine::Impl {
     mutable std::recursive_mutex stateMutex;
     TrackInfo track;
     std::vector<float> env;
+    int targetSampleRate = 0;
 };
 
 Engine& Engine::instance() {
     static Engine inst;
     return inst;
+}
+
+void Engine::setTargetSampleRate(const int sampleRate) {
+    if (!m_impl) m_impl = std::make_unique<Impl>();
+    m_impl->targetSampleRate = sampleRate;
+}
+
+int Engine::targetSampleRate() const {
+    return m_impl ? m_impl->targetSampleRate : 0;
 }
 
 Engine::~Engine() {
@@ -435,10 +445,13 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
                    " dur=" + std::to_string(m_impl->track.durationSeconds));
     m_impl->env.clear();
 
+    const int targetSr = (m_impl->targetSampleRate > 0) ? m_impl->targetSampleRate : m_impl->track.sampleRate;
+    const int channels = (m_impl->track.channels > 0) ? m_impl->track.channels : 2;
+
     ma_decoder_config decConfig = ma_decoder_config_init(
         ma_format_f32,
-        static_cast<ma_uint32>(m_impl->track.channels),
-        static_cast<ma_uint32>(m_impl->track.sampleRate));
+        static_cast<ma_uint32>(channels),
+        static_cast<ma_uint32>(targetSr));
 
 #ifdef _WIN32
     const std::wstring wpath = toWide(path);
@@ -452,18 +465,13 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
         LOG_ERROR(kTag, "playFile: ma_decoder_init_file failed with res=" + std::to_string(decRes));
         return false;
     }
-    LOG_INFO(kTag, "playFile: decoder initialized, buffering to RAM...");
+    LOG_INFO(kTag, "playFile: decoder initialized, buffering to RAM at targetSr=" + std::to_string(targetSr) + "...");
 
     std::vector<float> tempPcm;
-    tempPcm.reserve(static_cast<size_t>(m_impl->track.totalFrames) *
-                     static_cast<size_t>(m_impl->track.channels));
+    const size_t estimatedFrames = static_cast<size_t>(m_impl->track.durationSeconds * targetSr);
+    tempPcm.reserve(estimatedFrames * static_cast<size_t>(channels));
 
-    // BUGFIX: the old fixed-size `float readBuf[4096]` combined with a
-    // hardcoded 2048-frame read request was only safe for stereo (2048*2 ==
-    // 4096). Any file with >2 channels would overrun the stack buffer. Size
-    // the chunk from the actual channel count instead.
-    const ma_uint32 decodeChannels =
-        static_cast<ma_uint32>((m_impl->track.channels > 0) ? m_impl->track.channels : 2);
+    const ma_uint32 decodeChannels = static_cast<ma_uint32>(channels);
     constexpr ma_uint64 kDecodeBufFrames = 2048;
     std::vector<float> readBuf(static_cast<size_t>(kDecodeBufFrames) * decodeChannels);
     while (true) {
@@ -477,16 +485,16 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
     m_impl->dspSource.pcmData = std::move(tempPcm);
     m_impl->dspSource.pcmLoaded = true;
     m_impl->dspSource.loop.store(loop, std::memory_order_relaxed);
-    m_impl->dspSource.channels = m_impl->track.channels;
-    m_impl->dspSource.sampleRate = m_impl->track.sampleRate;
+    m_impl->dspSource.channels = channels;
+    m_impl->dspSource.sampleRate = targetSr;
     m_impl->dspSource.timeRatio.store(m_impl->timeRatio, std::memory_order_relaxed);
     m_impl->dspSource.pitchSemitones.store(m_impl->pitchSemitones, std::memory_order_relaxed);
-    m_impl->dspSource.totalFrames.store(static_cast<ma_uint64>(m_impl->track.totalFrames));
+    m_impl->dspSource.totalFrames.store(static_cast<ma_uint64>(m_impl->dspSource.pcmData.size() / channels));
     m_impl->dspSource.loopBoundaryFrames.store(nominalLoopFrames, std::memory_order_relaxed);
     {
         std::lock_guard dspLock(m_impl->dspSource.dspMutex);
-        m_impl->dspSource.processor.setSampleRate(m_impl->track.sampleRate);
-        m_impl->dspSource.processor.setChannels(m_impl->track.channels);
+        m_impl->dspSource.processor.setSampleRate(targetSr);
+        m_impl->dspSource.processor.setChannels(channels);
         m_impl->dspSource.processor.setLowLatencyMode(true);
         m_impl->dspSource.processor.setTimeRatio(m_impl->timeRatio);
         m_impl->dspSource.processor.setPitchSemitones(m_impl->pitchSemitones);

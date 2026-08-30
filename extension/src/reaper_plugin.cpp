@@ -339,6 +339,10 @@ static ReaperAudioHookState g_audioHook;
 static void ReaperOnAudioBuffer(bool isPost, int len, double srate, struct audio_hook_register_t* reg) {
     if (len <= 0 || !reg) return;
 
+    if (srate > 0.0) {
+        reals::audio::Engine::instance().setTargetSampleRate(static_cast<int>(srate));
+    }
+
     if (!isPost) {
         // Pre-processing: Track transport and sample-accurate phase
         const int playState = GetPlayState ? GetPlayState() : 0;

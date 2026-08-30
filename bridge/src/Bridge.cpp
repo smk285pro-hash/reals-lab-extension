@@ -904,7 +904,8 @@ std::string Bridge::handle(const std::string& requestJson) {
 
                 if (sampleBpm > 0.0f && info.sampleRate > 0) {
                     const double nominalLoopSec = (loopBeats * 60.0) / sampleBpm;
-                    nominalLoopFrames = static_cast<uint64_t>(nominalLoopSec * info.sampleRate);
+                    const int effectiveSr = (eng.targetSampleRate() > 0) ? eng.targetSampleRate() : info.sampleRate;
+                    nominalLoopFrames = static_cast<uint64_t>(nominalLoopSec * effectiveSr);
                 }
 
                 LOG_INFO("SYNC_DIAG",

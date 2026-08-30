@@ -33,6 +33,8 @@ public:
     void shutdown();
     [[nodiscard]] bool isReady() const;
     void renderFrames(float* outL, float* outR, size_t frames);
+    void setTargetSampleRate(int sampleRate);
+    [[nodiscard]] int targetSampleRate() const;
 
     // Phase anchor: invoked by playFile AFTER the file is fully decoded and
     // the DSP chain is configured but BEFORE the start position is applied
