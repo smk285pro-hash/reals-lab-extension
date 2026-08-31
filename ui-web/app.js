@@ -2731,16 +2731,6 @@ function wireBrowserEvents() {
     _scrollProbeTimer = setTimeout(probeVisibleAudio, 100);
   });
 
-  filesBox.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0) return;
-    if (e.offsetX > filesBox.clientWidth - 16) return;
-    const row = e.target.closest('.file-row');
-    if (!row || !row._path) return;
-    const f = (state.files || []).find((x) => x.path === row._path);
-    if (!f) return;
-    selectEntry(f);
-  });
-
   $('#btnPlay').onclick = () => {
     if (state.playing) {
       stopMidiPlayback();
