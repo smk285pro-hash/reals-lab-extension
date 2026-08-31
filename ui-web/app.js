@@ -2249,8 +2249,8 @@ function paintVisible() {
     row.style.position = 'absolute';
     row.style.left = '4px';
     row.style.right = '4px';
-    row.style.top = (i * rowH + 2) + 'px';
-    row.style.height = (rowH - 4) + 'px';
+    row.style.top = (i * rowH) + 'px';
+    row.style.height = rowH + 'px';
     spacer.appendChild(row);
   }
   if (!total) {
@@ -2730,6 +2730,23 @@ function wireBrowserEvents() {
     clearTimeout(_scrollProbeTimer);
     _scrollProbeTimer = setTimeout(probeVisibleAudio, 100);
   });
+
+  filesBox.onclick = (e) => {
+    if (state._suppressClick) return;
+    const row = e.target.closest('.file-row');
+    if (row && row._path) {
+      const f = (state.files || []).find((x) => x.path === row._path);
+      if (f) selectEntry(f);
+      return;
+    }
+    const rect = filesBox.getBoundingClientRect();
+    const clickY = (e.clientY - rect.top) + filesBox.scrollTop;
+    const rowH = getRowH();
+    const idx = Math.floor(clickY / rowH);
+    if (state.files && idx >= 0 && idx < state.files.length) {
+      selectEntry(state.files[idx]);
+    }
+  };
 
   $('#btnPlay').onclick = () => {
     if (state.playing) {
