@@ -1,51 +1,66 @@
-# BRIEFING — 2026-08-31T15:31:00Z
+# BRIEFING — 2026-09-01T02:15:30+07:00
 
 ## Mission
-Review and adversarial testing of the Theme Engine frontend implementation and integration.
+Review Core C++, Bridge & Backend implementation (BrowserModel, Bridge, QueryParser, Path) for Global Favorites, Global Search, Clean Roots, and Concurrency/Memory Safety.
 
 ## 🔒 My Identity
-- Archetype: reviewer_critic
+- Archetype: reviewer_and_adversarial_critic
 - Roles: reviewer, critic
-- Working directory: c:\Users\smk28\Desktop\reals lab extension\.agents\reviewer_1
-- Original parent: 969f4ec2-b064-49df-a1e5-686abe0ff600
-- Milestone: Theme Engine Integration Review
+- Working directory: c:\Users\smk28\Desktop\reals lab extension\.agents\reviewer_1\
+- Original parent: 9a06e46c-3ec5-426b-83b8-d0e041f58ad5
+- Milestone: Review of M1-M4 (Core C++, Bridge & Backend)
 - Instance: 1 of 1
 
 ## 🔒 Key Constraints
 - Review-only — do NOT modify implementation code
-- Verify integrity: detect hardcoded facades, fake verification, shortcuts
-- Zero-FOUC verification in inline script
-- Dynamic canvas synchronization at 60FPS without getComputedStyle() in render loop
-- 100% token override parity across dark-studio, pastel-pink, cyberpunk
-- i18n key verification and AGENTS.md rules compliance
+- Mandatory use of GitNexus for code intelligence and impact analysis
+- Report findings with strict integrity checks and adversarial stress testing
+- 5-Component Handoff Protocol for handoff.md
 
 ## Current Parent
-- Conversation ID: 969f4ec2-b064-49df-a1e5-686abe0ff600
-- Updated: 2026-08-31T15:31:00Z
+- Conversation ID: 9a06e46c-3ec5-426b-83b8-d0e041f58ad5
+- Updated: 2026-09-01T02:15:30+07:00
 
 ## Review Scope
-- **Files to review**: `ui-web/tokens.css`, `ui-web/app.css`, `ui-web/index.html`, `ui-web/app.js`, `assets/i18n/*.json`, `tests/verify_tokens_test.py`
-- **Interface contracts**: `PROJECT.md`, `AGENTS.md`, `TEST_INFRA.md`, `.agents/ORIGINAL_REQUEST.md`, `.agents/worker_theme_engine_1/handoff.md`
-- **Review criteria**: Correctness, zero-FOUC, canvas 60fps performance, token parity, i18n completeness, build & test pass
+- **Files reviewed**:
+  - `core/src/browser/BrowserModel.cpp` & `core/include/reals/browser/BrowserModel.h`
+  - `bridge/src/Bridge.cpp` & `bridge/include/reals/bridge/Bridge.h`
+  - `core/src/search/QueryParser.cpp` & `core/include/reals/search/QueryParser.h`
+  - `core/src/platform/Path.cpp` & `core/include/reals/platform/Path.h`
+- **Interface contracts**: `PROJECT.md`, `SPEC.md`, `ORIGINAL_REQUEST.md`
+- **Review criteria**:
+  1. R3 Clean Default Roots (0 default roots on fresh install, safe store persistence with atomic write/rename)
+  2. R1 Global Favorites (`BrowserModel::getFavoriteEntries()`, `browser.getFavoriteEntries` RPC, automatic pruning, rename/delete sync)
+  3. R2 Global Search (`Bridge::runSearch` across all roots when base is empty, `/tag`, `/bpm:range`, `/key:note`, generation-based cancellation)
+  4. R4 Concurrency & Memory Safety (Mutex protection, lock-free audio thread safety, background worker lifecycle)
+
+## Key Decisions Made
+- Confirmed zero hardcoded roots on fresh install (R3).
+- Confirmed atomic write-rename store persistence with crash resilience (R3).
+- Verified `BrowserModel::getFavoriteEntries()` prunes non-existent files and preserves sort order (R1).
+- Verified RPC `browser.getFavoriteEntries` and its aliases return unified FileEntry array (R1).
+- Verified `Bridge::runSearch` handles multi-root traversal when base is empty with generation-based cancellation (R2).
+- Verified `QueryParser` handles all slash tokens (`/tag`, `/bpm:`, `/key:`, `/camelot:`, `/genre:`, `/mood:`, `/fav`) (R2).
+- Verified mutex locks, worker thread lifetime management, and lock-free audio safety (R4).
+- Verified 323/323 unit, benchmark, and adversarial stress tests pass 100%.
+- Verified zero integrity violations, dummy facades, or shortcuts.
+
+## Artifact Index
+- `.agents/reviewer_1/DISPATCH.md` — Dispatch log
+- `.agents/reviewer_1/progress.md` — Liveness & progress heartbeat
+- `.agents/reviewer_1/BRIEFING.md` — Working memory
+- `.agents/reviewer_1/handoff.md` — Final review report
 
 ## Review Checklist
-- **Items reviewed**: `ui-web/tokens.css`, `ui-web/app.css`, `ui-web/index.html`, `ui-web/app.js`, `tests/verify_tokens_test.py`, `tests/suites/TestSuite_ThemeEngine.cpp`, `extension/src/reaper_plugin.cpp`, `shell/win/WebViewHost.cpp`
+- **Items reviewed**: BrowserModel, Bridge, QueryParser, Path, TestSuites
 - **Verdict**: APPROVE
-- **Unverified claims**: None. All core claims verified empirically via Python token parser, MSVC build, and test suite execution.
+- **Unverified claims**: None (all verified via inspection and automated test execution)
 
 ## Attack Surface
 - **Hypotheses tested**:
-  1. `getComputedStyle()` layout thrashing in 60FPS animation loop -> Verified absent in `drawWaveform()` / `drawMeterSmoothed()`.
-  2. Inline style collision from `applyAccent()` -> Verified `ThemeManager.applyTheme()` removes inline `--accent*` overrides.
-  3. FOUC white flash on startup -> Verified `<head>` inline script synchronous execution and WebView2 `{0,0,0,0}` background.
-  4. Malicious / invalid theme injection -> Verified sanitizer defaults safely to `dark-studio`.
-  5. Missing CSS token variables -> Verified 100% parity across 246 definitions with 0 undefined globals and 0 hardcoded colors in `app.css`.
-- **Vulnerabilities found**: None in Theme Engine. Overall full repository test suite has 3 unrelated failures (timing benchmark and phase sync temp file write).
-- **Untested angles**: Hardware GPU acceleration quirks across varied multi-monitor Windows setups.
-
-## Key Decisions Made
-- Confirmed genuine implementation with 0 integrity violations.
-- Issued APPROVE verdict for Theme Engine frontend implementation and native integration.
-
-## Artifact Index
-- `.agents/reviewer_1/handoff.md` — Final review and adversarial challenge report
+  - Missing file dangling in favorites list -> pruned dynamically by `fs::exists`.
+  - Stale search generation collision -> discarded by `gen != searchGen.load()`.
+  - High concurrency 16-thread race on BrowserModel -> 0 deadlocks/races under `m_storeMutex`.
+  - Windows atomic file overwrite failure -> handled via fallback `fs::remove` and `fs::rename`.
+- **Vulnerabilities found**: None.
+- **Untested angles**: None.

@@ -1,17 +1,16 @@
-# Progress — Codebase Multi-Agent Audit
-
 ## Current Status
-Last visited: 2026-08-29T02:15:20+07:00
-- [x] Read ORIGINAL_REQUEST.md, AGENTS.md, SPEC.md, PLAN.md, DESIGN.md
-- [x] Initialize BRIEFING.md and progress.md
-- [x] Dispatch Subagent Team (Flash) across 3 parallel investigation tracks:
-  - [x] Explorer Track 1 (Conv: 498a34c1-7bd3-4729-aa0f-67ee9a0e1eec): R1 Architecture & Layer Boundary Audit (Completed)
-  - [x] Explorer Track 2 (Conv: b2dd5a3f-5aee-46ba-8757-da017566de63): R2 Code Quality, Memory & Concurrency / Real-Time Audio Safety Audit (Completed)
-  - [x] Explorer Track 3 (Conv: 4f1e987b-a535-4b13-a497-112c52faf8a1): R3 Build & Test Diagnostics (Completed)
-- [x] Aggregate and synthesize all subagent findings
-- [x] Generate comprehensive CODEBASE_AUDIT_REPORT.md at project root
-- [x] Verify acceptance criteria and deliver final report to Sentinel (parent)
+Last visited: 2026-09-01T02:18:00+07:00
 
 ## Iteration Status
 Current iteration: 1 / 32
-Status: COMPLETE (All acceptance criteria satisfied, 32 findings cataloged with remediation code diffs)
+
+## Checklist
+- [x] Phase 0: Survey & Codebase Exploration (Completed by Explorers 1, 2, 3)
+- [x] Milestone 1: Clean Initial Default Roots (R3) (Verified by Reviewers 1 & 2, Challenger 1, Auditor)
+- [x] Milestone 2: Global Favorites View (`★`) (R1) (Verified by Reviewers 1 & 2, Challengers 1 & 2, Auditor)
+- [x] Milestone 3: Global Recursive Search with Filters & View Restore (R2) (Verified by Reviewers 1 & 2, Challengers 1 & 2, Auditor)
+- [x] Milestone 4: Performance Optimization (<30ms, 5k+ files, 60fps, thread safety) (R4) (Verified by Challengers 1 & 2, Auditor)
+- [x] Milestone 5: Comprehensive E2E Testing (Tiers 1-4) & Adversarial Hardening (Tier 5) (Verified 100% CTest pass)
+- [x] Forensic Integrity Audit (CLEAN verdict confirmed)
+- [x] Final Gate Status: PASS (All criteria met)
+- [x] Reporting & Handoff

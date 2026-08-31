@@ -1,22 +1,26 @@
-## 2026-08-31T15:26:34Z
-You are Challenger 1 for the Reals Lab Theme Engine.
-Working directory: c:\Users\smk28\Desktop\reals lab extension\.agents\challenger_1
+## 2026-08-31T19:08:25Z
+You are Challenger 1 (Empirical Correctness & Latency Verifier) for Reals Lab REAPER Extension.
+Your working directory is: `c:\Users\smk28\Desktop\reals lab extension\.agents\challenger_1\`
+Write your findings to `c:\Users\smk28\Desktop\reals lab extension\.agents\challenger_1\handoff.md`.
 
-Mandatory Input Files:
-- c:\Users\smk28\Desktop\reals lab extension\.agents\ORIGINAL_REQUEST.md
-- c:\Users\smk28\Desktop\reals lab extension\AGENTS.md
-- c:\Users\smk28\Desktop\reals lab extension\PROJECT.md
-- c:\Users\smk28\Desktop\reals lab extension\TEST_INFRA.md
-- c:\Users\smk28\Desktop\reals lab extension\.agents\worker_theme_engine_1\handoff.md
+You MUST read:
+1. `c:\Users\smk28\Desktop\reals lab extension\ORIGINAL_REQUEST.md`
+2. `c:\Users\smk28\Desktop\reals lab extension\PROJECT.md`
+3. `c:\Users\smk28\Desktop\reals lab extension\TEST_INFRA.md`
+4. `c:\Users\smk28\Desktop\reals lab extension\AGENTS.md`
 
-Objective:
-Empirically challenge and stress-test the Theme Engine implementation:
-1. Challenge design token completeness, CSS syntax, variable reference integrity across all HTML/CSS/JS files.
-2. Challenge theme switching edge cases: invalid theme names, rapid switching, inline accent conflicts, canvas color updates.
-3. Verify performance: confirm 60FPS audio waveform rendering has zero layout thrashing overhead.
-4. Run empirical stress tests and test suites:
-   - `python tests/verify_tokens_test.py`
-   - `.\build\windows\tests\Debug\reals_tests.exe --suite=ThemeEngine`
-   - `ctest --preset windows`
-5. Write your findings to `c:\Users\smk28\Desktop\reals lab extension\.agents\challenger_1\handoff.md` with an explicit verdict: `APPROVE` or `REQUEST_CHANGES`.
-6. Send a message to parent when complete with your verdict and handoff file path.
+Execute empirical tests using `run_command`:
+1. Build check: `cmake --build --preset windows`
+2. Run requirement test suites:
+   - `.\build\windows\tests\Debug\reals_tests.exe --suite=Requirements_R3`
+   - `.\build\windows\tests\Debug\reals_tests.exe --suite=RequirementsR1R2R3Fixture`
+   - `.\build\windows\tests\Debug\reals_tests.exe --suite=Requirements_R2`
+3. Run performance benchmarks:
+   - `.\build\windows\tests\Debug\reals_tests.exe --suite=PerformanceBenchmarkFixture`
+   - `.\build\windows\tests\Debug\reals_tests.exe --suite=PerformanceBenchmark`
+4. Run boundaries and hardening:
+   - `.\build\windows\tests\Debug\reals_tests.exe --suite=BoundariesCorners`
+   - `.\build\windows\tests\Debug\reals_tests.exe --suite=AdversarialHardening`
+
+Verify test pass rates, timings (<30ms for 5k listing/search), and error resilience.
+State your verdict clearly: APPROVE or REQUEST_CHANGES in your handoff report and send a completion message to the parent orchestrator.

@@ -1030,12 +1030,16 @@ function parseMidiBuffer(arrayBuffer) {
           delete active[note];
         }
       } else if (status === 0xFF) {
-        offset++; // meta type
+        if (offset >= trackEnd) break;
+        const metaType = data[offset++];
         let len = 0;
         while (offset < trackEnd) {
           const b = data[offset++];
           len = (len << 7) | (b & 0x7F);
           if (!(b & 0x80)) break;
+        }
+        if (metaType === 0x51 && len === 3 && offset + 3 <= trackEnd) {
+          defaultTempo = (data[offset] << 16) | (data[offset+1] << 8) | data[offset+2];
         }
         offset += len;
       } else if (type === 0xC0 || type === 0xD0) {
@@ -1044,6 +1048,16 @@ function parseMidiBuffer(arrayBuffer) {
         offset += 2;
       }
     }
+
+    for (const note in active) {
+      rawEvents.push({
+        note: +note,
+        startTick: active[note].tick,
+        endTick: Math.max(active[note].tick + timeDivision / 2, curTick),
+        vel: active[note].vel
+      });
+    }
+
     offset = trackEnd;
   }
 
@@ -1081,6 +1095,32 @@ function parseMidiBuffer(arrayBuffer) {
     duration: Math.max(1.0, maxTime),
     tonic
   };
+}
+
+async function loadMidiPreviewData(path) {
+  if (!path || !isMidiFile(path)) return null;
+  if (!state._midiCache) state._midiCache = {};
+  if (state._midiCache[path]) {
+    return state._midiCache[path];
+  }
+
+  try {
+    const res = await bridge('audio.readMidi', { path });
+    const b64 = (typeof res === 'object' && res) ? (res.base64 || res.data?.base64) : null;
+    if (b64) {
+      const binStr = atob(b64);
+      const bytes = new Uint8Array(binStr.length);
+      for (let i = 0; i < binStr.length; ++i) bytes[i] = binStr.charCodeAt(i);
+      const parsed = parseMidiBuffer(bytes.buffer);
+      if (parsed && parsed.notes && parsed.notes.length > 0) {
+        state._midiCache[path] = parsed;
+        return parsed;
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to load MIDI preview:', err);
+  }
+  return null;
 }
 
 function playMidiEvents(notes, totalDur) {
@@ -2336,6 +2376,25 @@ function selectEntry(f) {
     }
     updateTransposerPopUI();
 
+    if (isMidiFile(f.path)) {
+      loadMidiPreviewData(f.path).then((parsed) => {
+        if (parsed && state.selected === f.path) {
+          state.midiNotes = parsed.notes;
+          state.duration = parsed.duration;
+          state.originalRootNote = parsed.tonic || rootNote;
+          if (state.isUserTargetKeyLocked && state.userTargetNote) {
+            state.selectedTargetNote = state.userTargetNote;
+            state.pitchSemitones = calculateSemitoneDistance(state.originalRootNote, state.userTargetNote);
+          } else {
+            state.selectedTargetNote = state.originalRootNote;
+            state.pitchSemitones = 0;
+          }
+          updateTransposerPopUI();
+          drawWaveform();
+        }
+      });
+    }
+
     if (!isDuplicate) {
       if (state.autoPreview !== false) {
         clearTimeout(state._previewArmT);
@@ -2937,31 +2996,26 @@ async function playFile(path) {
       state.sampleTags = tags;
       renderPlayerTags(tags);
 
-      try {
-        const res = await bridge('audio.readMidi', { path });
-        if (res && res.ok && res.base64) {
-          const binStr = atob(res.base64);
-          const bytes = new Uint8Array(binStr.length);
-          for (let i = 0; i < binStr.length; ++i) bytes[i] = binStr.charCodeAt(i);
-          const parsed = parseMidiBuffer(bytes.buffer);
-          state.midiNotes = parsed.notes;
-          state.duration = parsed.duration;
-          state.originalRootNote = parsed.tonic;
-          if (state.isUserTargetKeyLocked && state.userTargetNote) {
-            state.selectedTargetNote = state.userTargetNote;
-            state.pitchSemitones = calculateSemitoneDistance(parsed.tonic, state.userTargetNote);
-          } else {
-            state.selectedTargetNote = parsed.tonic;
-            state.pitchSemitones = 0;
-          }
-          updateTransposerPopUI();
-
-          playMidiEvents(parsed.notes, parsed.duration);
-          drawWaveform();
-          return;
+      const parsed = await loadMidiPreviewData(path);
+      if (parsed && parsed.notes && parsed.notes.length > 0) {
+        state.midiNotes = parsed.notes;
+        state.duration = parsed.duration || 4.0;
+        state.originalRootNote = parsed.tonic || 'C';
+        if (state.isUserTargetKeyLocked && state.userTargetNote) {
+          state.selectedTargetNote = state.userTargetNote;
+          state.pitchSemitones = calculateSemitoneDistance(parsed.tonic, state.userTargetNote);
+        } else {
+          state.selectedTargetNote = parsed.tonic;
+          state.pitchSemitones = 0;
         }
-      } catch (err) {
-        console.warn('MIDI read error:', err);
+        updateTransposerPopUI();
+
+        state.playing = true;
+        const bp = $('#btnPlay');
+        if (bp) bp.textContent = '⏸';
+        startPlayerAnimLoop();
+        playMidiEvents(parsed.notes, parsed.duration);
+        drawWaveform();
       }
       return;
     }

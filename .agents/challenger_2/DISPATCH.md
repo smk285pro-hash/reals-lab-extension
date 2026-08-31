@@ -1,22 +1,22 @@
-## 2026-08-31T15:26:34Z
-You are Challenger 2 for the Reals Lab Theme Engine.
-Working directory: c:\Users\smk28\Desktop\reals lab extension\.agents\challenger_2
+## 2026-09-01T02:08:25Z
+You are Challenger 2 (Adversarial Stress & Edge Case Verifier) for Reals Lab REAPER Extension.
+Your working directory is: c:\Users\smk28\Desktop\reals lab extension\.agents\challenger_2\
+Write your findings to c:\Users\smk28\Desktop\reals lab extension\.agents\challenger_2\handoff.md.
 
-Mandatory Input Files:
-- c:\Users\smk28\Desktop\reals lab extension\.agents\ORIGINAL_REQUEST.md
-- c:\Users\smk28\Desktop\reals lab extension\AGENTS.md
-- c:\Users\smk28\Desktop\reals lab extension\PROJECT.md
-- c:\Users\smk28\Desktop\reals lab extension\TEST_INFRA.md
-- c:\Users\smk28\Desktop\reals lab extension\.agents\worker_theme_engine_1\handoff.md
+You MUST read:
+1. c:\Users\smk28\Desktop\reals lab extension\ORIGINAL_REQUEST.md
+2. c:\Users\smk28\Desktop\reals lab extension\PROJECT.md
+3. c:\Users\smk28\Desktop\reals lab extension\TEST_INFRA.md
+4. c:\Users\smk28\Desktop\reals lab extension\AGENTS.md
 
-Objective:
-Empirically challenge the C++ native extension, REAPER persistence, and deployment pipeline:
-1. Challenge REAPER ExtState persistence: verify behavior with missing keys, corrupt data, concurrent calls, empty strings, injection payloads (`' OR '1'='1`, `<script>`).
-2. Challenge zero-FOUC host window initialization, prewarm lifecycle, and IPC bridge reliability under rapid messages.
-3. Challenge the build artifact deployment: verify `reaper_realslab.dll` deployed to `%APPDATA%/REAPER/UserPlugins/` with atomic rotation.
-4. Execute empirical tests:
-   - `cmake --build --preset windows`
-   - `.\build\windows\tests\Debug\reals_tests.exe --suite=ThemeEngine`
-   - `ctest --preset windows`
-5. Write your findings to `c:\Users\smk28\Desktop\reals lab extension\.agents\challenger_2\handoff.md` with an explicit verdict: `APPROVE` or `REQUEST_CHANGES`.
-6. Send a message to parent when complete with your verdict and handoff file path.
+Execute empirical tests using un_command:
+1. Run cross-features, E2E, and Drag & Drop suites:
+   - .\build\windows\tests\Debug\reals_tests.exe --suite=CrossFeatures
+   - .\build\windows\tests\Debug\reals_tests.exe --suite=EndToEndWorkflows
+   - .\build\windows\tests\Debug\reals_tests.exe --suite=EmpiricalChallenger_R2
+   - .\build\windows\tests\Debug\reals_tests.exe --suite=SearchEngine
+   - .\build\windows\tests\Debug\reals_tests.exe --suite=BridgeUI
+2. Validate search filter syntax edge cases (/bpm:120-130, /key:Cmin, /tag:vocal, /camelot:8A, /openkey:1d, /fav, malformed filters).
+3. Validate REAPER Drag & Drop Mechanism A (native playrate math) vs Mechanism B (resampled temp WAV).
+
+State your verdict clearly: APPROVE or REQUEST_CHANGES in your handoff report and send a completion message to the parent orchestrator.
