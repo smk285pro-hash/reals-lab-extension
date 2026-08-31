@@ -100,6 +100,11 @@ const I18N = {
     'toast.labError': 'Lỗi Lab', 'toast.scannerError': 'Lỗi quét',
     'toast.similarError': 'Lỗi tìm mẫu tương tự',
     'sync.noBpm': 'Sync: không tìm thấy BPM, thử 120',
+    'player.dragTip': 'Kéo vào REAPER',
+    'browser.loadingSamples': 'Đang tải sample...',
+    'browser.addFolder': 'Thêm thư mục Sample',
+    'scanner.cancel': 'Dừng',
+    'settings.miniWave': 'Sóng âm mini dưới tên file',
     'lab.alreadyRunning': 'Đang có job chạy — chờ xong đã nhé',
   },
   en: {
@@ -198,6 +203,13 @@ const I18N = {
     'toast.labError': 'Lab error', 'toast.scannerError': 'Scanner error',
     'toast.similarError': 'Error finding similar samples',
     'sync.noBpm': 'Sync: no BPM found, trying 120',
+    'player.dragTip': 'Drag to REAPER',
+    'browser.loadingSamples': 'Loading samples...',
+    'browser.addFolder': 'Add Sample Folder',
+    'scanner.cancel': 'Stop',
+    'settings.miniWave': 'Mini waveform preview in file list',
+    'browser.dropTitle': 'Add Root Folder',
+    'browser.dropHint': 'Drop folder from Windows Explorer here to add as root',
     'lab.alreadyRunning': 'A job is already running — please wait',
   },
 };
@@ -509,7 +521,7 @@ function mockBridge(cmd, args = {}) {
             embeddingDim: 512
           }
         });
-      } else if (cmd === 'search.findSimilar' || cmd === 'ai.findSimilar') {
+      } else if (cmd === 'search.findSimilar' || cmd === 'ai.findSimilar' || cmd === 'browser.findSimilar') {
         const results = mockStore.files.filter((f) => !f.isDir).map((f, i) => ({
           ...f,
           score: 0.95 - (i * 0.05),
@@ -2535,8 +2547,8 @@ function moveSelection(delta) {
 
     if (itemBottom > box.scrollTop + clientH) {
       box.scrollTop = itemBottom - clientH + 10;
-    } else if (itemTop < box.scrollTop + headerH) {
-      box.scrollTop = Math.max(0, itemTop - headerH - 10);
+    } else if (itemTop < box.scrollTop) {
+      box.scrollTop = Math.max(0, itemTop - 10);
     }
     paintVisible();
   } else {
@@ -2816,7 +2828,7 @@ function wireBrowserEvents() {
     });
   }
 
-  const progTrack = $('#kawaiiProgressTrack');
+  const progTrack = $('#meterSeekWrap') || $('#kawaiiProgressTrack');
   if (progTrack) {
     progTrack.addEventListener('pointerdown', (e) => {
       if (!state.duration) return;
@@ -2825,6 +2837,7 @@ function wireBrowserEvents() {
       bridge('audio.seek', { fraction: frac }).catch(() => {});
       state.position = frac;
       drawWaveform();
+      drawMeter();
     });
   }
 
@@ -3084,11 +3097,13 @@ async function playFile(path) {
       updateTransposerPopUI();
     });
 
+    const keyLabel = $('#playerKeyLabel');
     if (keyLabel && !keyLabel.textContent) keyLabel.textContent = state.selectedTargetNote || 'C';
 
     startPlayerAnimLoop();
     drawWaveform();
-  } catch {
+  } catch (err) {
+    console.error('playFile error:', err);
     toast(tr('toast.decodeFail'));
   }
 }

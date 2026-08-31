@@ -57,6 +57,7 @@ input { user-select:text; }
 .resize-handle.top-left { top:0; left:0; width:12px; height:12px; cursor:nwse-resize; }
 .resize-handle.top-right { top:0; right:0; width:12px; height:12px; cursor:nesw-resize; }
 .resize-handle.bottom-left { bottom:0; left:0; width:12px; height:12px; cursor:nesw-resize; }
+.resize-handle.bottom-right { bottom:0; right:0; width:12px; height:12px; cursor:nwse-resize; }
 #app.maximized .resize-handle,
 #app.docked .resize-handle,
 body.docked .resize-handle,

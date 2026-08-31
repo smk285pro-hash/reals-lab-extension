@@ -1482,7 +1482,7 @@ std::string Bridge::handle(const std::string& requestJson) {
             }
             res["ok"] = true;
             res["data"] = {{"results", arr}, {"count", arr.size()}};
-        } else if (cmd == "search.findSimilar" || cmd == "ai.findSimilar") {
+        } else if (cmd == "search.findSimilar" || cmd == "ai.findSimilar" || cmd == "browser.findSimilar") {
             const std::string path = narrowPath(args.value("path", ""));
             const int64_t sampleId = args.value("id", static_cast<int64_t>(0));
             const int limit = args.value("limit", 50);
