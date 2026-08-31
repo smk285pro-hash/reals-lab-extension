@@ -1465,6 +1465,7 @@ function showTab(t) {
 function applyDockState(docked) {
   state.docked = !!docked;
   state.isDocked = state.docked;
+  document.documentElement.classList.toggle('docked', state.docked);
   document.body.classList.toggle('docked', state.docked);
   $('#app')?.classList.toggle('docked', state.docked);
   const btnDock = $('#btnDock');

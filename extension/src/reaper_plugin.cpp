@@ -747,6 +747,7 @@ void pushDockState(bool docked);
 
 bool isDockedInternal() {
     if (!g_hwnd) return false;
+    if (GetParent(g_hwnd) != nullptr) return true;
     bool isFloating = false;
     int dockId = DockIsChildOfDock ? DockIsChildOfDock(g_hwnd, &isFloating) : -1;
     return (dockId >= 0 && !isFloating);

@@ -59,9 +59,12 @@ input { user-select:text; }
 .resize-handle.bottom-left { bottom:0; left:0; width:12px; height:12px; cursor:nesw-resize; }
 #app.maximized .resize-handle,
 #app.docked .resize-handle,
-body.docked .resize-handle {
+body.docked .resize-handle,
+html.docked .resize-handle,
+.docked .resize-handle {
   display:none !important;
   pointer-events:none !important;
+  cursor:default !important;
 }
 /* analog grain, same as mockup .frame::after */
 #app::after {
