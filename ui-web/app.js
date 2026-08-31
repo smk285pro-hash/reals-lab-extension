@@ -2558,14 +2558,17 @@ function moveSelection(delta) {
 
   const box = $('#files');
   if (box && box.offsetParent !== null) {
+    const headEl = box.querySelector('.files-head');
+    const headerH = headEl ? headEl.offsetHeight : 34;
     const rowH = getRowH();
-    const rowTop = i * rowH;
-    const viewTop = box.scrollTop;
-    const viewBottom = box.scrollTop + (box.clientHeight || 300) - 40;
-    if (rowTop < viewTop) {
-      box.scrollTop = rowTop;
-    } else if (rowTop > viewBottom) {
-      box.scrollTop = rowTop - (box.clientHeight || 300) + 40;
+    const itemTop = headerH + i * rowH;
+    const itemBottom = itemTop + rowH;
+    const clientH = box.clientHeight || 300;
+
+    if (itemBottom > box.scrollTop + clientH) {
+      box.scrollTop = itemBottom - clientH + 10;
+    } else if (itemTop < box.scrollTop + headerH) {
+      box.scrollTop = Math.max(0, itemTop - headerH - 10);
     }
     paintVisible();
   } else {

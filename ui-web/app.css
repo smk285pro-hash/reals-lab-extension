@@ -1264,27 +1264,52 @@ html[data-theme="pastel-pink"] #btnLoop,
 html[data-theme="pastel-pink"] #btnSyncBpm,
 html[data-theme="pastel-pink"] #btnLab {
   height: 26px !important;
-  padding: 0 8px !important;
+  padding: 0 10px !important;
   border-radius: 999px !important;
   background: #F3E8FF !important;
   color: #6B46C1 !important;
   font-weight: 600 !important;
   font-size: 11px !important;
+  transition: all 0.15s ease !important;
 }
-html[data-theme="pastel-pink"] #btnLoop.on,
-html[data-theme="pastel-pink"] #btnSyncBpm.on {
+html[data-theme="pastel-pink"] #btnLoop:hover,
+html[data-theme="pastel-pink"] #btnSyncBpm:hover,
+html[data-theme="pastel-pink"] #btnLab:hover {
   background: #E9D5FF !important;
   color: #581C87 !important;
+}
+html[data-theme="pastel-pink"] #btnLoop.on,
+html[data-theme="pastel-pink"] #btnSyncBpm.on,
+html[data-theme="pastel-pink"] #btnLab.on {
+  background: #FF8DA6 !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 2px 8px rgba(255, 141, 166, 0.45) !important;
+}
+html[data-theme="pastel-pink"] #btnLoop.on .btn-text,
+html[data-theme="pastel-pink"] #btnSyncBpm.on .btn-text,
+html[data-theme="pastel-pink"] #btnLab.on .btn-text {
+  color: #FFFFFF !important;
 }
 
 html[data-theme="pastel-pink"] .btn-key-transposer {
   height: 26px !important;
-  padding: 0 8px !important;
+  padding: 0 10px !important;
   border-radius: 999px !important;
   background: #F3E8FF !important;
   color: #6B46C1 !important;
   font-weight: 600 !important;
   font-size: 11px !important;
+  transition: all 0.15s ease !important;
+}
+html[data-theme="pastel-pink"] .btn-key-transposer:hover {
+  background: #E9D5FF !important;
+  color: #581C87 !important;
+}
+html[data-theme="pastel-pink"] .btn-key-transposer.on,
+html[data-theme="pastel-pink"] .btn-key-transposer.shifted {
+  background: #FF8DA6 !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 2px 8px rgba(255, 141, 166, 0.45) !important;
 }
 html[data-theme="pastel-pink"] #playerKeyLabel {
   color: #6B46C1 !important;
@@ -1294,6 +1319,12 @@ html[data-theme="pastel-pink"] .pitch-badge {
   background: transparent !important;
   color: #6B46C1 !important;
   font-weight: 600 !important;
+}
+html[data-theme="pastel-pink"] .btn-key-transposer.on #playerKeyLabel,
+html[data-theme="pastel-pink"] .btn-key-transposer.on .pitch-badge,
+html[data-theme="pastel-pink"] .btn-key-transposer.shifted #playerKeyLabel,
+html[data-theme="pastel-pink"] .btn-key-transposer.shifted .pitch-badge {
+  color: #FFFFFF !important;
 }
 
 html[data-theme="pastel-pink"] #timeLabel {
@@ -1668,6 +1699,8 @@ html[data-theme="pastel-pink"] *::-webkit-scrollbar-thumb:hover {
 }
 html[data-theme="pastel-pink"] *::-webkit-scrollbar-track {
   background: transparent !important;
+  margin-top: 8px !important;
+  margin-bottom: 8px !important;
 }
 
 @keyframes floatMascot {
@@ -1683,7 +1716,7 @@ html[data-theme="pastel-pink"] *::-webkit-scrollbar-track {
    MASTER RESPONSIVE OVERRIDES (Must remain at the very bottom of the file)
    ========================================================================== */
 
-@media (max-width: 580px) {
+@media (max-width: 440px) {
   .btn-text {
     display: none !important;
   }
