@@ -3096,26 +3096,10 @@ function startPlayerAnimLoop() {
 
     // Smoothly extrapolate position at 60 FPS
     if (state.duration > 0) {
-      state.position += dt / state.duration;
-      if (state.position >= 1.0) {
-        if (state.loop) {
-          state.position = state.position % 1.0;
-        } else {
-          state.position = 0;
-          state.playing = false;
-          _meterSmoothedVal = 0;
-          _playerRafId = null;
-          const bp = $('#btnPlay');
-          if (bp) {
-            bp.textContent = '▶';
-            bp.classList.remove('playing');
-          }
-          const timeLbl = $('#timeLabel');
-          if (timeLbl) timeLbl.textContent = `0.0 / ${state.duration.toFixed(1)}s`;
-          drawMeterSmoothed(0);
-          drawWaveform();
-          return;
-        }
+      if (state.loop) {
+        state.position = (state.position + dt / state.duration) % 1.0;
+      } else {
+        state.position = Math.min(1.0, state.position + dt / state.duration);
       }
     }
 
@@ -3172,15 +3156,21 @@ function updatePreviewLive() {
   }
 }
 
+function resizeCanvasIfNeeded(c, hOverride) {
+  if (!c) return { W: 0, H: 0 };
+  const w = Math.round(c.clientWidth || 300);
+  const h = hOverride || Math.round(c.clientHeight || 44);
+  if (Math.abs(c.width - w) > 1) c.width = w;
+  if (Math.abs(c.height - h) > 1) c.height = h;
+  return { W: c.width, H: c.height };
+}
+
 function drawWaveform() {
   const c = $('#waveform');
   if (!c) return;
-  const w = c.clientWidth || 300;
-  const h = c.clientHeight || 44;
-  if (c.width !== w) c.width = w;
-  if (c.height !== h) c.height = h;
+  const { W, H } = resizeCanvasIfNeeded(c, 44);
+  if (W <= 0 || H <= 0) return;
   const ctx = c.getContext('2d');
-  const W = c.width, H = c.height;
   ctx.clearRect(0, 0, W, H);
   const curPath = state.selected || state.playingPath || '';
 
@@ -3339,12 +3329,9 @@ function drawWaveform() {
 function drawMeterSmoothed(peak) {
   const c = $('#meter');
   if (!c) return;
-  const w = c.clientWidth || 300;
-  const h = c.clientHeight || 6;
-  if (c.width !== w) c.width = w;
-  if (c.height !== h) c.height = h;
+  const { W, H } = resizeCanvasIfNeeded(c, 6);
+  if (W <= 0 || H <= 0) return;
   const ctx = c.getContext('2d');
-  const W = c.width, H = c.height;
   ctx.clearRect(0, 0, W, H);
 
   const curTheme = window.themeManager ? window.themeManager.getTheme() : 'dark-studio';
