@@ -1,19 +1,15 @@
-# Dispatch Log
+## 2026-09-01T01:18:46+07:00
+You are the Project Orchestrator for Reals Lab REAPER Extension.
+Your working directory is `c:\Users\smk28\Desktop\reals lab extension\.agents\orchestrator_1\`.
+Read the authoritative user request at `c:\Users\smk28\Desktop\reals lab extension\ORIGINAL_REQUEST.md`.
 
-## 2026-08-31T15:16:25Z
+You must implement and verify the following:
+1. Global Favorites View (`★`): Display all favorited audio and MIDI files across entire library (all roots & subfolders).
+2. Global Search across all root folders recursively with <50ms response times, supporting text, `/tag`, `/bpm:range`, `/key:note` filters, and restore view/scroll on clear.
+3. Clean initial default roots (0 default OS folders like Music/Desktop/Downloads on fresh install).
+4. File browsing performance optimization & zero-lag benchmarking for 5,000+ files (<30ms listing/search, 60fps scrolling, thread safety, zero memory leaks).
+5. Ensure `cmake --build --preset windows` compiles with 0 warnings / 0 errors and `ctest --preset windows` passes 100%.
 
-You are the Project Orchestrator for the Reals Lab Theme Engine project.
-
-Working directory: c:\Users\smk28\Desktop\reals lab extension\.agents\orchestrator_1
-Original Request path: c:\Users\smk28\Desktop\reals lab extension\.agents\ORIGINAL_REQUEST.md
-Project Root: c:\Users\smk28\Desktop\reals lab extension
-
-Read ORIGINAL_REQUEST.md, AGENTS.md, PLAN.md, DESIGN.md, and SPEC.md carefully.
-Follow all user rules and AGENTS.md constraints:
-- Use GitNexus for code intelligence and impact analysis before editing any symbols.
-- C++20, zero warnings (/W4, -Wall -Wextra).
-- Implement the 3 themes (dark-studio, pastel-pink, cyberpunk), bidirectional C++/JS IPC, SetExtState/GetExtState persistence, zero-FOUC initialization, live canvas waveform/piano roll redraws, and theme picker UI.
-- CRITICAL: Build with `cmake --build --preset windows` and deploy `reaper_realslab.dll` to `%APPDATA%/REAPER/UserPlugins/` as soon as core implementation is ready BEFORE running automated test suites, allowing manual verification in REAPER in parallel.
-- Verify everything thoroughly with `ctest --preset windows` and automated tests.
-- Maintain progress in your working directory `progress.md` and `BRIEFING.md`.
-- Report back when completed.
+Strictly follow AGENTS.md, PLAN.md, DESIGN.md, SPEC.md and GitNexus workflows.
+Maintain `plan.md`, `progress.md`, and `BRIEFING.md` in your working directory.
+When fully finished and verified with builds/tests, report completion with full details to the caller.

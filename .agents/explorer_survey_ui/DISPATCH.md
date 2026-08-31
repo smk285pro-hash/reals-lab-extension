@@ -1,20 +1,16 @@
-## 2026-08-31T14:26:52Z
-You are Explorer 1 (Web UI & Design Tokens).
-Your working directory is: c:\Users\smk28\Desktop\reals lab extension\.agents\explorer_survey_ui
+## 2026-09-01T01:19:15+07:00
 
-Read ORIGINAL_REQUEST.md at: c:\Users\smk28\Desktop\reals lab extension\.agents\ORIGINAL_REQUEST.md
-Also read AGENTS.md at: c:\Users\smk28\Desktop\reals lab extension\AGENTS.md
+You are Explorer 2 (UI & Frontend/IPC Specialist) for Reals Lab REAPER Extension.
+Your working directory is `c:\Users\smk28\Desktop\reals lab extension\.agents\explorer_survey_ui\`.
+You MUST read `c:\Users\smk28\Desktop\reals lab extension\ORIGINAL_REQUEST.md`, `AGENTS.md`, `PLAN.md`, `SPEC.md`, `DESIGN.md`.
 
-Your mission:
-Survey the Web UI, CSS design tokens, and ThemeManager JavaScript architecture:
-1. Examine `ui-web/` files (e.g., `ui-web/tokens.css`, `ui-web/app.css`, `ui-web/index.html`, components, icons).
-2. Investigate all CSS variables / tokens in use across the entire UI.
-3. Identify how themes (`dark-studio`, `pastel-pink`, `cyberpunk`) should be structured in `:root` and `html[data-theme="..."]`.
-4. Inspect all SVG icons and ensure dynamic color adaptation strategy (currentColor, var(--accent-primary)).
-5. Inspect Theme Picker UI in settings/topbar and how active theme is displayed/selected.
-6. Check `localStorage` bootstrapping in `<head>` and JS ThemeManager API.
-7. Use GitNexus MCP tools (query, context, impact) as required.
+Your mission is to explore and analyze the UI frontend and IPC bridge of the codebase, focusing on:
+1. Webview / UI structure: Where are the HTML/JS/CSS files? How is the browser UI laid out?
+2. Favorites UI: How does `#favOnly` toggle button (`★`) work in JS and how does it request favorites from the C++ backend? What happens when favorites are toggled? How can it display all favorites globally across all roots/subfolders?
+3. Search UI: How does `#search` bar work? How does it handle input debouncing, filter syntax (`/tag`, `/bpm:range`, `/key:note`), and how does clearing search restore previous browsing state and scroll position?
+4. File tree / list rendering & 60 FPS performance: How are files and directories rendered in the UI? Is there virtual list rendering? How does audio envelope / waveform preview probing work, and how is it debounced to prevent UI hitching (<16ms frame time)?
+5. IPC communication: How do messages flow between WebView2 and the C++ shell/core?
 
-Write your comprehensive findings and recommendations to:
-`c:\Users\smk28\Desktop\reals lab extension\.agents\explorer_survey_ui\handoff.md`
-and send a completion message back to the orchestrator.
+Use GitNexus code intelligence tools (query, context, impact, cypher) to explore.
+Write a comprehensive survey report to `c:\Users\smk28\Desktop\reals lab extension\.agents\explorer_survey_ui\analysis.md` and a summary `handoff.md`.
+When finished, send a message to parent with the summary and path to your analysis file.

@@ -2,7 +2,9 @@ cmake_minimum_required(VERSION 3.24)
 
 file(GLOB_RECURSE TEST_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/main.cpp
-    ${CMAKE_CURRENT_LIST_DIR}/suites/*.cpp)
+    ${CMAKE_CURRENT_LIST_DIR}/suites/*.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/unit/*.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/benchmarks/*.cpp)
 
 add_executable(reals_tests ${TEST_SOURCES})
 

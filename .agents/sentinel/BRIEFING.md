@@ -1,32 +1,31 @@
-# BRIEFING — 2026-08-31T15:16:06Z
+# BRIEFING — 2026-08-31T18:56:15Z
 
 ## Mission
-Coordinate and monitor execution of the production-grade zero-FOUC Theme Engine for Reals Lab REAPER Extension.
+Coordinate implementation and validation of Global Favorites, Global Search across roots, clean default roots, and ultra-high performance zero-lag file browsing in Reals Lab REAPER Extension.
 
 ## 🔒 My Identity
 - Archetype: sentinel
 - Working directory: c:\Users\smk28\Desktop\reals lab extension\.agents\sentinel
-- Orchestrator: 969f4ec2-b064-49df-a1e5-686abe0ff600
-- Victory Auditor: b79f5cef-a239-409d-9a7f-5ba6856f5bc0
+- Orchestrator: 9a06e46c-3ec5-426b-83b8-d0e041f58ad5 (Gen 2)
+- Victory Auditor: to be spawned on victory claim
 
 ## 🔒 Key Constraints
 - No technical decisions — relay only
 - Victory Audit is MANDATORY before reporting completion
-- GitNexus must be used across all code intelligence and impact analysis tasks
-- Zero compiler warnings, 100% test pass rate, early deployment to %APPDATA%/REAPER/UserPlugins/
+- Must follow AGENTS.md & user rules
 
 ## User Context
-- **Last user request**: Build a production-grade, zero-FOUC Theme Engine for Reals Lab REAPER Extension (C++ DLL + WebView2) with Dark Studio, Pastel Pink, Cyberpunk Neon themes, SetExtState/GetExtState persistence, and live canvas waveform synchronization.
+- **Last user request**: Implement Global Favorites, Global Search across all roots, clean default root directories, and zero-lag file browsing.
 - **Pending clarifications**: none
 - **Delivered results**: none
 
 ## Project Status
-- **Phase**: complete
+- **Phase**: in progress (Gen 2 Orchestrator running)
 
 ## Victory Audit Status
-- **Triggered**: yes
-- **Verdict**: VICTORY CONFIRMED
+- **Triggered**: no
+- **Verdict**: pending
 - **Retry count**: 0
 
 ## Artifact Index
-- c:\Users\smk28\Desktop\reals lab extension\.agents\ORIGINAL_REQUEST.md — Authoritative record of user requests
+- c:\Users\smk28\Desktop\reals lab extension\ORIGINAL_REQUEST.md — Authoritative record of user request

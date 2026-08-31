@@ -534,16 +534,36 @@ struct Bridge::Impl {
                 }
             }
 
-            // 2. Directory crawler fallback for unindexed files in base folder
-            if (arr.size() < maxResults && !base.empty()) {
-                const auto results = model.search(base, query, audioOnly, maxResults - arr.size(), cancel.get());
-                if (cancel->load() || gen != searchGen.load())
-                    return;
-                for (const auto& f : results) {
-                    if (seenPaths.find(f.path) != seenPaths.end())
-                        continue;
-                    seenPaths.insert(f.path);
-                    arr.push_back(entryToJson(f));
+            // 2. Directory crawler fallback for unindexed files
+            if (arr.size() < maxResults) {
+                if (!base.empty()) {
+                    const auto results = model.search(base, query, audioOnly, maxResults - arr.size(), cancel.get());
+                    if (cancel->load() || gen != searchGen.load())
+                        return;
+                    for (const auto& f : results) {
+                        if (seenPaths.find(f.path) != seenPaths.end())
+                            continue;
+                        seenPaths.insert(f.path);
+                        arr.push_back(entryToJson(f));
+                    }
+                } else {
+                    // Global Search across all configured roots
+                    const auto allRoots = model.roots();
+                    for (const auto& r : allRoots) {
+                        if (cancel->load() || gen != searchGen.load() || arr.size() >= maxResults)
+                            break;
+                        if (r.path.empty())
+                            continue;
+                        const auto results = model.search(r.path, query, audioOnly, maxResults - arr.size(), cancel.get());
+                        if (cancel->load() || gen != searchGen.load())
+                            return;
+                        for (const auto& f : results) {
+                            if (seenPaths.find(f.path) != seenPaths.end())
+                                continue;
+                            seenPaths.insert(f.path);
+                            arr.push_back(entryToJson(f));
+                        }
+                    }
                 }
             }
 
@@ -815,6 +835,14 @@ std::string Bridge::handle(const std::string& requestJson) {
                 arr.push_back(f);
             res["ok"] = true;
             res["data"] = arr;
+        } else if (cmd == "browser.getFavoriteEntries" || cmd == "browser.favorites.listEntries" || cmd == "browser.listFavorites") {
+            const auto files = model.getFavoriteEntries();
+            json arr = json::array();
+            for (const auto& f : files)
+                arr.push_back(entryToJson(f));
+            res["ok"] = true;
+            res["data"] = {{"files", arr}};
+            res["result"] = {{"files", arr}};
         } else if (cmd == "browser.toggleFavorite") {
             model.toggleFavorite(narrowPath(args.value("path", "")));
             res["ok"] = true;

@@ -151,19 +151,7 @@ bool isIgnoredDir(std::string_view name) {
 } // namespace
 
 BrowserModel::BrowserModel() {
-    // Default quick-access roots (FL-style). User-added roots persist via store.
-    m_roots.push_back({"Music", platform::defaultMusicDir()});
-#ifdef _WIN32
-    if (const char* up = std::getenv("USERPROFILE")) {
-        m_roots.push_back({"Desktop", platform::joinPath(up, "Desktop")});
-        m_roots.push_back({"Downloads", platform::joinPath(up, "Downloads")});
-    }
-#else
-    if (const char* home = std::getenv("HOME")) {
-        m_roots.push_back({"Desktop", platform::joinPath(home, "Desktop")});
-        m_roots.push_back({"Downloads", platform::joinPath(home, "Downloads")});
-    }
-#endif
+    // Fresh installs start with 0 default roots. User-added roots persist via store.
     m_storePath = platform::joinPath(platform::dataDir(), "browser_store.json");
 }
 
@@ -346,6 +334,25 @@ void BrowserModel::toggleFavorite(const std::string& path) {
     else
         m_favorites.push_back(path);
     saveStore();
+}
+
+std::vector<FileEntry> BrowserModel::getFavoriteEntries() const {
+    const std::lock_guard lock(m_storeMutex);
+    std::vector<FileEntry> entries;
+    entries.reserve(m_favorites.size());
+    for (const auto& path : m_favorites) {
+        std::error_code ec;
+        auto u8p = platform::u8path(path);
+        if (fs::exists(u8p, ec) && !fs::is_directory(u8p, ec)) {
+            fs::directory_entry de(u8p, ec);
+            if (!ec) {
+                entries.push_back(makeEntry(de));
+            }
+        }
+    }
+    std::sort(entries.begin(), entries.end(),
+              [this](const FileEntry& a, const FileEntry& b) { return entryLess(a, b, m_sort); });
+    return entries;
 }
 
 void BrowserModel::addRecent(const std::string& path) {

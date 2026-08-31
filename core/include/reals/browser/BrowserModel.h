@@ -63,6 +63,10 @@ public:
         return m_favorites;
     }
 
+    // Resolves and returns full FileEntry metadata for all favorited files across
+    // all roots and subdirectories. Non-existent or pruned files are skipped.
+    [[nodiscard]] std::vector<FileEntry> getFavoriteEntries() const;
+
     [[nodiscard]] std::deque<std::string> recents() const {
         const std::lock_guard lock(m_storeMutex);
         return m_recents;

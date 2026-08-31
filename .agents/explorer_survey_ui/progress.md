@@ -1,13 +1,17 @@
-# Progress - Explorer Survey UI
+# Progress — Explorer 2 (UI & Frontend/IPC Specialist)
 
-Last visited: 2026-08-31T14:30:00Z
+Last visited: 2026-09-01T01:22:50+07:00
+Status: IN_PROGRESS
 
-- [x] Initialized workspace and briefing
-- [x] Survey `DESIGN.md` design system specifications
-- [x] Survey `ui-web/index.html` structure and `<head>` bootstrapping
-- [x] Survey `ui-web/app.css` & tokens usage
-- [x] Survey `ui-web/app.js` and ThemeManager / waveform canvas architecture
-- [x] Survey SVG icons and dynamic color adaptation
-- [x] Survey Theme Picker UI options (Settings modal / Topbar)
-- [x] Formulate detailed tokens & architecture specification in `handoff.md`
-- [ ] Deliver handoff to orchestrator
+## Tasks
+- [x] Initial setup & briefing
+- [x] Read foundational docs (ORIGINAL_REQUEST.md, AGENTS.md, PLAN.md, SPEC.md, DESIGN.md)
+- [x] Explore Webview & UI asset layout (HTML, JS, CSS)
+- [x] Explore Favorites UI & flow (`#favOnly`, global favorites, C++ backend IPC)
+- [x] Explore Search UI (debouncing, syntax `/tag`, `/bpm:range`, `/key:note`, scroll restore)
+- [x] Explore File list & 60 FPS rendering, virtual scrolling, waveform probing & debouncing
+- [x] Explore IPC bridge architecture (C++ <-> WebView2)
+- [x] Synthesize findings & architectural proposals
+- [ ] Write analysis.md
+- [ ] Write handoff.md
+- [ ] Notify parent agent

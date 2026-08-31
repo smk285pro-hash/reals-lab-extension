@@ -444,6 +444,11 @@ function mockBridge(cmd, args = {}) {
         resolve({ ok: true, added });
       }
       else if (cmd === 'browser.favorites') resolve(mockStore.favorites);
+      else if (cmd === 'browser.getFavoriteEntries' || cmd === 'browser.favorites.listEntries' || cmd === 'browser.listFavorites') {
+        const favPaths = new Set(mockStore.favorites || []);
+        const files = (mockStore.files || []).filter((f) => !f.isDir && favPaths.has(f.path));
+        resolve({ files });
+      }
       else if (cmd === 'browser.recents') resolve(mockStore.recents);
       else if (cmd === 'browser.tags') {
         if (args.path) resolve({ ofPath: mockStore.tags[args.path] || 0 });
@@ -2169,6 +2174,8 @@ function paintFromRaw(preserveScroll = false) {
   const q = (state.searchQ || '').trim();
   if (state.similarSource) {
     header.textContent = `${tr('browser.similarTo')}: ${state.similarSourceName || ''} (${state.files.length})`;
+  } else if (state.favOnly) {
+    header.textContent = `★ ${tr('browser.favOnly')} (${state.files.length})`;
   } else {
     header.textContent = q
       ? (state.searchPending ? tr('browser.searching') : `${tr('browser.results')}: ${state.files.length}`)
@@ -2392,7 +2399,7 @@ function runSearch(q) {
   state.similarSourceName = null;
   state.rawFiles = [];
   paintFromRaw(false);
-  bridge('browser.search', { base: state.currentDir || '', query: q, audioOnly: state.audioOnly, gen })
+  bridge('browser.search', { base: '', query: q, audioOnly: state.audioOnly, gen })
     .catch(() => {
       if (state.searchGen === gen) {
         state.searchPending = false;
@@ -2559,10 +2566,22 @@ function wireBrowserEvents() {
       searchClear.classList.add('hidden');
       state.searchQ = '';
       if (searchPop) searchPop.classList.add('hidden');
-      if (state.currentDir) {
-        state.searchPending = false;
-        state.searchGen = ++state.searchSeq;
+      state.searchPending = false;
+      state.searchGen = ++state.searchSeq;
+      if (state.favOnly) {
+        bridge('browser.getFavoriteEntries').then((res) => {
+          const files = Array.isArray(res) ? res : (res && res.files ? res.files : []);
+          state.rawFiles = files || [];
+          paintFromRaw(false);
+        }).catch(() => {
+          state.rawFiles = [];
+          paintFromRaw(false);
+        });
+      } else if (state.currentDir) {
         loadDir(state.currentDir, false);
+      } else {
+        state.rawFiles = [];
+        paintFromRaw(false);
       }
       searchInput.focus();
     };
@@ -2580,10 +2599,24 @@ function wireBrowserEvents() {
         state.searchQ = val;
         const q = (state.searchQ || '').trim();
         if (q) runSearch(q);
-        else if (state.currentDir) {
+        else {
           state.searchPending = false;
           state.searchGen = ++state.searchSeq;
-          loadDir(state.currentDir, false);
+          if (state.favOnly) {
+            bridge('browser.getFavoriteEntries').then((res) => {
+              const files = Array.isArray(res) ? res : (res && res.files ? res.files : []);
+              state.rawFiles = files || [];
+              paintFromRaw(false);
+            }).catch(() => {
+              state.rawFiles = [];
+              paintFromRaw(false);
+            });
+          } else if (state.currentDir) {
+            loadDir(state.currentDir, false);
+          } else {
+            state.rawFiles = [];
+            paintFromRaw(false);
+          }
         }
       }, 200);
     });
@@ -2602,23 +2635,51 @@ function wireBrowserEvents() {
 
   $('#sort').onchange = (e) => {
     state.sort = +e.target.value;
-    if (state.currentDir && !(state.searchQ || '').trim()) loadDir(state.currentDir, true);
+    if (state.currentDir && !(state.searchQ || '').trim() && !state.favOnly) loadDir(state.currentDir, true);
     else paintFromRaw(true);
   };
   const favBtn = $('#favOnly');
   if (favBtn) {
     favBtn.title = tr('browser.favOnly');
-    favBtn.onclick = (e) => {
+    favBtn.onclick = async (e) => {
       state.favOnly = !state.favOnly;
       e.target.classList.toggle('on', state.favOnly);
-      paintFromRaw(true);
+      if (state.favOnly) {
+        state.savedDirBeforeFav = state.currentDir;
+        const box = $('#files');
+        if (box && state.currentDir) {
+          state.dirScrolls[state.currentDir] = box.scrollTop;
+        }
+        try {
+          const res = await bridge('browser.getFavoriteEntries');
+          const files = Array.isArray(res) ? res : (res && res.files ? res.files : []);
+          state.rawFiles = files || [];
+          state.favSet = new Set((state.rawFiles || []).map((f) => f.path));
+        } catch {
+          state.rawFiles = [];
+        }
+        paintFromRaw(false);
+      } else {
+        if (state.savedDirBeforeFav) {
+          state.currentDir = state.savedDirBeforeFav;
+          loadDir(state.currentDir, false);
+        } else {
+          paintFromRaw(false);
+        }
+      }
     };
   }
   const tagSel = $('#tagFilter');
   if (tagSel) tagSel.onchange = (e) => { state.tagFilter = +e.target.value; paintFromRaw(true); };
   $('#btnRefresh').onclick = () => {
     state.subCache = {};
-    if (state.currentDir) loadDir(state.currentDir, true);
+    if (state.favOnly) {
+      bridge('browser.getFavoriteEntries').then((res) => {
+        const files = Array.isArray(res) ? res : (res && res.files ? res.files : []);
+        state.rawFiles = files || [];
+        paintFromRaw(false);
+      });
+    } else if (state.currentDir) loadDir(state.currentDir, true);
     renderTree();
   };
   const cancelScanBtn = $('#btnScannerCancel');
@@ -2633,6 +2694,9 @@ function wireBrowserEvents() {
   }
   const filesBox = $('#files');
   filesBox.addEventListener('scroll', () => {
+    if (state.currentDir && !(state.searchQ || '').trim() && !state.favOnly) {
+      state.dirScrolls[state.currentDir] = filesBox.scrollTop;
+    }
     paintVisible();
     clearTimeout(_scrollProbeTimer);
     _scrollProbeTimer = setTimeout(probeVisibleAudio, 100);
@@ -3517,7 +3581,18 @@ function fileMenu(e, f) {
   items.push({
     label: '★ / ☆',
     action: () => bridge('browser.toggleFavorite', { path: f.path })
-      .then((nowFav) => { if (nowFav) state.favSet.add(f.path); else state.favSet.delete(f.path); renderTree(); paintFromRaw(true); }),
+      .then((nowFav) => {
+        if (nowFav) {
+          state.favSet.add(f.path);
+        } else {
+          state.favSet.delete(f.path);
+          if (state.favOnly) {
+            state.rawFiles = (state.rawFiles || []).filter((item) => item.path !== f.path);
+          }
+        }
+        renderTree();
+        paintFromRaw(true);
+      }),
   });
   items.push('-');
   items.push({
