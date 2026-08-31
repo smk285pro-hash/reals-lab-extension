@@ -2887,14 +2887,33 @@ function typingInField() {
 }
 
 function onBrowserKey(e) {
-  if (e.key === 'F5' || (e.ctrlKey && (e.key === 'r' || e.key === 'R'))) {
+  // 1. Lock DevTools (F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C)
+  if (e.key === 'F12' ||
+      ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'I' || e.key === 'i' || e.key === 'J' || e.key === 'j' || e.key === 'C' || e.key === 'c'))) {
     e.preventDefault();
-    window.location.reload();
+    e.stopPropagation();
     return;
   }
-  // Ctrl+K focuses the browser search bar from anywhere.
-  if (e.ctrlKey && (e.key === 'k' || e.key === 'K')) {
+
+  // 2. Lock View Source (Ctrl+U), Print (Ctrl+P), Save (Ctrl+S), Caret browsing (F7), Find Next (F3)
+  if (((e.ctrlKey || e.metaKey) && (e.key === 'u' || e.key === 'U' || e.key === 'p' || e.key === 'P' || e.key === 's' || e.key === 'S')) ||
+      e.key === 'F3' || e.key === 'F7') {
     e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
+
+  // 3. Lock Browser Zoom (Ctrl + +, Ctrl + -, Ctrl + 0, Ctrl + =)
+  if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_' || e.key === '0')) {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
+
+  // 4. Lock / Override Ctrl+F & Ctrl+K to focus Reals Lab Search
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F' || e.key === 'k' || e.key === 'K')) {
+    e.preventDefault();
+    e.stopPropagation();
     if (state.tab !== 'browser') {
       state.tab = 'browser';
       renderNav();
@@ -2902,6 +2921,16 @@ function onBrowserKey(e) {
     }
     const s = $('#search');
     if (s) { s.focus(); s.select(); }
+    return;
+  }
+
+  // 5. Lock F5 / Ctrl+R in production WebView2
+  if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && (e.key === 'r' || e.key === 'R'))) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!hasWebView) {
+      window.location.reload();
+    }
     return;
   }
   if (typingInField()) {
@@ -3968,6 +3997,23 @@ async function boot() {
   initLayoutSplitters();
 
   window.addEventListener('keydown', onBrowserKey);
+
+  // Lock mouse wheel zoom (Ctrl + MouseWheel) and reset zoom to default
+  window.addEventListener('wheel', (e) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  // Disable default browser context menu globally (retaining text selection for inputs)
+  window.addEventListener('contextmenu', (e) => {
+    const targetTag = (e.target && e.target.tagName ? e.target.tagName.toLowerCase() : '');
+    if (targetTag !== 'input' && targetTag !== 'textarea') {
+      if (!e.defaultPrevented) {
+        e.preventDefault();
+      }
+    }
+  });
 
   window.addEventListener('resize', () => {
     drawWaveform();

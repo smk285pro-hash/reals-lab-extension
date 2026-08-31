@@ -214,6 +214,29 @@ void WebViewHost::create(HWND hwnd, const std::wstring& userDataFolder,
                             if (SUCCEEDED(m_impl->controller.As(&controller4)) && controller4)
                                 controller4->put_AllowExternalDrop(FALSE);
 
+                            // Lock DevTools, Zoom Controls, Browser Accelerators, and Default Context Menus
+                            ComPtr<ICoreWebView2Settings> settings;
+                            if (SUCCEEDED(m_impl->web->get_Settings(&settings)) && settings) {
+                                settings->put_AreDevToolsEnabled(FALSE);
+                                settings->put_IsZoomControlEnabled(FALSE);
+                                settings->put_AreDefaultContextMenusEnabled(FALSE);
+                                settings->put_IsBuiltInErrorPageEnabled(FALSE);
+                                settings->put_IsStatusBarEnabled(FALSE);
+
+                                ComPtr<ICoreWebView2Settings3> settings3;
+                                if (SUCCEEDED(settings.As(&settings3)) && settings3) {
+                                    settings3->put_AreBrowserAcceleratorKeysEnabled(FALSE);
+                                }
+
+                                ComPtr<ICoreWebView2Settings5> settings5;
+                                if (SUCCEEDED(settings.As(&settings5)) && settings5) {
+                                    settings5->put_IsPinchZoomEnabled(FALSE);
+                                }
+                            }
+                            if (m_impl->controller) {
+                                m_impl->controller->put_ZoomFactor(1.0);
+                            }
+
                             // Map ui-web folder to https://app.local
                             ComPtr<ICoreWebView2_3> web3;
                             if (SUCCEEDED(m_impl->web.As(&web3)) && web3) {
