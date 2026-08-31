@@ -572,7 +572,7 @@ function mockBridge(cmd, args = {}) {
         }
         const fakeEnv = [];
         for (let i = 0; i < 80; ++i) fakeEnv.push(Math.abs(Math.sin(i * 0.15)) * (0.3 + Math.random() * 0.7));
-        resolve({ duration: 4.8, sampleRate: 44100, channels: 2, envelope: fakeEnv });
+        resolve({ ok: true, duration: 4.8, sampleRate: 44100, channels: 2, envelope: fakeEnv });
       } else if (cmd === 'audio.stop') resolve({ ok: true });
       else if (cmd === 'audio.setVolume') resolve({ ok: true });
       else resolve({ ok: true });
@@ -881,8 +881,6 @@ function handleEvent(event, data) {
     return;
   }
   if (event === 'audio.state') {
-    state.position = data.position || 0;
-    state.peak = data.peak || 0;
     state.playing = !!data.playing;
     state.duration = data.duration || state.duration;
     if (typeof data.pitchSemitones === 'number') {
@@ -894,9 +892,14 @@ function handleEvent(event, data) {
       bp.classList.toggle('playing', state.playing);
     }
     if (state.playing) {
+      state.position = data.position || 0;
+      state.peak = data.peak || 0;
       startPlayerAnimLoop();
     } else {
-      updatePreviewLive();
+      state.position = 0;
+      state.peak = 0;
+      _meterSmoothedVal = 0;
+      refreshPlayState();
     }
   }
 }
@@ -2982,16 +2985,22 @@ function onBrowserKey(e) {
   }
 }
 
+let _playFileSeq = 0;
+
 // ============ Preview / audio ============
 // Stop any currently-playing file before starting a new one — without this,
 // auto-preview clicking fast through the file list can trigger overlapping
 // decoders in the C++ audio backend.
 async function playFile(path) {
+  if (!path) return;
+  const mySeq = ++_playFileSeq;
   try {
     if (state.playing) {
       try { await bridge('audio.stop'); } catch {}
       state.playing = false;
     }
+    if (mySeq !== _playFileSeq) return;
+
     if (isMidiFile(path)) {
       state.playingPath = path;
       state.selected = path;
@@ -3004,6 +3013,7 @@ async function playFile(path) {
       renderPlayerTags(tags);
 
       const parsed = await loadMidiPreviewData(path);
+      if (mySeq !== _playFileSeq) return;
       if (parsed && parsed.notes && parsed.notes.length > 0) {
         state.midiNotes = parsed.notes;
         state.duration = parsed.duration || 4.0;
@@ -3019,7 +3029,10 @@ async function playFile(path) {
 
         state.playing = true;
         const bp = $('#btnPlay');
-        if (bp) bp.textContent = '⏸';
+        if (bp) {
+          bp.textContent = '❚❚';
+          bp.classList.add('playing');
+        }
         startPlayerAnimLoop();
         playMidiEvents(parsed.notes, parsed.duration);
         drawWaveform();
@@ -3034,97 +3047,112 @@ async function playFile(path) {
       syncBpm: !!state.syncBpm,
       sampleBpm: sampleBpm
     });
-    if (!d || d.ok === false) { toast(tr('toast.decodeFail')); return; }
+    if (mySeq !== _playFileSeq) return;
+    if (!d || d.ok === false) {
+      console.warn('audio.play failed for:', path, d);
+      toast(tr('toast.decodeFail'));
+      return;
+    }
     state.playingPath = path;
     state.selected = path;
     state.envelope = d.envelope || [];
     state.duration = d.duration || 0;
+    state.position = 0;
     state.playing = true;
     if (d.duration) state.probeCache[path] = d.duration;
     const bp = $('#btnPlay');
-    if (bp) bp.textContent = '❚❚';
+    if (bp) {
+      bp.textContent = '❚❚';
+      bp.classList.add('playing');
+    }
 
     const filename = path.split(/[\\/]/).pop() || '';
     const info = $('#trackInfo');
-    if (info) info.textContent = `♪ ${filename} | ${d.sampleRate}Hz ${d.channels}ch`;
+    if (info) info.textContent = `♪ ${filename} | ${d.sampleRate || 44100}Hz ${d.channels || 2}ch`;
 
     // Dynamic player tags extraction
-    const tags = extractTagsFromFilename(filename);
-    state.sampleTags = tags;
-    renderPlayerTags(tags);
+    try {
+      const tags = extractTagsFromFilename(filename);
+      state.sampleTags = tags;
+      renderPlayerTags(tags);
+    } catch {}
 
     // BPM & Key extraction: try filename first, then DB lookup
-    const bpmMatch = filename.match(/(\d+)\s*bpm/i);
-    const filenameBpm = bpmMatch ? parseFloat(bpmMatch[1]) : 0;
-    const filenameKey = extractKeyFromFilename(filename) || 'C';
+    try {
+      const bpmMatch = filename.match(/(\d+)\s*bpm/i);
+      const filenameBpm = bpmMatch ? parseFloat(bpmMatch[1]) : 0;
+      const filenameKey = extractKeyFromFilename(filename) || 'C';
 
-    const rootNote = extractRootNoteName(filenameKey);
-    state.originalRootNote = rootNote;
-    if (state.isUserTargetKeyLocked && state.userTargetNote) {
-      state.selectedTargetNote = state.userTargetNote;
-      state.pitchSemitones = calculateSemitoneDistance(rootNote, state.userTargetNote);
-    } else {
-      state.selectedTargetNote = rootNote;
-      state.pitchSemitones = 0;
-    }
-    updateTransposerPopUI();
-    if (state.pitchSemitones !== 0) {
-      bridge('audio.setPitchShift', { semitones: state.pitchSemitones }).catch(()=>{});
-    }
-
-    // Try to get real metadata from DB / detection
-    bridge('audio.getSampleMeta', { path }).then((meta) => {
-      let bpm = 0, key = '';
-      let genre = '', mood = '';
-      if (meta && meta.ok !== false) {
-        if (meta.bpm && meta.bpm > 30) bpm = meta.bpm;
-        if (meta.key) key = meta.key;
-        if (meta.genre) genre = meta.genre;
-        if (meta.mood) mood = meta.mood;
-      }
-      if (!bpm) bpm = filenameBpm;
-      if (!key || key === 'ORIGINAL') key = filenameKey;
-
-      state.sampleBpm = bpm || 0;
-      state.sampleKey = key || 'C';
-
-      const detectedRoot = extractRootNoteName(state.sampleKey);
-      state.originalRootNote = detectedRoot;
+      const rootNote = extractRootNoteName(filenameKey);
+      state.originalRootNote = rootNote;
       if (state.isUserTargetKeyLocked && state.userTargetNote) {
         state.selectedTargetNote = state.userTargetNote;
-        state.pitchSemitones = calculateSemitoneDistance(detectedRoot, state.userTargetNote);
+        state.pitchSemitones = calculateSemitoneDistance(rootNote, state.userTargetNote);
       } else {
-        state.selectedTargetNote = detectedRoot;
+        state.selectedTargetNote = rootNote;
         state.pitchSemitones = 0;
       }
-
       updateTransposerPopUI();
       if (state.pitchSemitones !== 0) {
         bridge('audio.setPitchShift', { semitones: state.pitchSemitones }).catch(()=>{});
       }
 
-      // Render tags from DB if available, else heuristic
-      if (genre || mood) {
-        const tags = [];
-        if (genre) tags.push({ name: genre, type: 'genre' });
-        if (mood) tags.push({ name: mood, type: 'mood' });
-        if (key && key !== 'ORIGINAL') tags.push({ name: key, type: 'prop' });
-        state.sampleTags = tags;
-        renderPlayerTags(tags);
-      }
+      // Try to get real metadata from DB / detection
+      bridge('audio.getSampleMeta', { path }).then((meta) => {
+        if (mySeq !== _playFileSeq) return;
+        let bpm = 0, key = '';
+        let genre = '', mood = '';
+        if (meta && meta.ok !== false) {
+          if (meta.bpm && meta.bpm > 30) bpm = meta.bpm;
+          if (meta.key) key = meta.key;
+          if (meta.genre) genre = meta.genre;
+          if (meta.mood) mood = meta.mood;
+        }
+        if (!bpm) bpm = filenameBpm;
+        if (!key || key === 'ORIGINAL') key = filenameKey;
 
-      // If Sync is already on and we just discovered BPM, re-apply sync
-      if (state.syncBpm && bpm) {
-        bridge('reaper.tempo').then((td) => {
-          const dawBpm = (td && td.bpm) ? td.bpm : 120;
-          bridge('audio.setSyncBpm', { enabled: true, bpm: dawBpm, sampleBpm: bpm, path }).catch(()=>{});
-        }).catch(()=>{});
-      }
-    }).catch(() => {
-      state.sampleBpm = filenameBpm;
-      state.sampleKey = filenameKey;
-      updateTransposerPopUI();
-    });
+        state.sampleBpm = bpm || 0;
+        state.sampleKey = key || 'C';
+
+        const detectedRoot = extractRootNoteName(state.sampleKey);
+        state.originalRootNote = detectedRoot;
+        if (state.isUserTargetKeyLocked && state.userTargetNote) {
+          state.selectedTargetNote = state.userTargetNote;
+          state.pitchSemitones = calculateSemitoneDistance(detectedRoot, state.userTargetNote);
+        } else {
+          state.selectedTargetNote = detectedRoot;
+          state.pitchSemitones = 0;
+        }
+
+        updateTransposerPopUI();
+        if (state.pitchSemitones !== 0) {
+          bridge('audio.setPitchShift', { semitones: state.pitchSemitones }).catch(()=>{});
+        }
+
+        // Render tags from DB if available, else heuristic
+        if (genre || mood) {
+          const tags = [];
+          if (genre) tags.push({ name: genre, type: 'genre' });
+          if (mood) tags.push({ name: mood, type: 'mood' });
+          if (key && key !== 'ORIGINAL') tags.push({ name: key, type: 'prop' });
+          state.sampleTags = tags;
+          renderPlayerTags(tags);
+        }
+
+        // If Sync is already on and we just discovered BPM, re-apply sync
+        if (state.syncBpm && bpm) {
+          bridge('reaper.tempo').then((td) => {
+            const dawBpm = (td && td.bpm) ? td.bpm : 120;
+            bridge('audio.setSyncBpm', { enabled: true, bpm: dawBpm, sampleBpm: bpm, path }).catch(()=>{});
+          }).catch(()=>{});
+        }
+      }).catch(() => {
+        if (mySeq !== _playFileSeq) return;
+        state.sampleBpm = filenameBpm;
+        state.sampleKey = filenameKey;
+        updateTransposerPopUI();
+      });
+    } catch {}
 
     const keyLabel = $('#playerKeyLabel');
     if (keyLabel && !keyLabel.textContent) keyLabel.textContent = state.selectedTargetNote || 'C';
@@ -3132,8 +3160,10 @@ async function playFile(path) {
     startPlayerAnimLoop();
     drawWaveform();
   } catch (err) {
-    console.error('playFile error:', err);
-    toast(tr('toast.decodeFail'));
+    if (mySeq === _playFileSeq) {
+      console.error('playFile error:', err);
+      toast(tr('toast.decodeFail'));
+    }
   }
 }
 
@@ -3161,7 +3191,26 @@ function startPlayerAnimLoop() {
       if (state.loop) {
         state.position = (state.position + dt / state.duration) % 1.0;
       } else {
-        state.position = Math.min(1.0, state.position + dt / state.duration);
+        const nextPos = state.position + dt / state.duration;
+        if (nextPos >= 1.0) {
+          state.position = 0;
+          state.playing = false;
+          _meterSmoothedVal = 0;
+          const bp = $('#btnPlay');
+          if (bp) {
+            bp.textContent = '▶';
+            bp.classList.remove('playing');
+          }
+          const timeLbl = $('#timeLabel');
+          if (timeLbl) timeLbl.textContent = `0.0 / ${state.duration.toFixed(1)}s`;
+          drawMeterSmoothed(0);
+          drawWaveform();
+          bridge('audio.stop').catch(() => {});
+          _playerRafId = null;
+          return;
+        } else {
+          state.position = nextPos;
+        }
       }
     }
 
@@ -3180,7 +3229,7 @@ function startPlayerAnimLoop() {
     if (targetPeak > _meterSmoothedVal) {
       _meterSmoothedVal = targetPeak; // Instant transient attack
     } else {
-      _meterSmoothedVal = Math.max(0, _meterSmoothedVal - dt * 2.4); // Organic smooth decay
+      _meterSmoothedVal = Math.max(0, _meterSmoothedVal - dt * 3.5); // Organic smooth decay
     }
 
     const timeLbl = $('#timeLabel');
@@ -3195,6 +3244,7 @@ function startPlayerAnimLoop() {
 
 function refreshPlayState() {
   state.playing = false;
+  state.position = 0;
   if (_playerRafId) {
     cancelAnimationFrame(_playerRafId);
     _playerRafId = null;
@@ -3204,6 +3254,10 @@ function refreshPlayState() {
   if (bp) {
     bp.textContent = '▶';
     bp.classList.remove('playing');
+  }
+  const timeLbl = $('#timeLabel');
+  if (timeLbl && state.duration > 0) {
+    timeLbl.textContent = `0.0 / ${state.duration.toFixed(1)}s`;
   }
   drawMeterSmoothed(0);
   drawWaveform();
