@@ -1250,7 +1250,8 @@ html[data-theme="pastel-pink"] #preview {
   gap: 4px;
 }
 
-html[data-theme="pastel-pink"] #btnPlay {
+html[data-theme="pastel-pink"] #btnPlay,
+html[data-theme="pastel-pink"] #btnPlay.playing {
   width: 30px !important;
   height: 28px !important;
   border-radius: 8px !important;
@@ -1258,6 +1259,9 @@ html[data-theme="pastel-pink"] #btnPlay {
   color: #FFFFFF !important;
   font-size: 12px !important;
   box-shadow: 0 2px 8px rgba(255, 141, 166, 0.35) !important;
+}
+html[data-theme="pastel-pink"] #btnPlay:hover {
+  background: #FF7597 !important;
 }
 
 html[data-theme="pastel-pink"] #btnLoop,

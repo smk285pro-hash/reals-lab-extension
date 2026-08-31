@@ -2438,12 +2438,6 @@ function probeVisibleAudio(immediate = false) {
           state.envCache[f.path] = d.envelope;
           updateRowMiniWave(f.path);
         }
-        if (!_probeBatchTimer) {
-          _probeBatchTimer = setTimeout(() => {
-            _probeBatchTimer = null;
-            paintVisible();
-          }, 40);
-        }
       }
     }).catch(() => { state.probeInflight.delete(f.path); });
   });
@@ -2766,22 +2760,9 @@ function wireBrowserEvents() {
 
   filesBox.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
-    let row = e.target.closest('.file-row');
-    if (!row || !row._path) {
-      const box = $('#files');
-      if (box && state.files && state.files.length) {
-        const headerH = 24;
-        const rect = box.getBoundingClientRect();
-        const clickY = (e.clientY - rect.top) + box.scrollTop - headerH;
-        const rowH = getRowH();
-        const idx = Math.floor(clickY / rowH);
-        if (idx >= 0 && idx < state.files.length) {
-          selectEntry(state.files[idx]);
-          return;
-        }
-      }
-      return;
-    }
+    if (e.offsetX > filesBox.clientWidth - 16) return;
+    const row = e.target.closest('.file-row');
+    if (!row || !row._path) return;
     const f = (state.files || []).find((x) => x.path === row._path);
     if (!f) return;
     selectEntry(f);
