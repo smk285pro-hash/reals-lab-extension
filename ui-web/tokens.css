@@ -1,0 +1,332 @@
+/* ==========================================================================
+   Reals Lab Design Tokens — 3-Theme System
+   Themes:
+     1. dark-studio (Default Dark Studio)
+     2. pastel-pink (Light Cutecore Pastel Pink)
+     3. cyberpunk   (Neon High-Contrast Cyberpunk)
+   ========================================================================== */
+
+:root,
+html[data-theme="dark-studio"] {
+  /* Surfaces & Backgrounds */
+  --bg-root: #090A0C;
+  --bg-app: #0D0E11;
+  --bg-sidebar: #101114;
+  --bg-panel: #121316;
+  --bg-card: #15171A;
+  --bg-card-hover: #191B1F;
+  --bg-input: #0D0F12;
+  --bg-input-search: rgba(0, 0, 0, 0.30);
+  --bg-input-focus: rgba(0, 0, 0, 0.50);
+  --bg-elevated: #1A1C20;
+  --bg-nav-active: #17191C;
+  --bg-hover-subtle: rgba(255, 255, 255, 0.05);
+  --bg-selected: rgba(255, 255, 255, 0.09);
+  --bg-time-badge: rgba(0, 0, 0, 0.30);
+  --modal-backdrop: rgba(0, 0, 0, 0.65);
+  --drop-overlay-bg: rgba(9, 10, 12, 0.85);
+
+  /* Borders */
+  --border-subtle: #24262B;
+  --border-default: #2C2F35;
+  --border-strong: #363941;
+  --border-card: #24272C;
+  --border-input: #292C31;
+  --border-chip: #272A30;
+  --border-strong-2: #30333A;
+
+  /* Typography */
+  --text-primary: #F2F3F5;
+  --text-secondary: #A3A6AD;
+  --text-tertiary: #737780;
+  --text-disabled: #6A6D75;
+  --text-icon: #858991;
+  --text-meta: #777B84;
+  --text-chip: #8F939B;
+  --text-secondary-strong: #D7D9DD;
+  --text-primary-strong: #F1F2F4;
+
+  /* Accents */
+  --accent: #FF6B2C;
+  --accent-hover: #FF7A3D;
+  --accent-active: #E9571D;
+  --accent-soft: rgba(255, 107, 44, 0.12);
+  --accent-border: rgba(255, 107, 44, 0.35);
+  --accent-focus: rgba(255, 107, 44, 0.55);
+  --accent-glow: rgba(255, 107, 44, 0.08);
+  --accent-contrast: #FFFFFF;
+
+  /* Functional Badges */
+  --free-bg: rgba(34, 197, 94, 0.12);
+  --free-tx: #35D07F;
+  --pro-bg: rgba(255, 107, 44, 0.12);
+  --pro-tx: #FF7A3D;
+  --upd-bg: rgba(59, 130, 246, 0.12);
+  --upd-tx: #55A5FF;
+  --badge-midi-bg: rgba(167, 139, 250, 0.14);
+  --badge-midi-tx: #A78BFA;
+  --danger: #FF5C66;
+  --danger-soft: rgba(255, 92, 102, 0.15);
+
+  /* Waveform & Canvas */
+  --waveform-bg: #0B0E14;
+  --waveform-fill: rgba(255, 255, 255, 0.12);
+  --waveform-fill-active: rgba(56, 189, 248, 0.75);
+  --waveform-playhead: rgba(255, 255, 255, 0.85);
+  --waveform-centerline: rgba(255, 255, 255, 0.05);
+
+  /* Meter */
+  --meter-bg: #0B0E14;
+  --meter-fill: #35D07F;
+  --meter-fill-warn: #F59E0B;
+  --meter-fill-clip: #FF5C66;
+
+  /* Piano Roll & Keyboard Transposer */
+  --pianoroll-bg: #0B0E14;
+  --pianoroll-grid: rgba(255, 255, 255, 0.04);
+  --pianoroll-note: #38BDF8;
+  --pianoroll-note-active: #FFFFFF;
+  --pianoroll-note-grad-end: #0284C7;
+  --pianoroll-key-white-bg: #E2E4E9;
+  --pianoroll-key-white-tx: #1E2024;
+  --pianoroll-key-white-hover: #FFFFFF;
+  --pianoroll-key-black-bg: #181A1F;
+  --pianoroll-key-black-tx: #8F939B;
+  --pianoroll-key-black-hover: #2D3038;
+  --pianoroll-key-active-bg: #38BDF8;
+  --pianoroll-key-active-tx: #0A0D14;
+  --pianoroll-root-marker: #F59E0B;
+
+  /* Mini Waveform Preview on List Rows */
+  --mini-wave-color: rgba(56, 189, 248, 0.40);
+  --mini-wave-hover: rgba(56, 189, 248, 0.70);
+  --mini-wave-sel: #38BDF8;
+
+  /* Shadows & Visual Effects */
+  --shadow-modal: 0 16px 48px rgba(0, 0, 0, 0.70);
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.60);
+  --shadow-text-glow: 0 1px 4px rgba(0, 0, 0, 0.95), 0 0 12px rgba(18, 21, 27, 0.90);
+
+  /* Animation & System */
+  --t-fast: 120ms ease;
+  --t-med: 160ms ease;
+  --focus-ring: 0 0 0 2px var(--bg-app), 0 0 0 4px var(--accent-focus);
+}
+
+/* ==========================================================================
+   2. Pastel Pink Theme (Light Cutecore)
+   ========================================================================== */
+html[data-theme="pastel-pink"] {
+  /* Surfaces & Backgrounds (Sweet Cute Pastel Pink Aesthetic) */
+  --bg-root: #FFF5F8;
+  --bg-app: #FFF8FA;
+  --bg-sidebar: #FFF1F6;
+  --bg-panel: #FFF8FA;
+  --bg-card: #FFFFFF;
+  --bg-card-hover: #FFF0F6;
+  --bg-input: #FFFFFF;
+  --bg-input-search: #FFFFFF;
+  --bg-input-focus: #FFFFFF;
+  --bg-elevated: #FFE6EF;
+  --bg-nav-active: #FFDDE9;
+  --bg-hover-subtle: rgba(255, 92, 138, 0.08);
+  --bg-selected: #FFE4ED;
+  --bg-time-badge: rgba(255, 230, 239, 0.90);
+  --modal-backdrop: rgba(74, 53, 69, 0.40);
+  --drop-overlay-bg: rgba(255, 245, 248, 0.90);
+
+  /* Borders */
+  --border-subtle: #FAD4E2;
+  --border-default: #F5C6D8;
+  --border-strong: #EBB5CA;
+  --border-card: #F8D8E5;
+  --border-input: #F2C4D6;
+  --border-chip: #F5C9DB;
+  --border-strong-2: #E0A6BE;
+
+  /* Typography (Cutecore Contrast) */
+  --text-primary: #453340;
+  --text-secondary: #856E80;
+  --text-tertiary: #A690A2;
+  --text-disabled: #C4B0BF;
+  --text-icon: #8F728A;
+  --text-meta: #94788E;
+  --text-chip: #6E5368;
+  --text-secondary-strong: #382433;
+  --text-primary-strong: #291524;
+
+  /* Accents (Sweet Rose Coral) */
+  --accent: #FF5C8A;
+  --accent-hover: #FF759B;
+  --accent-active: #E64573;
+  --accent-soft: rgba(255, 92, 138, 0.14);
+  --accent-border: rgba(255, 92, 138, 0.35);
+  --accent-focus: rgba(255, 92, 138, 0.55);
+  --accent-glow: rgba(255, 92, 138, 0.12);
+  --accent-contrast: #FFFFFF;
+
+  /* Functional Badges */
+  --free-bg: rgba(16, 185, 129, 0.12);
+  --free-tx: #059669;
+  --pro-bg: rgba(255, 92, 138, 0.14);
+  --pro-tx: #FF5C8A;
+  --upd-bg: rgba(156, 128, 216, 0.14);
+  --upd-tx: #8B65D4;
+  --badge-midi-bg: rgba(188, 167, 232, 0.22);
+  --badge-midi-tx: #8B65D4;
+  --danger: #FF4757;
+  --danger-soft: rgba(255, 71, 87, 0.15);
+
+  /* Waveform & Canvas */
+  --waveform-bg: #FFF1F6;
+  --waveform-fill: #C9B8E8;
+  --waveform-fill-active: #FF5C8A;
+  --waveform-playhead: #453340;
+  --waveform-centerline: rgba(235, 181, 202, 0.50);
+
+  /* Meter */
+  --meter-bg: #FFF1F6;
+  --meter-fill: #10B981;
+  --meter-fill-warn: #F59E0B;
+  --meter-fill-clip: #FF4757;
+
+  /* Piano Roll & Keyboard Transposer */
+  --pianoroll-bg: #FFF1F6;
+  --pianoroll-grid: rgba(235, 181, 202, 0.30);
+  --pianoroll-note: #FF5C8A;
+  --pianoroll-note-active: #FFFFFF;
+  --pianoroll-note-grad-end: #FF759B;
+  --pianoroll-key-white-bg: #FFFFFF;
+  --pianoroll-key-white-tx: #453340;
+  --pianoroll-key-white-hover: #FFF5F8;
+  --pianoroll-key-black-bg: #94788E;
+  --pianoroll-key-black-tx: #FFFFFF;
+  --pianoroll-key-black-hover: #755B70;
+  --pianoroll-key-active-bg: #FF5C8A;
+  --pianoroll-key-active-tx: #FFFFFF;
+  --pianoroll-root-marker: #F59E0B;
+
+  /* Mini Waveform Preview on List Rows */
+  --mini-wave-color: rgba(188, 167, 232, 0.65);
+  --mini-wave-hover: rgba(255, 92, 138, 0.80);
+  --mini-wave-sel: #FF5C8A;
+
+  /* Shadows & Visual Effects */
+  --shadow-modal: 0 16px 48px rgba(148, 113, 132, 0.25);
+  --shadow-pop: 0 12px 32px rgba(148, 113, 132, 0.20);
+  --shadow-text-glow: none;
+
+  /* Animation & System */
+  --t-fast: 120ms ease;
+  --t-med: 160ms ease;
+  --focus-ring: 0 0 0 2px var(--bg-app), 0 0 0 4px var(--accent-focus);
+}
+
+/* ==========================================================================
+   3. Cyberpunk Theme (Neon High-Contrast)
+   ========================================================================== */
+html[data-theme="cyberpunk"] {
+  /* Surfaces & Backgrounds */
+  --bg-root: #040407;
+  --bg-app: #08080E;
+  --bg-sidebar: #0A0A12;
+  --bg-panel: #0B0B14;
+  --bg-card: #0F101A;
+  --bg-card-hover: #161726;
+  --bg-input: #07070D;
+  --bg-input-search: rgba(7, 7, 13, 0.85);
+  --bg-input-focus: #0A0B16;
+  --bg-elevated: #151624;
+  --bg-nav-active: #1A1C30;
+  --bg-hover-subtle: rgba(0, 240, 255, 0.08);
+  --bg-selected: rgba(0, 240, 255, 0.18);
+  --bg-time-badge: rgba(15, 16, 26, 0.85);
+  --modal-backdrop: rgba(4, 4, 7, 0.80);
+  --drop-overlay-bg: rgba(4, 4, 7, 0.90);
+
+  /* Borders */
+  --border-subtle: #1E2038;
+  --border-default: #282B4D;
+  --border-strong: #383C6E;
+  --border-card: #20233D;
+  --border-input: #2A2D52;
+  --border-chip: #242745;
+  --border-strong-2: #3E437A;
+
+  /* Typography */
+  --text-primary: #F0F4FF;
+  --text-secondary: #8A95C7;
+  --text-tertiary: #5B6699;
+  --text-disabled: #414A73;
+  --text-icon: #00F0FF;
+  --text-meta: #7480B8;
+  --text-chip: #A0ABDE;
+  --text-secondary-strong: #CBD3F7;
+  --text-primary-strong: #FFFFFF;
+
+  /* Accents */
+  --accent: #00F0FF;
+  --accent-hover: #33F3FF;
+  --accent-active: #00C4D1;
+  --accent-soft: rgba(0, 240, 255, 0.15);
+  --accent-border: rgba(0, 240, 255, 0.45);
+  --accent-focus: rgba(0, 240, 255, 0.70);
+  --accent-glow: rgba(0, 240, 255, 0.20);
+  --accent-contrast: #040407;
+
+  /* Functional Badges */
+  --free-bg: rgba(0, 255, 102, 0.15);
+  --free-tx: #00FF66;
+  --pro-bg: rgba(255, 0, 85, 0.15);
+  --pro-tx: #FF0055;
+  --upd-bg: rgba(0, 240, 255, 0.15);
+  --upd-tx: #00F0FF;
+  --badge-midi-bg: rgba(255, 0, 85, 0.15);
+  --badge-midi-tx: #FF0055;
+  --danger: #FF0055;
+  --danger-soft: rgba(255, 0, 85, 0.20);
+
+  /* Waveform & Canvas */
+  --waveform-bg: #05050C;
+  --waveform-fill: rgba(0, 240, 255, 0.18);
+  --waveform-fill-active: #00F0FF;
+  --waveform-playhead: #FF0055;
+  --waveform-centerline: rgba(0, 240, 255, 0.25);
+
+  /* Meter */
+  --meter-bg: #05050C;
+  --meter-fill: #00FF66;
+  --meter-fill-warn: #FFE600;
+  --meter-fill-clip: #FF0055;
+
+  /* Piano Roll & Keyboard Transposer */
+  --pianoroll-bg: #05050C;
+  --pianoroll-grid: rgba(0, 240, 255, 0.08);
+  --pianoroll-note: #00F0FF;
+  --pianoroll-note-active: #FFFFFF;
+  --pianoroll-note-grad-end: #FF0055;
+  --pianoroll-key-white-bg: #1B1E33;
+  --pianoroll-key-white-tx: #00F0FF;
+  --pianoroll-key-white-hover: #262B47;
+  --pianoroll-key-black-bg: #080911;
+  --pianoroll-key-black-tx: #8A95C7;
+  --pianoroll-key-black-hover: #121422;
+  --pianoroll-key-active-bg: #00F0FF;
+  --pianoroll-key-active-tx: #040407;
+  --pianoroll-root-marker: #FFE600;
+
+  /* Mini Waveform Preview on List Rows */
+  --mini-wave-color: rgba(0, 240, 255, 0.45);
+  --mini-wave-hover: rgba(0, 240, 255, 0.80);
+  --mini-wave-sel: #00F0FF;
+
+  /* Shadows & Visual Effects */
+  --shadow-modal: 0 16px 48px rgba(0, 0, 0, 0.90);
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.80);
+  --shadow-text-glow: 0 1px 4px rgba(0, 0, 0, 0.95), 0 0 12px rgba(0, 240, 255, 0.35);
+
+  /* Animation & System */
+  --t-fast: 120ms ease;
+  --t-med: 160ms ease;
+  --focus-ring: 0 0 0 2px var(--bg-app), 0 0 0 4px var(--accent-focus);
+}

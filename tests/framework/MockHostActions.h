@@ -1,6 +1,7 @@
 #pragma once
 
 #include <deque>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -173,6 +174,40 @@ public:
         m_revealedPaths.clear();
         m_labSends.clear();
         m_draggedPaths.clear();
+        m_extState.clear();
+        m_extStatePersist.clear();
+    }
+
+    void setExtState(const std::string& section, const std::string& key, const std::string& val, bool persist = true) {
+        std::lock_guard lock(m_mutex);
+        m_extState[section + ":" + key] = val;
+        m_extStatePersist[section + ":" + key] = persist;
+    }
+
+    [[nodiscard]] std::string getExtState(const std::string& section, const std::string& key) const {
+        std::lock_guard lock(m_mutex);
+        auto it = m_extState.find(section + ":" + key);
+        if (it != m_extState.end()) return it->second;
+        return "";
+    }
+
+    [[nodiscard]] bool hasExtState(const std::string& section, const std::string& key) const {
+        std::lock_guard lock(m_mutex);
+        return m_extState.find(section + ":" + key) != m_extState.end();
+    }
+
+    void deleteExtState(const std::string& section, const std::string& key, bool persist = true) {
+        std::lock_guard lock(m_mutex);
+        m_extState.erase(section + ":" + key);
+        m_extStatePersist.erase(section + ":" + key);
+        (void)persist;
+    }
+
+    [[nodiscard]] bool isExtStatePersisted(const std::string& section, const std::string& key) const {
+        std::lock_guard lock(m_mutex);
+        auto it = m_extStatePersist.find(section + ":" + key);
+        if (it != m_extStatePersist.end()) return it->second;
+        return false;
     }
 
 private:
@@ -196,6 +231,8 @@ private:
     std::vector<std::string> m_revealedPaths;
     std::vector<LabSendRecord> m_labSends;
     std::vector<std::string> m_draggedPaths;
+    std::map<std::string, std::string> m_extState;
+    std::map<std::string, bool> m_extStatePersist;
 public:
     double lastPlayrate() const { std::lock_guard lock(m_mutex); return m_lastPlayrate; }
     double lastQueuedPlayrate() const { std::lock_guard lock(m_mutex); return m_lastPlayrate; }

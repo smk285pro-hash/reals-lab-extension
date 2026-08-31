@@ -26,6 +26,9 @@ public:
     void resize(LONG width, LONG height);
     void setVisible(bool visible);
     void postJson(const std::string& json);
+    void postString(const std::string& str);
+    void executeScript(const std::wstring& script,
+                       std::function<void(const std::string&)> onComplete = nullptr);
     void setWebMessageHandler(std::function<void(const std::string&)> handler);
 
     [[nodiscard]] bool isReady() const { return m_ready; }

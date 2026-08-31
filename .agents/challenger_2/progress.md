@@ -1,14 +1,13 @@
-# Progress — challenger_2
+# Progress — Challenger 2
 
-Last visited: 2026-08-28T16:08:00Z
+Last visited: 2026-08-31T15:30:00Z
 
-- [x] Initialized DISPATCH.md, BRIEFING.md, progress.md
-- [x] Inspect codebase using gitnexus and view_file
-- [x] Inspect and enrich `TestSuite_EmpiricalChallenger_R2.cpp` with comprehensive adversarial tests
-- [x] Build project with zero warnings (`cmake --build --preset windows`)
-- [x] Execute `reals_tests.exe` (191/191 tests passed 100%) and CTest (5/5 suites passed 100%)
-- [x] Empirically stress-test Mechanism A (CF_HDROP math: D_PLAYRATE, D_LENGTH, B_PPITCH, D_PITCH, grid alignment)
-- [x] Empirically stress-test Mechanism B Safeguard (drag_xxx.wav detection, D_PLAYRATE=1.0, D_PITCH=0.0, double-DSP prevention)
-- [x] Benchmark drag dispatch latency (sub-ms async drag start, no UI thread blocking)
-- [x] Write challenge.md and handoff.md
-- [x] Deliver verdict (APPROVE) and report to parent agent
+- [x] Workspace initialization (DISPATCH.md, BRIEFING.md, progress.md)
+- [x] Read mandatory input files
+- [x] Explore theme engine, ExtState persistence, window host, IPC bridge, deploy script via GitNexus & codebase view
+- [x] Execute empirical build and test suite (`cmake --build`, `reals_tests.exe --suite=ThemeEngine`, `python tests/verify_tokens_test.py`)
+- [x] Stress-test ExtState persistence (missing keys, corrupt data, injection, concurrency, empty strings)
+- [x] Stress-test zero-FOUC, prewarm lifecycle, and IPC bridge reliability
+- [x] Stress-test deployment pipeline (atomic rotation, dll destination)
+- [x] Write handoff.md with definitive verdict (APPROVE)
+- [x] Send message to parent

@@ -73,6 +73,8 @@
 #define REAPERAPI_WANT_GetTrackMediaItem
 #define REAPERAPI_WANT_GetMediaItemInfo_Value
 #define REAPERAPI_WANT_SetMediaItemInfo_Value
+#define REAPERAPI_WANT_GetExtState
+#define REAPERAPI_WANT_SetExtState
 #define REAPERAPI_IMPLEMENT
 #include <reaper_plugin_functions.h>
 
@@ -558,12 +560,12 @@ public:
     }
 
     void startDragWindow() override {
-        if (g_hwnd)
+        if (g_hwnd && !isDocked())
             PostMessageW(g_hwnd, WM_REALS_STARTDRAG, 0, 0);
     }
 
     void startResizeWindow(const std::string& edge) override {
-        if (!g_hwnd || IsZoomed(g_hwnd))
+        if (!g_hwnd || IsZoomed(g_hwnd) || isDocked())
             return;
         WPARAM ht = HTCLIENT;
         if (edge == "left") ht = HTLEFT;
@@ -739,9 +741,43 @@ std::wstring resolveUiWebDir() {
 // ---------------------------------------------------------------------------
 // Window + WebView lifecycle
 // ---------------------------------------------------------------------------
+RECT g_floatingRect{100, 100, 880, 740};
+
+void pushDockState(bool docked);
+
+bool isDockedInternal() {
+    if (!g_hwnd) return false;
+    bool isFloating = false;
+    int dockId = DockIsChildOfDock ? DockIsChildOfDock(g_hwnd, &isFloating) : -1;
+    return (dockId >= 0 && !isFloating);
+}
+
 LRESULT CALLBACK hostWndProc(const HWND h, const UINT msg, const WPARAM wParam,
                              const LPARAM lParam) {
     switch (msg) {
+    case WM_GETMINMAXINFO: {
+        auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
+        if (mmi) {
+            mmi->ptMinTrackSize.x = 180;
+            mmi->ptMinTrackSize.y = 360;
+        }
+        return 0;
+    }
+    case WM_EXITSIZEMOVE: {
+        if (g_hwnd && !isDockedInternal() && !IsIconic(g_hwnd) && !IsZoomed(g_hwnd)) {
+            RECT rc{};
+            GetWindowRect(g_hwnd, &rc);
+            if (rc.right - rc.left >= 180 && rc.bottom - rc.top >= 200) {
+                g_floatingRect = rc;
+                char posBuf[64];
+                std::snprintf(posBuf, sizeof(posBuf), "%ld,%ld,%ld,%ld",
+                              rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top);
+                if (SetExtState)
+                    SetExtState("REALSLAB", "window_pos", posBuf, true);
+            }
+        }
+        return 0;
+    }
     case WM_SIZE: {
         if (g_web && wParam != SIZE_MINIMIZED) {
             g_web->resize(static_cast<LONG>(LOWORD(lParam)), static_cast<LONG>(HIWORD(lParam)));
@@ -929,8 +965,6 @@ void timerHook() {
     }
 }
 
-RECT g_floatingRect{100, 100, 880, 740};
-
 void pushDockState(bool docked) {
     if (g_web && g_web->isReady()) {
         nlohmann::json d;
@@ -938,13 +972,6 @@ void pushDockState(bool docked) {
         d["data"] = {{"docked", docked}};
         g_web->postJson(d.dump());
     }
-}
-
-bool isDockedInternal() {
-    if (!g_hwnd) return false;
-    bool isFloating = false;
-    int dockId = DockIsChildOfDock ? DockIsChildOfDock(g_hwnd, &isFloating) : -1;
-    return (dockId >= 0 && !isFloating);
 }
 
 void toggleDockInternal() {
@@ -987,6 +1014,8 @@ void toggleDockInternal() {
             g_web->setVisible(true);
         }
         pushDockState(false);
+        if (SetExtState)
+            SetExtState("REALSLAB", "docked", "0", true);
         g_visible = true;
     } else {
         // DOCK: Save floating rect first
@@ -994,6 +1023,11 @@ void toggleDockInternal() {
         GetWindowRect(g_hwnd, &rc);
         if (rc.right - rc.left > 200 && rc.bottom - rc.top > 200) {
             g_floatingRect = rc;
+            char posBuf[64];
+            std::snprintf(posBuf, sizeof(posBuf), "%ld,%ld,%ld,%ld",
+                          rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top);
+            if (SetExtState)
+                SetExtState("REALSLAB", "window_pos", posBuf, true);
         }
 
         if (DockWindowAddEx) {
@@ -1011,6 +1045,8 @@ void toggleDockInternal() {
             g_web->setVisible(true);
         }
         pushDockState(true);
+        if (SetExtState)
+            SetExtState("REALSLAB", "docked", "1", true);
         g_visible = true;
     }
 }
@@ -1085,8 +1121,22 @@ bool createHostWindow(const bool showImmediately) {
 
     // WS_EX_TOOLWINDOW + SW_HIDE: HWND exists so WebView2 can attach, but the
     // user never sees an empty window during REAPER startup.
+    int initX = CW_USEDEFAULT, initY = CW_USEDEFAULT, initW = 440, initH = 880;
+    const char* rawPos = GetExtState ? GetExtState("REALSLAB", "window_pos") : nullptr;
+    if (rawPos && *rawPos) {
+        int rx = 0, ry = 0, rw = 0, rh = 0;
+        if (std::sscanf(rawPos, "%d,%d,%d,%d", &rx, &ry, &rw, &rh) == 4 && rw >= 180 && rh >= 200) {
+            POINT pt{ rx + 20, ry + 20 };
+            HMONITOR hMon = MonitorFromPoint(pt, MONITOR_DEFAULTTONULL);
+            if (hMon) {
+                initX = rx; initY = ry; initW = rw; initH = rh;
+                g_floatingRect = { rx, ry, rx + rw, ry + rh };
+            }
+        }
+    }
+
     g_hwnd = CreateWindowExW(WS_EX_TOOLWINDOW, kWndClass, L"Reals Lab", WS_OVERLAPPEDWINDOW,
-                             CW_USEDEFAULT, CW_USEDEFAULT, 760, 920, GetMainHwnd(), nullptr,
+                             initX, initY, initW, initH, GetMainHwnd(), nullptr,
                              g_hInstance, nullptr);
     if (!g_hwnd) {
         char msg[96];
@@ -1105,6 +1155,12 @@ bool createHostWindow(const bool showImmediately) {
     applyDwmDarkTitle(g_hwnd);
 
     ShowWindow(g_hwnd, SW_HIDE);
+
+    // Check if it should be docked on startup
+    const char* rawDock = GetExtState ? GetExtState("REALSLAB", "docked") : nullptr;
+    if (rawDock && std::string_view(rawDock) == "1" && DockWindowAddEx) {
+        DockWindowAddEx(g_hwnd, "Reals Lab", "REALSLAB_DOCK", true);
+    }
 
     // COM for the WebView2 async machinery (safe if REAPER already inited STA).
     const HRESULT comHr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -1146,12 +1202,35 @@ bool createHostWindow(const bool showImmediately) {
             if (g_visible && g_web)
                 g_web->setVisible(true);
             reals::shell::registerFileDropTargetTree(g_hwnd);
+
+            const char* rawTheme = GetExtState ? GetExtState("REALSLAB", "theme") : nullptr;
+            std::string theme = (rawTheme && *rawTheme)
+                ? std::string(rawTheme)
+                : reals::config::Config::instance().getString("theme", "dark-studio");
+            if (theme.empty())
+                theme = "dark-studio";
+            if (g_web) {
+                const std::wstring script = L"window.themeManager && window.themeManager.applyTheme('" +
+                                            toWide(theme) + L"', false);";
+                g_web->executeScript(script);
+            }
         } else {
             LOG_ERROR(kTag, "host: webview init failed — see earlier log lines");
         }
     });
 
     g_web->setWebMessageHandler([](const std::string& msg) {
+        constexpr std::string_view kThemePrefix = "THEME_CHANGED:";
+        if (msg.rfind(kThemePrefix, 0) == 0) {
+            const std::string themeName = msg.substr(kThemePrefix.length());
+            if (!themeName.empty()) {
+                if (SetExtState)
+                    SetExtState("REALSLAB", "theme", themeName.c_str(), true);
+                reals::config::Config::instance().set("theme", themeName);
+            }
+            return;
+        }
+
         if (g_bridge) {
             const std::string response = g_bridge->handle(msg);
             if (g_web)
@@ -1190,8 +1269,18 @@ void showHostWindow() {
     GetClientRect(g_hwnd, &rc);
     if (g_web) {
         g_web->resize(rc.right, rc.bottom);
-        if (g_web->isReady())
+        if (g_web->isReady()) {
             g_web->setVisible(true);
+            const char* rawTheme = GetExtState ? GetExtState("REALSLAB", "theme") : nullptr;
+            std::string theme = (rawTheme && *rawTheme)
+                ? std::string(rawTheme)
+                : reals::config::Config::instance().getString("theme", "dark-studio");
+            if (theme.empty())
+                theme = "dark-studio";
+            const std::wstring script = L"window.themeManager && window.themeManager.applyTheme('" +
+                                        toWide(theme) + L"', false);";
+            g_web->executeScript(script);
+        }
     }
     SetForegroundWindow(g_hwnd);
     pushDockState(docked);

@@ -4,6 +4,19 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Reals Lab</title>
+<script>
+  (function() {
+    try {
+      var theme = localStorage.getItem('reals_theme') || 'dark-studio';
+      document.documentElement.setAttribute('data-theme', theme);
+    } catch (e) {
+      document.documentElement.setAttribute('data-theme', 'dark-studio');
+    }
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;600;700;800;900&family=Quicksand:wght@600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -99,11 +112,14 @@
       <section class="pane active" id="pane-browser">
         <div class="browser-toolbar">
           <div class="toolbar-row row-primary">
-            <button id="btnToggleTree" class="btn-tool-icon on" data-i18n-title="browser.toggleTree" title="Ẩn/Hiện Cây thư mục">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <button id="btnAddFolder" class="btn-tool-icon" data-i18n-title="browser.addFolder" title="Thêm thư mục Sample">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>
+                <line x1="12" y1="10" x2="12" y2="16"/>
+                <line x1="9" y1="13" x2="15" y2="13"/>
               </svg>
             </button>
+            <input type="file" id="folderInput" webkitdirectory directory style="display:none">
             <div class="search-wrap">
               <span class="search-icon">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -155,26 +171,56 @@
           </div>
         </div>
         <div class="browser-body">
-          <div id="tree"></div>
+          <div id="tree">
+            <div class="kawaii-folder-mascot">
+              <img src="assets/kawaii/folder_mascot.svg" alt="Kawaii Folder">
+            </div>
+            <div id="treeNodes"></div>
+            <div class="kawaii-clouds-footer">
+              <img src="assets/kawaii/sidebar_clouds.svg" alt="Kawaii Clouds">
+            </div>
+          </div>
           <div id="treeSplitter" class="splitter-v" data-i18n-title="splitter.tree" title="Kéo để chỉnh độ rộng Cây thư mục"></div>
           <div id="files"></div>
         </div>
         <div id="previewSplitter" class="splitter-h" data-i18n-title="splitter.preview" title="Kéo để chỉnh chiều cao Trình phát"></div>
         <div id="preview">
           <div class="preview-row">
-            <button id="btnPlay" class="flat">&gt;</button>
-            <button id="btnLoop" class="flat" data-i18n="browser.loop">Loop</button>
-            <button id="btnSyncBpm" class="flat" data-i18n="player.syncBpm">Sync BPM</button>
+            <button id="btnPlay" class="flat" title="Play/Pause">▶</button>
+            <button id="btnLoop" class="flat" data-i18n-title="browser.loop" title="Loop">
+              <span class="btn-icon">🔁</span>
+              <span class="btn-text" data-i18n="browser.loop">Loop</span>
+            </button>
+            <button id="btnSyncBpm" class="flat" data-i18n-title="player.syncBpm" title="Sync BPM">
+              <span class="btn-icon">⚡</span>
+              <span class="btn-text" data-i18n="player.syncBpm">Sync BPM</span>
+            </button>
             <button id="btnKeyTransposer" class="flat btn-key-transposer" title="Key Transposer">
-              <span id="playerKeyLabel">ORIGINAL</span>
+              <span class="btn-icon">🎹</span>
+              <span id="playerKeyLabel" class="btn-text">ORIGINAL</span>
               <span id="pitchShiftBadge" class="pitch-badge">0st</span>
             </button>
-            <button id="btnLab" class="flat" data-i18n="browser.sendLab">Audio Lab</button>
+            <button id="btnLab" class="flat" data-i18n-title="browser.sendLab" title="Audio Lab">
+              <span class="btn-icon">🧪</span>
+              <span class="btn-text" data-i18n="browser.sendLab">Audio Lab</span>
+            </button>
             <span id="timeLabel">0.0 / 0.0s</span>
+            <div class="kawaii-cat-mascot" title="Kawaii Mascot">
+              <img src="assets/kawaii/cat_mascot.svg" alt="Kawaii Cat">
+            </div>
           </div>
-          <canvas id="waveform" height="44"></canvas>
+          <div class="waveform-wrap">
+            <canvas id="waveform" height="44"></canvas>
+          </div>
           <div class="preview-row preview-row-bottom">
-            <canvas id="meter" height="8"></canvas>
+            <div class="meter-and-seek-wrap" id="meterSeekWrap" title="VU Meter nhảy theo nhạc / Click để tua">
+              <canvas id="meter" height="6"></canvas>
+              <div class="kawaii-heart-scrubber" id="kawaiiHeartScrubber">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="#FF8DA6">
+                  <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                </svg>
+              </div>
+            </div>
             <div class="volume-wrap">
               <span class="vol-icon">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -309,9 +355,24 @@
                 <button class="setting-chip" data-val="right" data-i18n="pos.right">Phải</button>
               </div>
             </div>
+            <div class="setting-group">
+              <label class="setting-lbl" data-i18n="settings.theme">Giao diện (Theme)</label>
+              <div class="setting-btn-group" id="optTheme">
+                <button class="setting-chip" data-val="dark-studio" data-i18n="theme.darkStudio">Dark Studio</button>
+                <button class="setting-chip" data-val="pastel-pink" data-i18n="theme.pastelPink">Pastel Pink</button>
+                <button class="setting-chip" data-val="cyberpunk" data-i18n="theme.cyberpunk">Cyberpunk</button>
+              </div>
+            </div>
           </div>
           <!-- TAB 2: FILE BROWSER -->
           <div id="tab-browser" class="settings-tab-pane">
+            <div class="setting-group">
+              <label class="setting-lbl" data-i18n="settings.miniWave">Sóng âm mini dưới tên file</label>
+              <div class="setting-btn-group" id="optMiniWave">
+                <button class="setting-chip" data-val="true" data-i18n="common.enabled">Bật</button>
+                <button class="setting-chip active" data-val="false" data-i18n="common.disabled">Tắt</button>
+              </div>
+            </div>
             <div class="setting-group">
               <label class="setting-lbl" data-i18n="settings.autoCollapse">Tự động đóng thư mục khác</label>
               <div class="setting-btn-group" id="optAutoCollapse">

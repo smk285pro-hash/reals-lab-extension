@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 280" width="100%" height="280" fill="none">
+  <defs>
+    <!-- Background Sky Glow -->
+    <linearGradient id="skyGrad" x1="110" y1="0" x2="110" y2="280" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFF5F8" stop-opacity="0"/>
+      <stop offset="35%" stop-color="#FFEBF2" stop-opacity="0.45"/>
+      <stop offset="70%" stop-color="#F3E0F7" stop-opacity="0.75"/>
+      <stop offset="100%" stop-color="#E8CEF5" stop-opacity="0.95"/>
+    </linearGradient>
+
+    <!-- Puffy Cloud Gradients -->
+    <linearGradient id="cloudUpper" x1="110" y1="30" x2="110" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#F6E2F2" stop-opacity="0.75"/>
+    </linearGradient>
+
+    <linearGradient id="cloudBottomBack" x1="110" y1="160" x2="110" y2="280" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#EED5F5"/>
+      <stop offset="100%" stop-color="#DEBEED"/>
+    </linearGradient>
+
+    <linearGradient id="cloudBottomFront" x1="110" y1="180" x2="110" y2="280" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.95"/>
+      <stop offset="40%" stop-color="#FCE7F3" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#ECCEF5" stop-opacity="0.85"/>
+    </linearGradient>
+
+    <!-- Note Mascot Gradient -->
+    <linearGradient id="mascotNoteGrad" x1="75" y1="100" x2="145" y2="175" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFB3C7"/>
+      <stop offset="50%" stop-color="#FF9BBB"/>
+      <stop offset="100%" stop-color="#FF85AA"/>
+    </linearGradient>
+
+    <!-- Shadow filter -->
+    <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#FF8DA6" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- Sky gradient backdrop -->
+  <rect width="220" height="280" fill="url(#skyGrad)"/>
+
+  <!-- Upper Soft Puffy Cloud -->
+  <g opacity="0.85">
+    <ellipse cx="105" cy="72" rx="42" ry="18" fill="url(#cloudUpper)"/>
+    <ellipse cx="80" cy="74" rx="22" ry="14" fill="url(#cloudUpper)"/>
+    <ellipse cx="128" cy="76" rx="25" ry="13" fill="url(#cloudUpper)"/>
+    <circle cx="98" cy="62" r="16" fill="url(#cloudUpper)"/>
+    <circle cx="116" cy="64" r="14" fill="url(#cloudUpper)"/>
+  </g>
+
+  <!-- Sparkles & Stars -->
+  <!-- Top Right Pink 4-Point Star -->
+  <path d="M158 84 Q158 96 168 96 Q158 96 158 108 Q158 96 148 96 Q158 96 158 84 Z" fill="#FFAEC6" opacity="0.9"/>
+  <!-- Top Left Golden Yellow Floating Music Note -->
+  <g transform="translate(62, 110) scale(0.9)" fill="#F8C86A" opacity="0.95">
+    <ellipse cx="8" cy="18" rx="6" ry="4.5" transform="rotate(-20 8 18)"/>
+    <path d="M13 16 L13 2 C13 2, 16 0, 22 3 L22 7 C18 4, 15 5, 15 6 L15 16 Z"/>
+  </g>
+  <!-- Lower Left White Star -->
+  <path d="M60 185 Q60 193 67 193 Q60 193 60 201 Q60 193 53 193 Q60 193 60 185 Z" fill="#FFFFFF" opacity="0.9"/>
+  <!-- Lower Right White Star -->
+  <path d="M165 228 Q165 233 170 233 Q165 233 165 238 Q165 233 160 233 Q165 233 165 228 Z" fill="#FFFFFF" opacity="0.85"/>
+  <!-- Tiny Sparkle Dots -->
+  <circle cx="48" cy="142" r="1.8" fill="#FFFFFF" opacity="0.8"/>
+  <circle cx="172" cy="155" r="2" fill="#FFAEC6" opacity="0.75"/>
+  <circle cx="152" cy="178" r="1.5" fill="#FFFFFF" opacity="0.9"/>
+
+  <!-- Back Layer of Bottom Clouds -->
+  <g>
+    <ellipse cx="40" cy="235" rx="55" ry="35" fill="url(#cloudBottomBack)"/>
+    <ellipse cx="110" cy="225" rx="60" ry="40" fill="url(#cloudBottomBack)"/>
+    <ellipse cx="180" cy="235" rx="55" ry="35" fill="url(#cloudBottomBack)"/>
+  </g>
+
+  <!-- Kawaii Mascot ♫ Note (Centered in the cloud sky) -->
+  <g transform="translate(72, 120)" filter="url(#softGlow)">
+    <!-- Note Outline & Body -->
+    <!-- Top Beam -->
+    <path d="M14 6 C14 3.5, 16.5 1.5, 20 1.5 L60 1.5 C63.5 1.5, 66 3.5, 66 6 L66 14 C66 16.5, 63.5 18, 60 18 L20 18 C16.5 18, 14 16.5, 14 14 Z" fill="url(#mascotNoteGrad)"/>
+    
+    <!-- Left Stem -->
+    <rect x="14" y="10" width="11" height="36" rx="4" fill="url(#mascotNoteGrad)"/>
+    <!-- Right Stem -->
+    <rect x="55" y="10" width="11" height="36" rx="4" fill="url(#mascotNoteGrad)"/>
+
+    <!-- Bottom Smiling Bean Base (Connecting Both Heads) -->
+    <path d="M12 40 C12 30, 26 28, 38 34 C50 28, 68 30, 68 40 C68 54, 52 58, 40 58 C28 58, 12 54, 12 40 Z" fill="url(#mascotNoteGrad)"/>
+
+    <!-- Mascot Face -->
+    <!-- Left Eye -->
+    <ellipse cx="28" cy="42" rx="2.5" ry="3" fill="#2E1627"/>
+    <circle cx="27.3" cy="41" r="1" fill="#FFFFFF"/>
+    <!-- Right Eye -->
+    <ellipse cx="50" cy="42" rx="2.5" ry="3" fill="#2E1627"/>
+    <circle cx="49.3" cy="41" r="1" fill="#FFFFFF"/>
+
+    <!-- Cute Smiling Mouth -->
+    <path d="M36 44.5 Q39 48 42 44.5" stroke="#2E1627" stroke-width="2" stroke-linecap="round" fill="none"/>
+
+    <!-- Rosy Cheeks -->
+    <ellipse cx="22" cy="45" rx="3.5" ry="2.2" fill="#FF4D79" opacity="0.45"/>
+    <ellipse cx="56" cy="45" rx="3.5" ry="2.2" fill="#FF4D79" opacity="0.45"/>
+  </g>
+
+  <!-- Front Layer of Bottom Fluffy Clouds -->
+  <g>
+    <!-- Left Cloud Puff -->
+    <ellipse cx="20" cy="275" rx="55" ry="35" fill="url(#cloudBottomFront)"/>
+    <!-- Middle Left Cloud Puff -->
+    <ellipse cx="80" cy="265" rx="50" ry="38" fill="url(#cloudBottomFront)"/>
+    <circle cx="65" cy="240" r="28" fill="url(#cloudBottomFront)"/>
+    <!-- Middle Right Cloud Puff -->
+    <ellipse cx="145" cy="265" rx="52" ry="38" fill="url(#cloudBottomFront)"/>
+    <circle cx="150" cy="235" r="32" fill="url(#cloudBottomFront)"/>
+    <circle cx="115" cy="245" r="25" fill="url(#cloudBottomFront)"/>
+    <!-- Right Cloud Puff -->
+    <ellipse cx="205" cy="275" rx="50" ry="35" fill="url(#cloudBottomFront)"/>
+  </g>
+</svg>

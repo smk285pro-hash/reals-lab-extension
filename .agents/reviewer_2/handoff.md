@@ -1,56 +1,115 @@
-# Handoff Report — reviewer_2
+# Review Report & Handoff: Reals Lab Theme Engine
+
+**Reviewer**: Reviewer 2 (`reviewer_2`) — Native C++, REAPER SDK & Build/Deploy Pipeline  
+**Target Work**: Reals Lab Theme Engine (C++20 DLL + WebView2 UI + REAPER SDK Persistence)  
+**Date**: 2026-08-31T22:31:00+07:00  
+**Verdict**: **APPROVE**  
+
+---
 
 ## 1. Observation
-- **Build Output**:
-  - `cmake --build --preset windows` executed with 0 errors and 0 warnings under MSVC `/W4 /permissive- /utf-8 /FS`.
-  - POST_BUILD target in `extension/CMakeLists.txt` automatically executed:
-    `Deploying reaper_realslab.dll to %APPDATA%/REAPER/UserPlugins`
-  - PowerShell check `Get-Item "$env:APPDATA\REAPER\UserPlugins\reaper_realslab.dll"` confirmed file exists, size 7,566,336 bytes, matching `./build/windows/extension/Debug/reaper_realslab.dll`.
-- **Test Suite Results**:
-  - `ctest --preset windows -C Debug`: 5/5 test targets PASSED (100%).
-    1. `test_soundtouch_processor` — Passed (1.49s)
-    2. `test_audio_engine` — Passed (0.16s)
-    3. `test_ai` — Passed (3.76s)
-    4. `test_db_scanner` — Passed (0.20s)
-    5. `reals_e2e_tests` — Passed (70.39s)
-  - `.\build\windows\tests\Debug\reals_tests.exe`: 183/183 tests PASSED (100%) across all 11 suites in 60,339 ms.
-- **Code & Documentation Audit**:
-  - `bridge/src/Bridge.cpp`: Mechanism A implemented in `browser.beginDrag` by dispatching original path `p` to `m_actions->queueSyncPlayrate(p, playrate, pitchShift)` and `m_actions->beginDrag(p)`.
-  - `extension/src/reaper_plugin.cpp`: `processPendingSyncPlayrates()` applies `D_PLAYRATE`, `B_PPITCH = 1`, `D_PITCH`, and adjusts `D_LENGTH = (curLen * curRate) / it->playrate` to match REAPER grid bars. Mechanism B safeguard resets `D_PLAYRATE = 1.0` and `D_PITCH = 0.0` for pre-baked WAVs (`drag_` / `drag_export`).
-  - Documentation updated and synchronized in `PLAN.md` (`[P1.14]`), `DESIGN.md` (§22), `SPEC.md` (§3, §5.1), and `PROJECT.md` (Features 1–8, M1–M4).
+
+Direct examination and empirical testing of the implementation and build pipeline were conducted:
+
+### 1.1 Zero-FOUC Host Settings (`shell/win/WebViewHost.cpp` & `extension/src/reaper_plugin.cpp`)
+- **WebView2 Controller Transparency**: In `shell/win/WebViewHost.cpp` lines 205–209, queried `ICoreWebView2Controller2` and initialized background color with 0 alpha:
+  ```cpp
+  ComPtr<ICoreWebView2Controller2> controller2;
+  if (SUCCEEDED(m_impl->controller.As(&controller2)) && controller2) {
+      const COREWEBVIEW2_COLOR bg{0, 0, 0, 0};
+      controller2->put_DefaultBackgroundColor(bg);
+  }
+  ```
+- **Hidden Pre-warming**: In `shell/win/WebViewHost.cpp` line 285, the controller is initialized hidden (`m_impl->controller->put_IsVisible(FALSE)`) until navigation is complete and the host window is explicitly displayed via `setVisible(true)`.
+- **Win32 Window Dark Background Brush**: In `extension/src/reaper_plugin.cpp` lines 1057–1059 and 1080, registered the Win32 window class with a solid brush matching `#0D0E11` (`RGB(0x0D, 0x0E, 0x11)`), with DWM dark caption attribute (`DwmSetWindowAttribute(hwnd, 35, ...)`).
+- **Inline Head Bootstrap**: In `ui-web/index.html` lines 7–16, synchronous inline script in `<head>` queries `localStorage.getItem('reals_theme')` and applies `data-theme` prior to stylesheet and DOM parsing.
+
+### 1.2 REAPER SDK Persistence & Fallbacks (`extension/src/reaper_plugin.cpp`)
+- Dynamic API binding is loaded via `REAPERAPI_LoadAPI(rec->GetFunc)` (line 1349).
+- On extension startup and window activation, REAPER `GetExtState("REALSLAB", "theme")` is queried (lines 1152–1157, 1220–1229) with secondary fallback to `reals::config::Config::instance().getString("theme", "dark-studio")` and default to `"dark-studio"`.
+- When the theme is updated, REAPER `SetExtState("REALSLAB", "theme", themeName.c_str(), true)` is called with `persist=true` (lines 1173–1176) to persist across REAPER sessions in `reaper-extstate.ini`.
+
+### 1.3 Bidirectional IPC String Protocol (`ui-web/app.js` & `extension/src/reaper_plugin.cpp`)
+- **JS -> C++**: `ThemeManager.applyTheme()` posts `THEME_CHANGED:<name>` via `window.chrome.webview.postMessage('THEME_CHANGED:' + themeName)` (line 348).
+- **C++ Web Message Handler**: `reaper_plugin.cpp` lines 1169–1178 intercepts `THEME_CHANGED:<name>` prefix, trims and validates payload, and commits to `SetExtState`.
+- **C++ -> JS**: Native shell pushes active theme to WebView2 via `executeScript(L"window.themeManager && window.themeManager.applyTheme('" + toWide(theme) + L"', false);")` (lines 1159–1161, 1226–1228).
+- **JS Web Message Listener**: `ui-web/app.js` lines 271–281 listens for `THEME_CHANGED:` messages from native shell and invokes `applyTheme(themeName, false)`.
+
+### 1.4 Zero-Warning Compilation & Automated Deployment (`CMakeLists.txt` & `extension/CMakeLists.txt`)
+- Root `CMakeLists.txt` enforces C++20 (`CMAKE_CXX_STANDARD 20`, `CMAKE_CXX_EXTENSIONS OFF`) and `/W4` with `/permissive-` on MSVC.
+- `extension/CMakeLists.txt` configures post-build deployment to `%APPDATA%/REAPER/UserPlugins/reaper_realslab.dll` using PowerShell script with atomic `.old` rotation (`Get-Random.old`) ensuring zero file lock collisions when REAPER is running.
+
+### 1.5 Verification Command Outputs
+1. **`cmake --build --preset windows`**:
+   - Exit code: `0`
+   - Warnings: `0`
+   - Post-build custom step: `Deploying reaper_realslab.dll to %APPDATA%/REAPER/UserPlugins` successfully completed.
+2. **`.\build\windows\tests\Debug\reals_tests.exe --suite=ThemeEngine`**:
+   - Executed: `42` tests
+   - Passed: `42` tests
+   - Failed: `0` tests
+   - Pass Rate: `100%`
+3. **`ctest --preset windows`**:
+   - Executed: `1/1 Test #1: reals_e2e_tests`
+   - Result: `Passed` (100% pass)
+4. **`python tests/verify_tokens_test.py`**:
+   - Parity: `100%` across all 3 themes (`dark-studio`, `pastel-pink`, `cyberpunk`) for 82 tokens (246 definitions).
+   - Undefined global CSS variables: `0`
+   - Hardcoded hex colors in `app.css`: `0`
+
+---
 
 ## 2. Logic Chain
-1. Direct measurement of `reals_tests.exe` execution confirmed 183 automated tests pass with 0 failures, covering all 8 features outlined in `PROJECT.md § Feature Inventory`.
-2. Static inspection of `TestSuite_AudioDSP.cpp`, `TestSuite_BridgeUI.cpp`, `TestSuite_CrossFeatures.cpp`, `TestSuite_EmpiricalChallenger_R1.cpp`, and `TestSuite_EmpiricalChallenger_R2.cpp` confirmed that assertions use genuine mathematical models, actual PCM synthesis, and live SQLite/RPC calls with no facade implementations or hardcoded result cheats.
-3. The POST_BUILD script in `extension/CMakeLists.txt` uses PowerShell with atomic file rename (`.old` swap) to allow in-use DLL replacement while REAPER is open, and verification confirmed the deployed binary matches the build output byte-for-byte.
-4. The technical implementation of Mechanism A eliminates drag latency (sub-millisecond dispatch) and double-DSP processing while preserving original file references in REAPER projects.
-5. All design and architectural changes are documented across `PLAN.md`, `DESIGN.md`, and `SPEC.md`.
+
+1. **Zero-FOUC Guarantee**:
+   - By orchestrating (a) Win32 class background `#0D0E11`, (b) WebView2 transparent controller `put_DefaultBackgroundColor({0,0,0,0})`, (c) initial controller hidden state `put_IsVisible(FALSE)`, and (d) synchronous `<head>` script querying `localStorage`, there is zero opportunity for the standard white WebView2 canvas flash to render during window initialization or theme transitions.
+2. **Persistence Source of Truth**:
+   - `localStorage` acts exclusively as an immediate synchronous cache during the initial HTML parser run.
+   - Once the native shell and REAPER API initialize, `GetExtState("REALSLAB", "theme")` is read from `reaper-extstate.ini` and pushed into `ThemeManager.applyTheme(name, false)` via `ExecuteScriptAsync`. Any discrepancies between `localStorage` and DAW state are automatically reconciled in favor of REAPER's state.
+3. **Performance & Audio Stability**:
+   - Dynamic canvas redraws for audio/MIDI waveforms and level meters are decoupled from DOM querying. The `ThemeManager` extracts computed CSS tokens once during theme switch and fires `themeUpdated` CustomEvent.
+   - The render loop accesses in-memory `canvasThemeColors` values, avoiding 60FPS layout thrashing (`getComputedStyle`) and preventing audio buffer underruns.
+4. **Adversarial & Input Hardening**:
+   - Inputs sent across the IPC boundary (`THEME_CHANGED:<name>`) are thoroughly validated: empty strings, malformed strings, SQL injection/XSS payloads, control bytes, and Unicode characters are safely caught and defaulted to `dark-studio`.
+   - Thread safety tests (Tier 3: 500 concurrent iterations across 5 reader/writer threads) proved memory safety and zero data race conditions.
+
+---
 
 ## 3. Caveats
-- No caveats. All 183 unit/integration tests and all 5 CTest targets pass 100% with zero build warnings and zero runtime errors.
+
+- **Host Platforms**: Native shell integration is currently verified on Windows x64 (MSVC 2022, WebView2, Win32). Non-Windows platforms (macOS WKWebView, Linux WebKitGTK) are planned for Phase 6 per `SPEC.md`.
+
+---
 
 ## 4. Conclusion
-- **Verdict**: **`APPROVE`**
-- Requirements R1 (Playhead Phase Synchronization), R2 (DAW Drag & Drop Alignment & Double-DSP elimination), and R3 (183+ test verification, zero-warning MSVC build, automated DLL deployment) are fully met and verified.
+
+The native C++ extension, REAPER SDK integration, WebView2 host shell, and build/deploy pipeline satisfy all requirements in `ORIGINAL_REQUEST.md`, `PROJECT.md`, `AGENTS.md`, and `TEST_INFRA.md`.
+- No integrity violations, hardcoded facades, or bypassed logic were detected.
+- Build compiles cleanly with zero warnings (`/W4`).
+- Automated deployment to `%APPDATA%/REAPER/UserPlugins/reaper_realslab.dll` operates seamlessly.
+- All 42 ThemeEngine tests and the consolidated E2E CTest suite pass 100%.
+
+**Final Verdict**: **APPROVE**
+
+---
 
 ## 5. Verification Method
-- **Build**:
-  ```powershell
-  cmake --build --preset windows
-  ```
-  Expected: 0 errors, 0 warnings, POST_BUILD DLL deployment.
-- **CTest**:
-  ```powershell
-  ctest --preset windows -C Debug --output-on-failure
-  ```
-  Expected: 5/5 tests passed (100%).
-- **Full Test Suite Binary**:
-  ```powershell
-  .\build\windows\tests\Debug\reals_tests.exe
-  ```
-  Expected: 183/183 tests passed (100%).
-- **DLL Deployment Check**:
-  ```powershell
-  Get-Item "$env:APPDATA\REAPER\UserPlugins\reaper_realslab.dll"
-  ```
-  Expected: Length 7,566,336 bytes with current timestamp.
+
+To independently reproduce this verification:
+
+1. **Clean Build & DLL Deployment**:
+   ```powershell
+   cmake --build --preset windows
+   ```
+2. **Execute ThemeEngine Unit Test Suite**:
+   ```powershell
+   .\build\windows\tests\Debug\reals_tests.exe --suite=ThemeEngine
+   ```
+3. **Execute Full Test Suite via CTest**:
+   ```powershell
+   ctest --preset windows
+   ```
+4. **Execute Token Parity & Integrity Validator**:
+   ```powershell
+   python tests/verify_tokens_test.py
+   ```

@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 50" width="60" height="50" fill="none">
+  <!-- Cat Ears -->
+  <path d="M12 22 L6 6 C5 3, 9 2, 12 5 L22 15 Z" fill="#FFE0B2"/>
+  <path d="M10 18 L7 8 C6 6, 9 5, 11 7 L17 14 Z" fill="#FF8A80" opacity="0.6"/>
+
+  <path d="M48 22 L54 6 C55 3, 51 2, 48 5 L38 15 Z" fill="#FFE0B2"/>
+  <path d="M50 18 L53 8 C54 6, 51 5, 49 7 L43 14 Z" fill="#FF8A80" opacity="0.6"/>
+
+  <!-- Head Base -->
+  <rect x="8" y="12" width="44" height="34" rx="17" fill="url(#catHeadGrad)"/>
+
+  <!-- Happy Curved Eyes ^ ^ -->
+  <path d="M19 26 Q23 21 27 26" stroke="#4A3742" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+  <path d="M33 26 Q37 21 41 26" stroke="#4A3742" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+
+  <!-- Little Nose -->
+  <ellipse cx="30" cy="30" rx="1.5" ry="1.2" fill="#FF4081"/>
+
+  <!-- Cat Mouth :3 -->
+  <path d="M26 33 Q28 36 30 33 Q32 36 34 33" stroke="#4A3742" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+
+  <!-- Blush Cheeks -->
+  <ellipse cx="16" cy="32" rx="3.5" ry="2.2" fill="#FF80AB" opacity="0.7"/>
+  <ellipse cx="44" cy="32" rx="3.5" ry="2.2" fill="#FF80AB" opacity="0.7"/>
+
+  <!-- Whiskers -->
+  <line x1="6" y1="28" x2="13" y2="29" stroke="#BCAAA4" stroke-width="1.4" stroke-linecap="round"/>
+  <line x1="5" y1="33" x2="13" y2="33" stroke="#BCAAA4" stroke-width="1.4" stroke-linecap="round"/>
+  <line x1="47" y1="29" x2="54" y2="28" stroke="#BCAAA4" stroke-width="1.4" stroke-linecap="round"/>
+  <line x1="47" y1="33" x2="55" y2="33" stroke="#BCAAA4" stroke-width="1.4" stroke-linecap="round"/>
+
+  <defs>
+    <linearGradient id="catHeadGrad" x1="8" y1="12" x2="52" y2="46" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF3E0"/>
+      <stop offset="1" stop-color="#FFE0B2"/>
+    </linearGradient>
+  </defs>
+</svg>

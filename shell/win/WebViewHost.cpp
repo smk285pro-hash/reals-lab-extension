@@ -325,6 +325,38 @@ void WebViewHost::postJson(const std::string& json) {
     }
 }
 
+void WebViewHost::postString(const std::string& str) {
+    if (m_impl && m_impl->web) {
+        const std::wstring w = toWide(str);
+        m_impl->web->PostWebMessageAsString(w.c_str());
+    }
+}
+
+void WebViewHost::executeScript(const std::wstring& script,
+                                std::function<void(const std::string&)> onComplete) {
+    if (!m_impl || !m_impl->web) {
+        if (onComplete)
+            onComplete({});
+        return;
+    }
+    if (onComplete) {
+        m_impl->web->ExecuteScript(
+            script.c_str(),
+            Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
+                [onComplete = std::move(onComplete)](HRESULT errorCode, LPCWSTR resultObjectAsJson) -> HRESULT {
+                    if (SUCCEEDED(errorCode) && resultObjectAsJson) {
+                        onComplete(toNarrow(resultObjectAsJson));
+                    } else {
+                        onComplete({});
+                    }
+                    return S_OK;
+                })
+                .Get());
+    } else {
+        m_impl->web->ExecuteScript(script.c_str(), nullptr);
+    }
+}
+
 void WebViewHost::setWebMessageHandler(std::function<void(const std::string&)> handler) {
     if (!m_impl)
         m_impl = std::make_unique<Impl>();

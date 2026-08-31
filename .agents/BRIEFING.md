@@ -1,22 +1,23 @@
-# BRIEFING — 2026-08-30T19:41:27Z
+# BRIEFING — 2026-08-31T14:25:45Z
 
 ## Mission
-Investigate and fix the tempo mismatch (preview playing faster than DAW) and verify REAPER Extension against Playhead Phase Sync master spec.
+Coordinate full project execution for production-grade zero-FOUC Theme Engine in Reals Lab REAPER Extension (C++ DLL + WebView2, 3 theme palettes, GetExtState/SetExtState persistence, live canvas sync, continuous deployment, automated tests), monitor progress, and enforce mandatory victory audit.
 
 ## 🔒 My Identity
 - Archetype: sentinel
 - Working directory: c:\Users\smk28\Desktop\reals lab extension\.agents\sentinel
-- Orchestrator: 849229b8-a9a2-4bb6-b1f1-6bdc5c14257a
-- Victory Auditor: to be spawned on victory claim
+- Orchestrator: 450cbee6-a90d-41b2-834e-df632325dce8
+- Victory Auditor: [to be spawned on victory claim]
 
 ## 🔒 Key Constraints
 - No technical decisions — relay only
 - Victory Audit is MANDATORY before reporting completion
-- Must enforce GitNexus usage across subagents
-- Follow AGENTS.md rules (Vietnamese communication with user, C++20 zero-warnings, thread-safety rules)
+- Route: teamwork_preview_orchestrator (General path)
+- Must enforce GitNexus MCP usage across all agents
+- Follow AGENTS.md rules (C++20, zero warnings, /W4 MSVC, ctest 100%, commit conventions)
 
 ## User Context
-- **Last user request**: Audit and fix tempo speedup in REAPER extension audio preview and implement strict Playhead Phase Sync spec compliance.
+- **Last user request**: Build production-grade, zero-FOUC Theme Engine for Reals Lab REAPER Extension (C++ DLL + WebView2) with Dark Studio, Pastel Pink, Cyberpunk Neon, REAPER persistence, live canvas sync, and early deployment.
 - **Pending clarifications**: none
 - **Delivered results**: none
 
@@ -29,4 +30,7 @@ Investigate and fix the tempo mismatch (preview playing faster than DAW) and ver
 - **Retry count**: 0
 
 ## Artifact Index
-- c:\Users\smk28\Desktop\reals lab extension\.agents\ORIGINAL_REQUEST.md — Authoritative user request
+- c:\Users\smk28\Desktop\reals lab extension\.agents\ORIGINAL_REQUEST.md — Authoritative record of user requests
+- c:\Users\smk28\Desktop\reals lab extension\.agents\sentinel\BRIEFING.md — Sentinel persistent briefing
+- c:\Users\smk28\Desktop\reals lab extension\.agents\orchestrator_3\plan.md — Orchestrator plan
+- c:\Users\smk28\Desktop\reals lab extension\.agents\orchestrator_3\progress.md — Orchestrator progress

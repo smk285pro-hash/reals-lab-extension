@@ -1,22 +1,25 @@
-## 2026-08-28T15:58:09Z
-You are reviewer_1, a high-reliability reviewer agent for Reals Lab.
+## 2026-08-31T15:26:34Z
 
-Your working directory is: `c:\Users\smk28\Desktop\reals lab extension\.agents\reviewer_1`
-The authoritative user request is at: `c:\Users\smk28\Desktop\reals lab extension\.agents\ORIGINAL_REQUEST.md`
-Project Scope document: `c:\Users\smk28\Desktop\reals lab extension\PROJECT.md`
-Worker handoff report: `c:\Users\smk28\Desktop\reals lab extension\.agents\worker_impl_1\handoff.md`
-Project root: `c:\Users\smk28\Desktop\reals lab extension`
+You are Reviewer 1 for the Reals Lab Theme Engine.
+Working directory: c:\Users\smk28\Desktop\reals lab extension\.agents\reviewer_1
 
-Your mission:
-Review the code changes made in `bridge/src/Bridge.cpp`, `extension/src/reaper_plugin.cpp`, `core/src/ai/FeatureExtractor.cpp`, and `extension/CMakeLists.txt`.
+Mandatory Input Files:
+- c:\Users\smk28\Desktop\reals lab extension\.agents\ORIGINAL_REQUEST.md
+- c:\Users\smk28\Desktop\reals lab extension\AGENTS.md
+- c:\Users\smk28\Desktop\reals lab extension\PROJECT.md
+- c:\Users\smk28\Desktop\reals lab extension\TEST_INFRA.md
+- c:\Users\smk28\Desktop\reals lab extension\.agents\worker_theme_engine_1\handoff.md
 
-Examine:
-1. Mechanism A (Native REAPER Drag) vs Mechanism B (Bake WAV Safeguard) in `Bridge.cpp` and `reaper_plugin.cpp`. Verify that Double-DSP / Double-Stretch is completely eliminated and that `processPendingSyncPlayrates()` correctly sets `D_PLAYRATE`, `B_PPITCH = 1`, `D_PITCH`, and `D_LENGTH`.
-2. Architecture boundaries: confirm `core/` contains no GUI/DAW headers, `ui/` contains no GLFW/Reaper, and `extension/` and `app/` are thin shells.
-3. Verify zero-warning MSVC compilation and test suite execution:
-   - Run `cmake --build --preset windows`
-   - Run `.\build\windows\tests\Debug\reals_tests.exe`
-4. Provide a clear verdict: `APPROVE` or `REQUEST_CHANGES`.
-
-Write your review to `c:\Users\smk28\Desktop\reals lab extension\.agents\reviewer_1\review.md` and `handoff.md`.
-When finished, send a message back with your verdict and handoff path.
+Objective:
+Review the frontend implementation and integration:
+1. Examine `ui-web/tokens.css`, `ui-web/app.css`, `ui-web/index.html`, and `ui-web/app.js`.
+2. Verify 100% token override parity across `dark-studio`, `pastel-pink`, and `cyberpunk`.
+3. Verify zero-FOUC inline `<head>` script in `index.html`.
+4. Verify dynamic canvas synchronization: check that `drawWaveform()` and `drawMeterSmoothed()` use the in-memory `canvasThemeColors` cache without calling `getComputedStyle()` inside the 60FPS render loop.
+5. Verify Settings modal Theme Picker UI `#optTheme` and i18n support.
+6. Execute verification commands:
+   - `python tests/verify_tokens_test.py`
+   - `cmake --build --preset windows`
+   - `ctest --preset windows`
+7. Write your review report to `c:\Users\smk28\Desktop\reals lab extension\.agents\reviewer_1\handoff.md` with an explicit verdict: `APPROVE` or `REQUEST_CHANGES`.
+8. Send a message to parent when complete with your verdict and handoff file path.
