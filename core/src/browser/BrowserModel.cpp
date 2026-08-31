@@ -28,42 +28,125 @@ std::string lowerUtf8(const std::string& s) {
     return platform::toLowerUtf8(s);
 }
 
+inline bool isAudioExtRaw(std::string_view extLower) {
+    static const std::unordered_set<std::string_view> kAudio = {
+        "wav", "wave", "mp3", "flac", "ogg", "oga", "aiff", "aif", "wma", "m4a", "aac", "opus",
+        "mid", "midi", "w64", "caf", "sfz", "rex", "rx2"};
+    return kAudio.count(extLower) > 0;
+}
+
+inline bool isMediaExtRaw(std::string_view extLower) {
+    if (isAudioExtRaw(extLower))
+        return true;
+    static const std::unordered_set<std::string_view> kMedia = {
+        "mp4", "mkv", "mov", "avi", "webm", "wmv", "rpp", "rtracktemplate", "rfxchain"};
+    return kMedia.count(extLower) > 0;
+}
+
+inline bool matchMediaExt(std::string_view name, std::string& outExtLower, bool& outIsAudio) {
+    const size_t dot = name.find_last_of('.');
+    if (dot == std::string_view::npos)
+        return false;
+    std::string_view extView = name.substr(dot + 1);
+    if (extView.empty() || extView.size() > 16)
+        return false;
+    char buf[18];
+    for (size_t i = 0; i < extView.size(); ++i) {
+        unsigned char c = static_cast<unsigned char>(extView[i]);
+        buf[i] = (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : static_cast<char>(c);
+    }
+    std::string_view lowerExtView(buf, extView.size());
+    outIsAudio = isAudioExtRaw(lowerExtView);
+    if (outIsAudio || isMediaExtRaw(lowerExtView)) {
+        outExtLower.assign(buf, extView.size());
+        return true;
+    }
+    return false;
+}
+
+inline std::string toLowerAscii(std::string_view s) {
+    std::string out;
+    out.resize(s.size());
+    for (size_t i = 0; i < s.size(); ++i) {
+        unsigned char c = static_cast<unsigned char>(s[i]);
+        out[i] = (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : static_cast<char>(c);
+    }
+    return out;
+}
+
+inline std::string fastLower(std::string_view s) {
+    bool hasNonAscii = false;
+    for (unsigned char c : s) {
+        if (c >= 128) {
+            hasNonAscii = true;
+            break;
+        }
+    }
+    if (!hasNonAscii) {
+        std::string out;
+        out.resize(s.size());
+        for (size_t i = 0; i < s.size(); ++i) {
+            unsigned char c = static_cast<unsigned char>(s[i]);
+            out[i] = (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : static_cast<char>(c);
+        }
+        return out;
+    }
+    return lowerUtf8(std::string(s));
+}
+
 bool entryLess(const FileEntry& a, const FileEntry& b, BrowserModel::Sort sort) {
     if (a.isDir != b.isDir)
         return a.isDir; // folders first
     switch (sort) {
     case BrowserModel::Sort::Size:
-        return a.sizeBytes != b.sizeBytes ? a.sizeBytes > b.sizeBytes : lowerUtf8(a.name) < lowerUtf8(b.name);
+        return a.sizeBytes != b.sizeBytes ? a.sizeBytes > b.sizeBytes : a.lowerName < b.lowerName;
     case BrowserModel::Sort::Date:
         return a.modifiedEpoch != b.modifiedEpoch ? a.modifiedEpoch > b.modifiedEpoch
-                                                  : lowerUtf8(a.name) < lowerUtf8(b.name);
+                                                  : a.lowerName < b.lowerName;
     case BrowserModel::Sort::Name:
     default:
-        return lowerUtf8(a.name) < lowerUtf8(b.name);
+        return a.lowerName < b.lowerName;
     }
 }
 
 long long toUnixEpoch(const fs::file_time_type& ftime) {
+    const auto duration = ftime.time_since_epoch();
+    const auto s = std::chrono::duration_cast<std::chrono::seconds>(duration).count();
+#if defined(_WIN32) && defined(_MSC_VER)
+    if (s >= 11644473600LL)
+        return s - 11644473600LL;
+    return s;
+#else
     const auto sysTime = std::chrono::clock_cast<std::chrono::system_clock>(ftime);
     return std::chrono::duration_cast<std::chrono::seconds>(sysTime.time_since_epoch()).count();
+#endif
 }
 
-FileEntry makeEntry(const fs::directory_entry& e) {
+FileEntry makeEntry(const fs::directory_entry& e, std::string_view precomputedName = {}, std::string_view precomputedPath = {}) {
     FileEntry fe;
     std::error_code ec;
-    fe.name = platform::pathToUtf8(e.path().filename());
-    fe.path = platform::normalizePath(platform::pathToUtf8(e.path()));
+    fe.name = precomputedName.empty() ? platform::pathToUtf8(e.path().filename()) : std::string(precomputedName);
+    fe.lowerName = fastLower(fe.name);
+    fe.path = precomputedPath.empty() ? platform::normalizePath(platform::pathToUtf8(e.path())) : std::string(precomputedPath);
     fe.isDir = e.is_directory(ec);
     if (!fe.isDir) {
-        const size_t dot = fe.name.find_last_of('.');
-        fe.ext = dot != std::string::npos ? lowerUtf8(fe.name.substr(dot + 1)) : "";
-        fe.isAudio = BrowserModel::isAudioExt(fe.name);
+        matchMediaExt(fe.name, fe.ext, fe.isAudio);
         fe.sizeBytes = static_cast<unsigned long long>(e.file_size(ec));
     }
     const auto ftime = e.last_write_time(ec);
     if (!ec)
         fe.modifiedEpoch = toUnixEpoch(ftime);
     return fe;
+}
+
+bool isIgnoredDir(std::string_view name) {
+    const std::string lower = fastLower(name);
+    static const std::unordered_set<std::string_view> kIgnored = {
+        ".git", ".svn", ".hg", "node_modules", "$recycle.bin", "system volume information",
+        ".vscode", ".idea", "__pycache__", ".trash", ".reals", "appdata", "application data",
+        "windows", "program files", "program files (x86)", "programdata"
+    };
+    return kIgnored.count(lower) > 0 || (lower.rfind('.', 0) == 0 && lower.length() > 1 && lower != ".");
 }
 } // namespace
 
@@ -85,24 +168,17 @@ BrowserModel::BrowserModel() {
 }
 
 bool BrowserModel::isAudioExt(const std::string& fileName) {
-    static const std::unordered_set<std::string> kAudio = {
-        "wav", "wave", "mp3", "flac", "ogg", "oga", "aiff", "aif", "wma", "m4a", "aac", "opus",
-        "mid", "midi", "w64", "caf", "sfz", "rex", "rx2"};
-    const size_t dot = fileName.find_last_of('.');
-    if (dot == std::string::npos)
-        return false;
-    return kAudio.count(lowerUtf8(fileName.substr(dot + 1))) > 0;
+    std::string ext;
+    bool isAudio = false;
+    if (matchMediaExt(fileName, ext, isAudio))
+        return isAudio;
+    return false;
 }
 
 bool BrowserModel::isMediaExt(const std::string& fileName) {
-    if (isAudioExt(fileName))
-        return true;
-    static const std::unordered_set<std::string> kMedia = {
-        "mp4", "mkv", "mov", "avi", "webm", "wmv", "rpp", "rtracktemplate", "rfxchain"};
-    const size_t dot = fileName.find_last_of('.');
-    if (dot == std::string::npos)
-        return false;
-    return kMedia.count(lowerUtf8(fileName.substr(dot + 1))) > 0;
+    std::string ext;
+    bool isAudio = false;
+    return matchMediaExt(fileName, ext, isAudio);
 }
 
 std::string BrowserModel::formatSize(const unsigned long long bytes) {
@@ -210,29 +286,33 @@ void BrowserModel::removeRoot(const size_t index) {
 
 std::vector<FileEntry>& BrowserModel::buildListing(const std::string& dir) {
     std::vector<FileEntry> list;
-    std::error_code ec;
-    auto u8dir = platform::u8path(dir);
-    if (!fs::exists(u8dir, ec) || ec || !fs::is_directory(u8dir, ec) || ec) {
-        static std::vector<FileEntry> empty;
-        empty.clear();
-        return empty;
+    constexpr size_t kMaxFiles = 5000;
+    constexpr int kMaxDepth = 6;
+    auto entries = platform::scanDirectoryRecursive(dir, kMaxDepth, kMaxFiles);
+    if (!entries.empty()) {
+        list.reserve(entries.size());
+        for (auto& raw : entries) {
+            if (raw.isDirectory)
+                continue;
+            std::string extLower;
+            bool isAudio = false;
+            if (!matchMediaExt(raw.name, extLower, isAudio))
+                continue;
+
+            FileEntry fe;
+            fe.name = std::move(raw.name);
+            fe.lowerName = std::move(raw.lowerName);
+            fe.path = std::move(raw.fullPath);
+            fe.ext = std::move(extLower);
+            fe.isAudio = isAudio;
+            fe.isDir = false;
+            fe.sizeBytes = raw.sizeBytes;
+            fe.modifiedEpoch = raw.modifiedEpoch;
+            list.push_back(std::move(fe));
+        }
+        std::sort(list.begin(), list.end(),
+                  [this](const FileEntry& a, const FileEntry& b) { return entryLess(a, b, m_sort); });
     }
-    for (const auto& e : fs::directory_iterator(u8dir, fs::directory_options::skip_permission_denied, ec)) {
-        if (ec) break;
-        std::error_code ec2;
-        if (e.is_symlink(ec2))
-            continue;
-        if (!e.is_regular_file(ec2) && !e.is_directory(ec2))
-            continue;
-        list.push_back(makeEntry(e));
-    }
-    if (ec) {
-        static std::vector<FileEntry> empty;
-        empty.clear();
-        return empty;
-    }
-    std::sort(list.begin(), list.end(),
-              [this](const FileEntry& a, const FileEntry& b) { return entryLess(a, b, m_sort); });
     return m_cache[dir] = std::move(list);
 }
 
@@ -448,12 +528,23 @@ std::vector<FileEntry> BrowserModel::search(const std::string& base, const std::
         if (results.size() >= maxResults)
             break;
         std::error_code ec2;
+        if (it->is_symlink(ec2))
+            continue;
+        if (it->is_directory(ec2)) {
+            const std::string dname = platform::pathToUtf8(it->path().filename());
+            if (isIgnoredDir(dname)) {
+                it.disable_recursion_pending();
+            }
+            continue;
+        }
         if (!it->is_regular_file(ec2))
             continue;
-        const std::string name = platform::pathToUtf8(it->path().filename());
+        const auto& itemPath = it->path();
+        const std::string name = platform::pathToUtf8(itemPath.filename());
         if (lowerUtf8(name).find(q) == std::string::npos)
             continue;
-        FileEntry fe = makeEntry(*it);
+        const std::string fullPath = platform::normalizePath(platform::pathToUtf8(itemPath));
+        FileEntry fe = makeEntry(*it, name, fullPath);
         if (audioOnly && !fe.isAudio)
             continue;
         results.push_back(std::move(fe));

@@ -99,10 +99,20 @@
       <section class="pane active" id="pane-browser">
         <div class="browser-toolbar">
           <div class="toolbar-row row-primary">
-            <button id="btnToggleTree" class="btn-tool-icon on" data-i18n-title="browser.toggleTree" title="Ẩn/Hiện Cây thư mục">📁</button>
-            <select id="roots"></select>
+            <button id="btnToggleTree" class="btn-tool-icon on" data-i18n-title="browser.toggleTree" title="Ẩn/Hiện Cây thư mục">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>
+              </svg>
+            </button>
             <div class="search-wrap">
-              <input id="search" data-i18n-ph="browser.searchHint" placeholder="Tìm kiếm... (/tag, /bpm:120, /key:Am, ngữ nghĩa...)">
+              <span class="search-icon">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="8"/>
+                  <path d="m21 21-4.3-4.3"/>
+                </svg>
+              </span>
+              <input id="search" data-i18n-ph="browser.searchHint" placeholder="Tìm kiếm... (/tag, /bpm, /key, tên)">
+              <button id="searchClear" class="btn-search-clear hidden" title="Xóa tìm kiếm">✕</button>
               <div id="searchSuggest" class="search-suggest-pop hidden"></div>
             </div>
             <select id="sort">
@@ -112,8 +122,6 @@
             </select>
           </div>
           <div class="toolbar-row row-filters">
-            <button id="audioOnly" data-i18n="browser.audioOnly">Audio</button>
-            <button id="autoPreview" class="on" data-i18n="browser.autoPreview">Auto</button>
             <button id="favOnly" data-i18n-title="browser.favOnly" title="Yêu thích">★</button>
             <select id="tagFilter">
               <option value="0" data-i18n="browser.tagFilter">Nhãn</option>
@@ -164,19 +172,28 @@
             <button id="btnLab" class="flat" data-i18n="browser.sendLab">Audio Lab</button>
             <span id="timeLabel">0.0 / 0.0s</span>
           </div>
-          <div id="playerTagBar" class="player-tag-bar"></div>
           <canvas id="waveform" height="44"></canvas>
-          <div class="preview-row">
-            <canvas id="meter" height="10"></canvas>
-            <label data-i18n="browser.volume">Âm lượng</label>
-            <input type="range" id="volume" min="0" max="1" step="0.01" value="0.9">
+          <div class="preview-row preview-row-bottom">
+            <canvas id="meter" height="8"></canvas>
+            <div class="volume-wrap">
+              <span class="vol-icon">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                </svg>
+              </span>
+              <input type="range" id="volume" min="0" max="1" step="0.01" value="0.9" title="Volume">
+            </div>
           </div>
           <div id="trackInfo" class="muted"></div>
         </div>
         <!-- MINI PIANO KEYBOARD TRANSPOSER POPUP -->
         <div id="pianoTransposerPop" class="piano-popup hidden">
           <div class="piano-pop-header">
-            <span class="piano-title" data-i18n="player.transposer">Tone Transposer</span>
+            <div class="piano-header-left">
+              <span class="piano-title" data-i18n="player.transposer">Tone Transposer</span>
+              <span id="pianoRootBadge" class="piano-root-badge">Root: C</span>
+            </div>
             <span id="pianoSemitoneLabel" class="piano-semitone-val">0 semitones</span>
           </div>
           <div class="piano-keyboard" id="pianoKeyboard">
@@ -244,8 +261,101 @@
     <a id="siteLink">reals.media</a>
   </footer>
 
-  <!-- SETTINGS POPUP -->
-  <div id="settingsPop" class="hidden"></div>
+  <!-- SETTINGS MODAL (19:6 RATIO, 5 TABS) -->
+  <div id="settingsModal" class="modal hidden">
+    <div class="settings-panel-box">
+      <div class="settings-panel-head">
+        <div class="settings-panel-title">
+          <span>⚙️</span>
+          <span data-i18n="settings.title">Cài đặt Reals Lab</span>
+        </div>
+        <button id="btnSettingsClose" class="btn-panel-close" title="Đóng">✕</button>
+      </div>
+      <div class="settings-panel-body">
+        <div class="settings-sidebar">
+          <button class="settings-tab-btn active" data-tab="general">
+            <span>⚙️</span> <span data-i18n="settings.tab.general">General</span>
+          </button>
+          <button class="settings-tab-btn" data-tab="browser">
+            <span>📁</span> <span data-i18n="settings.tab.browser">File Browser</span>
+          </button>
+          <button class="settings-tab-btn" data-tab="market">
+            <span>🛒</span> <span data-i18n="settings.tab.market">Marketplace</span>
+          </button>
+          <button class="settings-tab-btn" data-tab="stem">
+            <span>🎛️</span> <span data-i18n="settings.tab.stem">Reals Stem Separation</span>
+          </button>
+          <button class="settings-tab-btn" data-tab="agent">
+            <span>🤖</span> <span data-i18n="settings.tab.agent">Agent AI</span>
+          </button>
+        </div>
+        <div class="settings-content">
+          <!-- TAB 1: GENERAL -->
+          <div id="tab-general" class="settings-tab-pane active">
+            <div class="setting-group">
+              <label class="setting-lbl" data-i18n="settings.displaySize">Kích thước hiển thị</label>
+              <div class="setting-btn-group" id="optDisplaySize">
+                <button class="setting-chip" data-val="small" data-i18n="size.small">Nhỏ</button>
+                <button class="setting-chip" data-val="medium" data-i18n="size.medium">Vừa</button>
+                <button class="setting-chip" data-val="large" data-i18n="size.large">Lớn</button>
+              </div>
+            </div>
+            <div class="setting-group">
+              <label class="setting-lbl" data-i18n="settings.navPosition">Vị trí thanh điều hướng</label>
+              <div class="setting-btn-group" id="optNavPos">
+                <button class="setting-chip" data-val="top" data-i18n="pos.top">Trên</button>
+                <button class="setting-chip" data-val="bottom" data-i18n="pos.bottom">Dưới</button>
+                <button class="setting-chip" data-val="left" data-i18n="pos.left">Trái</button>
+                <button class="setting-chip" data-val="right" data-i18n="pos.right">Phải</button>
+              </div>
+            </div>
+          </div>
+          <!-- TAB 2: FILE BROWSER -->
+          <div id="tab-browser" class="settings-tab-pane">
+            <div class="setting-group">
+              <label class="setting-lbl" data-i18n="settings.autoCollapse">Tự động đóng thư mục khác</label>
+              <div class="setting-btn-group" id="optAutoCollapse">
+                <button class="setting-chip" data-val="true" data-i18n="common.enabled">Bật</button>
+                <button class="setting-chip" data-val="false" data-i18n="common.disabled">Tắt</button>
+              </div>
+            </div>
+            <div class="setting-group">
+              <label class="setting-lbl" data-i18n="scanner.cpuMode">Hiệu năng quét nền (CPU)</label>
+              <div class="setting-btn-group" id="optCpuMode">
+                <button class="setting-chip" data-val="low" data-i18n="scanner.cpuMode.low">🟢 30% CPU</button>
+                <button class="setting-chip" data-val="normal" data-i18n="scanner.cpuMode.normal">🔵 50% CPU</button>
+                <button class="setting-chip" data-val="high" data-i18n="scanner.cpuMode.high">🟠 85% CPU</button>
+              </div>
+            </div>
+          </div>
+          <!-- TAB 3: MARKETPLACE (PLACEHOLDER) -->
+          <div id="tab-market" class="settings-tab-pane">
+            <div class="settings-placeholder">
+              <div class="ph-icon">🛒</div>
+              <div class="ph-title" data-i18n="market.comingSoon">Marketplace — Sắp ra mắt</div>
+              <div class="ph-sub" data-i18n="market.placeholderDesc">Kho thư viện Sample Pack, Preset và Plugin bản quyền từ cộng đồng sáng tạo Reals.</div>
+            </div>
+          </div>
+          <!-- TAB 4: REALS STEM SEPARATION (PLACEHOLDER) -->
+          <div id="tab-stem" class="settings-tab-pane">
+            <div class="settings-placeholder">
+              <div class="ph-icon">🎛️</div>
+              <div class="ph-title" data-i18n="stem.comingSoon">Reals Stem Separation — Sắp ra mắt</div>
+              <div class="ph-sub" data-i18n="stem.placeholderDesc">Tách Vocals, Drums, Bass, Instruments chuẩn xác bằng AI tích hợp trực tiếp trong REAPER.</div>
+            </div>
+          </div>
+          <!-- TAB 5: AGENT AI (PLACEHOLDER) -->
+          <div id="tab-agent" class="settings-tab-pane">
+            <div class="settings-placeholder">
+              <div class="ph-icon">🤖</div>
+              <div class="ph-title" data-i18n="agent.comingSoon">Agent AI — Sắp ra mắt</div>
+              <div class="ph-sub" data-i18n="agent.placeholderDesc">Trợ lý AI tự động hóa chỉnh sửa, định tuyến và sáng tác thông minh trong DAW.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- CONTEXT MENU -->
   <div id="ctxMenu" class="hidden"></div>

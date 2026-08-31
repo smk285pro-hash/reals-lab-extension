@@ -66,6 +66,7 @@
 #define REAPERAPI_WANT_GetMediaItemTakeInfo_Value
 #define REAPERAPI_WANT_SetMediaItemTakeInfo_Value
 #define REAPERAPI_WANT_UpdateArrange
+#define REAPERAPI_WANT_UpdateItemInProject
 #define REAPERAPI_WANT_CountTracks
 #define REAPERAPI_WANT_GetTrack
 #define REAPERAPI_WANT_CountTrackMediaItems
@@ -215,11 +216,18 @@ void processPendingSyncPlayrates() {
                 double newLen = origLen / it->playrate;
                 SetMediaItemInfo_Value(item, "D_LENGTH", newLen);
             }
+            if (UpdateItemInProject) UpdateItemInProject(item);
             char msg[256];
             std::snprintf(msg, sizeof(msg), "Mechanism A: Synced item to playrate %.4f (pitch %.2f)", it->playrate, it->pitchSemitones);
             LOG_INFO(kTag, msg);
             return true;
         };
+
+        auto getBasename = [](const std::string& p) -> std::string {
+            const size_t pos = p.find_last_of("/\\");
+            return (pos != std::string::npos) ? p.substr(pos + 1) : p;
+        };
+        const std::string targetBase = getBasename(normTarget);
 
         // 1. Check selected media items (newly dropped or inserted item is selected by REAPER)
         if (CountSelectedMediaItems && GetSelectedMediaItem && GetActiveTake) {
@@ -234,11 +242,16 @@ void processPendingSyncPlayrates() {
                 std::string rawSrcPath;
                 if (GetMediaItemTake_Source) {
                     PCM_source* src = GetMediaItemTake_Source(take);
+                    while (src && src->GetSource()) {
+                        src = src->GetSource();
+                    }
                     if (src && src->GetFileName()) {
                         rawSrcPath = src->GetFileName();
                         std::string srcPath = reals::platform::normalizePath(rawSrcPath);
                         for (char& c : srcPath) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
-                        if (srcPath == normTarget || srcPath.find(normTarget) != std::string::npos || normTarget.find(srcPath) != std::string::npos) {
+                        if (srcPath == normTarget || srcPath.find(normTarget) != std::string::npos ||
+                            normTarget.find(srcPath) != std::string::npos ||
+                            (!targetBase.empty() && getBasename(srcPath) == targetBase)) {
                             isMatch = true;
                         }
                     }
@@ -267,12 +280,17 @@ void processPendingSyncPlayrates() {
                     MediaItem_Take* take = GetActiveTake(item);
                     if (!take) continue;
                     PCM_source* src = GetMediaItemTake_Source(take);
+                    while (src && src->GetSource()) {
+                        src = src->GetSource();
+                    }
                     if (!src || !src->GetFileName()) continue;
 
                     std::string rawSrcPath = src->GetFileName();
                     std::string srcPath = reals::platform::normalizePath(rawSrcPath);
                     for (char& c : srcPath) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
-                    if (srcPath == normTarget || srcPath.find(normTarget) != std::string::npos || normTarget.find(srcPath) != std::string::npos) {
+                    if (srcPath == normTarget || srcPath.find(normTarget) != std::string::npos ||
+                        normTarget.find(srcPath) != std::string::npos ||
+                        (!targetBase.empty() && getBasename(srcPath) == targetBase)) {
                         double curRate = GetMediaItemTakeInfo_Value ? GetMediaItemTakeInfo_Value(take, "D_PLAYRATE") : 1.0;
                         if (std::abs(curRate - it->playrate) > 0.001 || (srcPath.find("drag_") != std::string::npos || srcPath.find("drag_export") != std::string::npos)) {
                             if (applyToTake(item, take, rawSrcPath)) {

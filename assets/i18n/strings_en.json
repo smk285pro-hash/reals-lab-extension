@@ -45,6 +45,7 @@
   "browser.tagFilter": "Tag",
   "browser.parent": "Parent folder",
   "browser.searching": "Searching...",
+  "browser.loadingSamples": "Loading samples...",
   "browser.ctx.clearRecents": "Clear recents",
   "browser.refresh": "Refresh",
   "browser.favorites": "Favorites",
@@ -179,5 +180,6 @@
   "toast.scannerError": "Scanner error",
   "toast.similarError": "Error finding similar samples",
   "sync.noBpm": "Sync: no BPM found, trying 120",
+  "player.dragTip": "Drag to REAPER",
   "lab.alreadyRunning": "A job is already running — please wait"
 }

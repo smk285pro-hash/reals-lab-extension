@@ -72,6 +72,7 @@ constexpr Entry kEmbedded[] = {
     {"browser.tagFilter", "Nhãn", "Tag"},
     {"browser.parent", "Thư mục cha", "Parent folder"},
     {"browser.searching", "Đang tìm...", "Searching..."},
+    {"browser.loadingSamples", "Đang tải sample...", "Loading samples..."},
     {"browser.ctx.clearRecents", "Xóa vừa mở", "Clear recents"},
     {"browser.refresh", "Làm mới", "Refresh"},
     {"browser.favorites", "Yêu thích", "Favorites"},
@@ -206,6 +207,7 @@ constexpr Entry kEmbedded[] = {
     {"toast.scannerError", "Lỗi quét", "Scanner error"},
     {"toast.similarError", "Lỗi tìm mẫu tương tự", "Error finding similar samples"},
     {"sync.noBpm", "Sync: không tìm thấy BPM, thử 120", "Sync: no BPM found, trying 120"},
+    {"player.dragTip", "Kéo vào REAPER", "Drag to REAPER"},
     {"lab.alreadyRunning", "Đang có job chạy — chờ xong đã nhé", "A job is already running — please wait"},
 };
 

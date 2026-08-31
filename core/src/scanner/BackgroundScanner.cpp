@@ -33,10 +33,14 @@ std::string toLower(std::string s) {
 bool isIgnoredDir(std::string_view dirName) {
     if (dirName.empty())
         return false;
-    if (dirName.front() == '.' && dirName != ".")
+    const std::string lower = toLower(std::string(dirName));
+    if (lower.front() == '.' && lower != ".")
         return true;
-    if (dirName == "node_modules" || dirName == "$RECYCLE.BIN" || dirName == "System Volume Information" ||
-        dirName == ".git" || dirName == ".svn" || dirName == "__pycache__")
+    if (lower == "node_modules" || lower == "$recycle.bin" || lower == "system volume information" ||
+        lower == ".git" || lower == ".svn" || lower == ".hg" || lower == "__pycache__" ||
+        lower == ".vscode" || lower == ".idea" || lower == ".trash" || lower == ".reals" ||
+        lower == "appdata" || lower == "application data" || lower == "windows" ||
+        lower == "program files" || lower == "program files (x86)" || lower == "programdata")
         return true;
     return false;
 }

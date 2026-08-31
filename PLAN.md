@@ -360,6 +360,35 @@ Audit tìm thấy ~25 lỗi (9 nghiêm trọng), đã sửa hết, build zero-wa
     - Ưu tiên số 1: Ổn định lõi âm thanh, Playhead Phase Sync sample-accurate, DSP SoundTouch và AI Lab.
     - Các tính năng duyệt file nâng cao (File Browser UX chuyên sâu) tạm thời gác lại xử lý ở phase sau.
 
+- **[P1.22] Khắc phục Toàn diện Tính năng Kéo Thả Sample Tự Động Khớp Tempo / BPM vào REAPER (2026-08-31)**:
+  - **Nguyên nhân cốt lõi**:
+    1. Thiếu API `REAPERAPI_WANT_UpdateItemInProject`: Khi plugin gán `D_PLAYRATE`, `B_PPITCH`, `D_LENGTH`, REAPER không tự động render lại waveform / stretch buffer cho take nếu thiếu `UpdateItemInProject(item)`.
+    2. Path matching: Khi REAPER bật tùy chọn copy media vào thư mục project (`C:\Projects\...`), đường dẫn tuyệt đối bị thay đổi, dẫn đến so khớp `normTarget == srcPath` bị trượt.
+    3. Nhận diện BPM trong tên file: Regex cũ chỉ bắt `128bpm`, bỏ sót các mẫu chuẩn như `128_Kick.wav`, `BPM128_Drums.wav`, `Synth_120_C.wav`.
+  - **Khắc phục**:
+    1. Bổ sung `UpdateItemInProject(item)` và `UpdateArrange()` ngay khi gán `D_PLAYRATE`, `B_PPITCH = 1`, `D_PITCH`, và `D_LENGTH = (curLen * curRate) / playrate`.
+    2. Nâng cấp bộ regex `detectBpmForPath` bắt trọn các định dạng BPM và fallback sang bộ phát hiện tempo tự động nếu cần.
+    3. Hỗ trợ so khớp basename (tên file) để tự động nhận diện MediaItem kể cả khi REAPER đã copy file vào project folder.
+    4. Tự động tính toán và kích hoạt playrate sync ngay khi kéo sample nếu phát hiện được BPM (không cần người dùng phải bấm nút bật thủ công).
+- **[P1.23] Nâng cấp Tương tác Click 0ms, Mini Waveform & MIDI Preview, và Player Drag-and-Drop (2026-08-31)**:
+  - **Tương tác Click & Preview 0ms**: Bắt sự kiện `pointerdown` tập trung bằng Event Delegation trên `#files`, loại bỏ hiện tượng bị nuốt click khi vừa lăn chuột xong bấm nghe thử ngay, rút ngắn thời gian phản hồi preview xuống tức thời.
+  - **Mini Preview Waveform & Piano Roll Background**:
+    - Thêm `.mini-preview-bg` hiển thị sóng âm mini (Audio) hoặc các nốt piano roll mini (MIDI) mờ nghệ thuật phía dưới nền mỗi dòng file trong danh sách.
+    - Chữ và thông tin file nằm ở lớp nổi bên trên (`z-index: 1`) sắc nét, dễ đọc.
+  - **Giao diện Piano Roll trên Player chính**: Canvas `#waveform` tự động vẽ chế độ Piano Roll đa tầng màu khi chọn file MIDI.
+  - **Kéo thả từ Player chính ra REAPER**: Bổ sung `armOleDrag` trên `#waveform` và `#trackInfo`, cho phép rê chuột kéo trực tiếp sample/MIDI đang nghe vào timeline REAPER.
+- **[P1.24] Polyphonic MIDI Engine, Real Key Detection & Target Lock Transposer, Studio DAW Flat UI (2026-08-31)**:
+  - **Polyphonic MIDI Engine**:
+    - Backend C++ bổ sung API `audio.readMidi` / `fs.readBase64` trích xuất binary `.mid` / `.midi`.
+    - Web Audio Synthesizer phát âm thanh đa âm thật trực tiếp qua loa với ADSR gain envelope, playhead 60fps, và Piano Roll Canvas vẽ đúng các khối nốt thật từ file MIDI.
+  - **Real Key Detection & Target Key Lock Transposer**:
+    - Tích hợp bộ giải mã nhạc lý thông minh 12 cung bậc (`C..B`), hệ Camelot (`1A..12B`), dấu thăng/giáng (`#`/`b`), Major/Minor.
+    - Nhận diện tức thì Root Note của sample (`originalRootNote`), highlight phím nốt gốc trên bàn phím Mini Piano Transposer và hiển thị huy hiệu `Root: [Tone gốc]`.
+    - Chế độ **Khóa Tone Đích (Target Key Lock)**: Khi người dùng chọn một nốt đích (vd `F`), khi duyệt qua các sample khác (vd `D`, `E`, `C#`), hệ thống tự động giữ nguyên tone đích `F`, tự tính độ lệch semitone tương ứng, áp dụng DSP SoundTouch realtime pitch shift sang `F`, đồng thời đánh dấu nốt gốc bằng chấm hổ phách `•` (`.root-marker`) trên phím đàn.
+  - **Studio DAW Flat UI & Modern Vector SVGs**:
+    - Loại bỏ toàn bộ viền gắt trên thanh công cụ (`#btnToggleTree`, `#search`, `#sort`, `#favOnly`, `#tagFilter`, `#btnRefresh`) chuyển sang phong cách phẳng Borderless Studio Dark Theme.
+    - Thay thế toàn bộ emoji hệ thống (📁, 🔍, 🔊) bằng bộ icon vector SVG sắc nét, tối giản chuẩn DAW chuyên nghiệp.
+
 ## Ghi chú làm việc
 - Trả lời ngắn gọn, kiểu 2 thằng bạn trò chuyện.
 - Làm từng bước, bàn bạc kỹ trước khi code.

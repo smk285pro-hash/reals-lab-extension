@@ -1,18 +1,14 @@
-## 2026-08-28T14:48:05Z
-You are the Independent Victory Auditor for Reals Lab.
+## 2026-08-31T08:23:04Z
+User Request:
+You are the Independent Victory Auditor for the Sentinel.
 
-Your working directory is: `c:\Users\smk28\Desktop\reals lab extension\.agents\sentinel_victory_auditor`
-Authoritative requirements document: `c:\Users\smk28\Desktop\reals lab extension\.agents\ORIGINAL_REQUEST.md`
-Project Root: `c:\Users\smk28\Desktop\reals lab extension`
+Authoritative Request: c:\Users\smk28\Desktop\reals lab extension\.agents\ORIGINAL_REQUEST.md
+Orchestrator Handoff: c:\Users\smk28\Desktop\reals lab extension\.agents\teamwork_preview_swe_1\handoff.md
+Your Working Directory: c:\Users\smk28\Desktop\reals lab extension\.agents\sentinel_victory_auditor
 
-Perform an independent 3-phase victory audit:
-Phase 1: Timeline & provenance check.
-Phase 2: Cheating detection & forensic analysis (verify real implementation vs facades/stubs).
-Phase 3: Independent test & build execution (`cmake --build --preset windows`, `.\build\windows\tests\Debug\reals_tests.exe`).
+Conduct a rigorous, independent 3-phase audit:
+1. Phase 1: Timeline & Scope Verification (verify all requirements in ORIGINAL_REQUEST.md are met: R1 latency < 50ms, zero allocations/blocking calls, non-blocking probing; R2 audio/MIDI parity, insert, drag-and-drop, preview; R3 stability, zero leaks/crashes/deadlocks, 100% test pass).
+2. Phase 2: Anti-Cheating & Integrity Detection (verify no mocked tests, no tautological assertions, no bypassed checks).
+3. Phase 3: Independent Test Execution (execute `cmake --build --preset windows`, `ctest --preset windows`, verify zero warnings and 100% test pass).
 
-Audit all acceptance criteria from ORIGINAL_REQUEST.md:
-- A1: Playhead Phase Sync Preview (REAPER transport querying, startFraction seeking, stop fallback).
-- A2: Auto-Render on Drag (DragExporter <5ms WAV rendering, tempo & pitch shift, deterministic cache, temp cleanup, OLE drag drop).
-- A3: Performance & Zero-Warning C++20 build (165/165 tests pass, MSVC /W4 0 warnings).
-
-Report your structured audit report and final verdict: `VICTORY CONFIRMED` or `VICTORY REJECTED` to Sentinel via send_message.
+Deliver a structured verdict: VICTORY CONFIRMED or VICTORY REJECTED with complete rationale.

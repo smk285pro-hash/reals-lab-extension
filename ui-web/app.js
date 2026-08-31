@@ -43,9 +43,20 @@ const I18N = {
     'browser.delete.title': 'Xóa file này?', 'browser.delete.confirm': 'Xóa',
     'browser.pickRoot': 'Chọn hoặc thêm thư mục', 'browser.results': 'Kết quả tìm kiếm',
     'browser.dropTitle': 'Thêm thư mục gốc', 'browser.dropHint': 'Thả thư mục từ Windows Explorer vào đây để thêm vào Thư mục gốc',
+    'settings.title': 'Cài đặt Reals Lab',
+    'settings.tab.general': 'General', 'settings.tab.browser': 'File Browser',
+    'settings.tab.market': 'Marketplace', 'settings.tab.stem': 'Reals Stem Separation',
+    'settings.tab.agent': 'Agent AI',
+    'market.comingSoon': 'Marketplace — Sắp ra mắt',
+    'market.placeholderDesc': 'Kho thư viện Sample Pack, Preset và Plugin bản quyền từ cộng đồng sáng tạo Reals.',
+    'stem.comingSoon': 'Reals Stem Separation — Sắp ra mắt',
+    'stem.placeholderDesc': 'Tách Vocals, Drums, Bass, Instruments chuẩn xác bằng AI tích hợp trực tiếp trong REAPER.',
+    'agent.comingSoon': 'Agent AI — Sắp ra mắt',
+    'agent.placeholderDesc': 'Trợ lý AI tự động hóa chỉnh sửa, định tuyến và sáng tác thông minh trong DAW.',
+    'common.enabled': 'Bật', 'common.disabled': 'Tắt',
     'settings.navPosition': 'Vị trí thanh điều hướng', 'settings.accent': 'Màu chủ đạo', 'settings.language': 'Ngôn ngữ',
     'settings.effects': 'Hiệu ứng', 'settings.noise': 'Lớp phủ noise',
-    'settings.browser': 'Thư mục & Duyệt', 'settings.autoCollapse': 'Tự động thu gọn thư mục',
+    'settings.browser': 'Thư mục & Duyệt', 'settings.autoCollapse': 'Tự động đóng thư mục khác',
     'settings.displaySize': 'Kích thước hiển thị', 'size.small': 'Nhỏ (gọn)', 'size.medium': 'Vừa (chuẩn)', 'size.large': 'To (thoáng)',
     'pos.top': 'Trên', 'pos.bottom': 'Dưới', 'pos.left': 'Trái', 'pos.right': 'Phải',
     'accent.orange': 'Cam RealS', 'accent.amber': 'Hổ phách', 'accent.muted': 'Cam đất', 'accent.gray': 'Xám kim loại',
@@ -130,10 +141,20 @@ const I18N = {
     'browser.lab.midi': 'Export MIDI', 'browser.rename.title': 'Rename file:',
     'browser.delete.title': 'Delete this file?', 'browser.delete.confirm': 'Delete',
     'browser.pickRoot': 'Select or add folder', 'browser.results': 'Search results',
-    'browser.dropTitle': 'Add Root Folder', 'browser.dropHint': 'Drop folder from Windows Explorer here to add as root',
+    'settings.title': 'Reals Lab Settings',
+    'settings.tab.general': 'General', 'settings.tab.browser': 'File Browser',
+    'settings.tab.market': 'Marketplace', 'settings.tab.stem': 'Reals Stem Separation',
+    'settings.tab.agent': 'Agent AI',
+    'market.comingSoon': 'Marketplace — Coming Soon',
+    'market.placeholderDesc': 'Library of Sample Packs, Presets, and Plugins from the Reals creative community.',
+    'stem.comingSoon': 'Reals Stem Separation — Coming Soon',
+    'stem.placeholderDesc': 'Precise AI-powered stem separation directly inside REAPER.',
+    'agent.comingSoon': 'Agent AI — Coming Soon',
+    'agent.placeholderDesc': 'Intelligent AI assistant for DAW automation, routing, and composition.',
+    'common.enabled': 'Enabled', 'common.disabled': 'Disabled',
     'settings.navPosition': 'Navigation Position', 'settings.accent': 'Accent Color', 'settings.language': 'Language',
     'settings.effects': 'Effects', 'settings.noise': 'Noise overlay',
-    'settings.browser': 'Folder tree', 'settings.autoCollapse': 'Auto-collapse folders',
+    'settings.browser': 'Folder tree', 'settings.autoCollapse': 'Auto-collapse other folders',
     'settings.displaySize': 'Display density', 'size.small': 'Compact', 'size.medium': 'Standard', 'size.large': 'Large',
     'pos.top': 'Top', 'pos.bottom': 'Bottom', 'pos.left': 'Left', 'pos.right': 'Right',
     'accent.orange': 'RealS Orange', 'accent.amber': 'Amber', 'accent.muted': 'Muted Orange', 'accent.gray': 'Metal Gray',
@@ -200,12 +221,14 @@ const mockStore = {
     { name: 'Bass_Sub_Deep_F.wav', path: 'D:\\Samples\\Bass_Sub_Deep_F.wav', isAudio: true, size: 850000, modified: 1787540000 },
     { name: 'Chord_Loop_Piano_120bpm.wav', path: 'D:\\Samples\\Chord_Loop_Piano_120bpm.wav', isAudio: true, size: 2100000, modified: 1787550000 },
     { name: 'Synth_Lead_Drop.wav', path: 'D:\\Samples\\Synth_Lead_Drop.wav', isAudio: true, size: 1650000, modified: 1787560000 },
+    { name: 'Trap_Melody_8bar.mid', path: 'D:\\Samples\\Trap_Melody_8bar.mid', isAudio: true, size: 4200, modified: 1787570000 },
+    { name: 'Chord_Progression_Am.mid', path: 'D:\\Samples\\Chord_Progression_Am.mid', isAudio: true, size: 3800, modified: 1787575000 },
     { name: 'Drums', path: 'D:\\Samples\\Drums', isAudio: false, isDir: true, size: 0, modified: 1787500000 },
     { name: 'Readme_Sample_Pack.txt', path: 'D:\\Samples\\Readme_Sample_Pack.txt', isAudio: false, isDir: false, size: 1200, modified: 1787500000 }
   ],
   favorites: ['D:\\Samples\\Kick_Punchy_01.wav', 'D:\\Samples\\Vocal_Hook_128bpm_Am.wav'],
-  recents: ['D:\\Samples\\Snare_808_Clean.wav', 'D:\\Samples\\Bass_Sub_Deep_F.wav'],
-  tags: { 'D:\\Samples\\Kick_Punchy_01.wav': 3, 'D:\\Samples\\Vocal_Hook_128bpm_Am.wav': 5 }
+  recents: ['D:\\Samples\\Snare_808_Clean.wav', 'D:\\Samples\\Bass_Sub_Deep_F.wav', 'D:\\Samples\\Trap_Melody_8bar.mid'],
+  tags: { 'D:\\Samples\\Kick_Punchy_01.wav': 3, 'D:\\Samples\\Vocal_Hook_128bpm_Am.wav': 5, 'D:\\Samples\\Trap_Melody_8bar.mid': 2 }
 };
 
 function mockBridge(cmd, args = {}) {
@@ -244,6 +267,7 @@ function mockBridge(cmd, args = {}) {
             { name: 'Kick_Room.wav', path: p + '\\Kick_Room.wav', isAudio: true, isDir: false, size: 180000, modified: 1787500000 },
             { name: 'Snare_Rim.wav', path: p + '\\Snare_Rim.wav', isAudio: true, isDir: false, size: 122000, modified: 1787510000 },
             { name: 'Hat_Closed.wav', path: p + '\\Hat_Closed.wav', isAudio: true, isDir: false, size: 64000, modified: 1787520000 },
+            { name: 'Drum_Groove.mid', path: p + '\\Drum_Groove.mid', isAudio: true, isDir: false, size: 5400, modified: 1787530000 },
           ]);
         } else {
           resolve(mockStore.files.map((f) => ({ isDir: !!f.isDir, ...f })));
@@ -471,6 +495,11 @@ function fmtDur(sec) {
   const s = Math.floor(sec % 60);
   return m + ':' + String(s).padStart(2, '0');
 }
+function isMidiFile(f) {
+  if (!f) return false;
+  if (typeof f === 'string') return /\.(mid|midi)$/i.test(f);
+  return f.ext === 'mid' || f.ext === 'midi' || /\.(mid|midi)$/i.test(f.name || '') || /\.(mid|midi)$/i.test(f.path || '');
+}
 function parentDir(path) {
   if (!path) return path;
   const sep = path.includes('\\') ? '\\' : '/';
@@ -510,7 +539,7 @@ const ACCENTS = {
 const state = {
   roots: [], currentDir: null, selected: null, playingPath: null,
   envelope: [], duration: 0, position: 0, peak: 0, playing: false,
-  loop: false, sort: 0, audioOnly: false, expanded: new Set(), tab: 'browser',
+  loop: false, sort: 0, expanded: new Set(), tab: 'browser',
   tagCache: {}, favSet: new Set(),
   listSeq: 0, searchSeq: 0, treeSeq: 0,
   autoPreview: true, favOnly: false, tagFilter: 0,
@@ -519,8 +548,9 @@ const state = {
   similarSource: null, similarSourceName: null,
   probeCache: {}, probeInflight: new Set(),
   syncBpm: false, pitchSemitones: 0,
+  originalRootNote: 'C', selectedTargetNote: 'C',
   sampleBpm: 0, sampleKey: 'ORIGINAL', sampleMode: '',
-  sampleTags: [],
+  sampleTags: [], midiNotes: [],
   autoCollapseTree: true,
   displaySize: 'medium',
   subCache: {},
@@ -530,7 +560,7 @@ const state = {
   _dropHoverT: null,
   _watchT: null,
   _previewArmT: null,
-  _accentCache: '#FF6B2C',
+  _accentCache: '#38BDF8',
   bridgeOk: null,
 };
 
@@ -638,6 +668,11 @@ function handleEvent(event, data) {
     return;
   }
   if (event === 'audio.envelope') {
+    if (!state.envCache) state.envCache = {};
+    if (data && data.path && data.envelope) {
+      state.envCache[data.path] = data.envelope;
+      updateRowMiniWave(data.path);
+    }
     if (state.playingPath === data.path || state.selected === data.path) {
       state.envelope = data.envelope || [];
       drawWaveform();
@@ -678,15 +713,318 @@ function handleEvent(event, data) {
     if (typeof data.pitchSemitones === 'number') {
       state.pitchSemitones = data.pitchSemitones;
     }
-    // Keep the play button in sync when playback stops on its own.
     const bp = $('#btnPlay');
-    if (bp) bp.textContent = state.playing ? 'II' : '>';
-    updatePreviewLive();
+    if (bp) {
+      bp.textContent = state.playing ? 'II' : '>';
+      bp.classList.toggle('playing', state.playing);
+    }
+    if (state.playing) {
+      startPlayerAnimLoop();
+    } else {
+      updatePreviewLive();
+    }
   }
 }
 
-// ============ Piano & Tag Helpers ============
+// ============ Real Audio / MIDI Synth & Pitch Engine ============
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+let _audioCtx = null;
+let _midiSynthActiveNotes = [];
+let _midiPlaybackTimer = null;
+let _midiStartTime = 0;
+let _midiTotalDuration = 0;
+let _currentMidiEvents = [];
+
+function getAudioContext() {
+  if (!_audioCtx) {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (AudioCtx) _audioCtx = new AudioCtx();
+  }
+  if (_audioCtx && _audioCtx.state === 'suspended') {
+    _audioCtx.resume().catch(() => {});
+  }
+  return _audioCtx;
+}
+
+function stopMidiPlayback() {
+  if (_midiPlaybackTimer) {
+    cancelAnimationFrame(_midiPlaybackTimer);
+    _midiPlaybackTimer = null;
+  }
+  _midiSynthActiveNotes.forEach((n) => {
+    try {
+      if (n.osc) { n.osc.stop(); n.osc.disconnect(); }
+    } catch {}
+  });
+  _midiSynthActiveNotes = [];
+}
+
+function playSynthNote(noteNameOrMidi, duration = 0.35) {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    let midiNum = 60;
+    if (typeof noteNameOrMidi === 'number') {
+      midiNum = noteNameOrMidi;
+    } else if (typeof noteNameOrMidi === 'string') {
+      const root = extractRootNoteName(noteNameOrMidi);
+      const idx = NOTE_NAMES.indexOf(root);
+      midiNum = 60 + (idx >= 0 ? idx : 0);
+    }
+    const freq = 440 * Math.pow(2, (midiNum - 69) / 12);
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+
+    const now = ctx.currentTime;
+    gain.gain.setValueAtTime(0.01, now);
+    gain.gain.exponentialRampToValueAtTime(0.25, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + duration + 0.05);
+  } catch (err) {
+    console.warn('playSynthNote error:', err);
+  }
+}
+
+// Convert Standard MIDI File binary ArrayBuffer into discrete timestamped note events
+function parseMidiBuffer(arrayBuffer) {
+  const data = new Uint8Array(arrayBuffer);
+  if (data.length < 14) return { notes: [], duration: 0, tonic: 'C' };
+  if (data[0] !== 0x4D || data[1] !== 0x54 || data[2] !== 0x68 || data[3] !== 0x64) {
+    return { notes: [], duration: 0, tonic: 'C' };
+  }
+
+  const numTracks = (data[10] << 8) | data[11];
+  let timeDivision = (data[12] << 8) | data[13];
+  if (timeDivision <= 0) timeDivision = 480;
+
+  let offset = 14;
+  const rawEvents = [];
+  let defaultTempo = 500000; // microseconds per quarter note (120 BPM)
+
+  for (let t = 0; t < numTracks && offset < data.length; ++t) {
+    if (offset + 8 > data.length) break;
+    if (data[offset] !== 0x4D || data[offset+1] !== 0x54 || data[offset+2] !== 0x72 || data[offset+3] !== 0x6B) {
+      offset += 8;
+      continue;
+    }
+    const trackLen = (data[offset+4] << 24) | (data[offset+5] << 16) | (data[offset+6] << 8) | data[offset+7];
+    offset += 8;
+    const trackEnd = Math.min(data.length, offset + trackLen);
+    let curTick = 0;
+    let lastStatus = 0;
+    const active = {};
+
+    while (offset < trackEnd) {
+      let delta = 0;
+      while (offset < trackEnd) {
+        const b = data[offset++];
+        delta = (delta << 7) | (b & 0x7F);
+        if (!(b & 0x80)) break;
+      }
+      curTick += delta;
+
+      if (offset >= trackEnd) break;
+      let status = data[offset];
+      if (status & 0x80) {
+        lastStatus = status;
+        offset++;
+      } else {
+        status = lastStatus;
+      }
+
+      const type = status & 0xF0;
+      if (type === 0x90) { // Note On
+        const note = data[offset++];
+        const vel = data[offset++];
+        if (vel > 0) {
+          active[note] = { tick: curTick, vel: vel / 127 };
+        } else if (active[note]) {
+          rawEvents.push({
+            note,
+            startTick: active[note].tick,
+            endTick: curTick,
+            vel: active[note].vel
+          });
+          delete active[note];
+        }
+      } else if (type === 0x80) { // Note Off
+        const note = data[offset++];
+        offset++;
+        if (active[note]) {
+          rawEvents.push({
+            note,
+            startTick: active[note].tick,
+            endTick: curTick,
+            vel: active[note].vel
+          });
+          delete active[note];
+        }
+      } else if (status === 0xFF) {
+        offset++; // meta type
+        let len = 0;
+        while (offset < trackEnd) {
+          const b = data[offset++];
+          len = (len << 7) | (b & 0x7F);
+          if (!(b & 0x80)) break;
+        }
+        offset += len;
+      } else if (type === 0xC0 || type === 0xD0) {
+        offset += 1;
+      } else if (type === 0xA0 || type === 0xB0 || type === 0xE0) {
+        offset += 2;
+      }
+    }
+    offset = trackEnd;
+  }
+
+  const secondsPerTick = (defaultTempo / 1000000) / timeDivision;
+  const notes = [];
+  let maxTime = 0;
+  const pitchHistogram = new Array(12).fill(0);
+
+  rawEvents.forEach((ev) => {
+    const time = ev.startTick * secondsPerTick;
+    const dur = Math.max(0.08, (ev.endTick - ev.startTick) * secondsPerTick);
+    maxTime = Math.max(maxTime, time + dur);
+    pitchHistogram[ev.note % 12] += 1;
+    notes.push({
+      note: ev.note,
+      time,
+      duration: dur,
+      vel: ev.vel
+    });
+  });
+
+  notes.sort((a, b) => a.time - b.time);
+
+  let bestPitch = 0, bestCount = -1;
+  for (let p = 0; p < 12; ++p) {
+    if (pitchHistogram[p] > bestCount) {
+      bestCount = pitchHistogram[p];
+      bestPitch = p;
+    }
+  }
+  const tonic = NOTE_NAMES[bestPitch] || 'C';
+
+  return {
+    notes,
+    duration: Math.max(1.0, maxTime),
+    tonic
+  };
+}
+
+function playMidiEvents(notes, totalDur) {
+  stopMidiPlayback();
+  const ctx = getAudioContext();
+  if (!ctx || !notes || !notes.length) return;
+
+  _currentMidiEvents = notes;
+  _midiTotalDuration = totalDur;
+  _midiStartTime = ctx.currentTime;
+  state.playing = true;
+  state.duration = totalDur;
+  state.position = 0;
+
+  const bp = $('#btnPlay');
+  if (bp) {
+    bp.textContent = 'II';
+    bp.classList.add('playing');
+  }
+
+  const shift = state.pitchSemitones || 0;
+
+  notes.forEach((n) => {
+    const noteStart = _midiStartTime + n.time;
+    const noteDur = n.duration;
+    const transposedMidi = Math.max(12, Math.min(127, n.note + shift));
+    const freq = 440 * Math.pow(2, (transposedMidi - 69) / 12);
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = (transposedMidi < 48) ? 'sawtooth' : 'triangle';
+    osc.frequency.setValueAtTime(freq, noteStart);
+
+    const targetGain = Math.min(0.22, (n.vel || 0.7) * 0.22);
+    gain.gain.setValueAtTime(0.001, noteStart);
+    gain.gain.exponentialRampToValueAtTime(targetGain, noteStart + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.001, noteStart + noteDur);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start(noteStart);
+    osc.stop(noteStart + noteDur + 0.05);
+
+    _midiSynthActiveNotes.push({ osc, gain, stopTime: noteStart + noteDur });
+  });
+
+  function midiStep() {
+    if (!state.playing) {
+      refreshPlayState();
+      return;
+    }
+    const elapsed = ctx.currentTime - _midiStartTime;
+    if (elapsed >= _midiTotalDuration) {
+      if (state.loop) {
+        playMidiEvents(_currentMidiEvents, _midiTotalDuration);
+        return;
+      } else {
+        refreshPlayState();
+        return;
+      }
+    }
+
+    state.position = Math.min(1.0, elapsed / _midiTotalDuration);
+    const timeLbl = $('#timeLabel');
+    if (timeLbl) timeLbl.textContent = `${elapsed.toFixed(1)} / ${_midiTotalDuration.toFixed(1)}s`;
+
+    const now = ctx.currentTime;
+    let activeCount = 0;
+    _currentMidiEvents.forEach((n) => {
+      if (now >= _midiStartTime + n.time && now <= _midiStartTime + n.time + n.duration) {
+        activeCount++;
+      }
+    });
+    const peak = Math.min(1.0, activeCount * 0.35);
+    drawMeterSmoothed(peak);
+    drawWaveform();
+
+    _midiPlaybackTimer = requestAnimationFrame(midiStep);
+  }
+  _midiPlaybackTimer = requestAnimationFrame(midiStep);
+}
+
+function extractRootNoteName(keyStr) {
+  if (!keyStr) return 'C';
+  const m = keyStr.match(/^([A-G][#b]?)/i);
+  if (!m) return 'C';
+  let r = m[1].toUpperCase();
+  if (r === 'DB') r = 'C#';
+  else if (r === 'EB') r = 'D#';
+  else if (r === 'GB') r = 'F#';
+  else if (r === 'AB') r = 'G#';
+  else if (r === 'BB') r = 'A#';
+  return r;
+}
+
+function calculateSemitoneDistance(rootNote, targetNote) {
+  const rRoot = extractRootNoteName(rootNote);
+  const rTarget = extractRootNoteName(targetNote);
+  const rootIdx = NOTE_NAMES.indexOf(rRoot);
+  const targetIdx = NOTE_NAMES.indexOf(rTarget);
+  if (rootIdx < 0 || targetIdx < 0) return 0;
+  let diff = targetIdx - rootIdx;
+  if (diff > 6) diff -= 12;
+  if (diff < -6) diff += 12;
+  return diff;
+}
 
 function semitonesToDisplay(semitones) {
   if (semitones === 0) return '0st';
@@ -705,12 +1043,7 @@ function calculateTransposedKey(originalKey, semitones) {
   }
   const rootMatch = originalKey.match(/^([A-G][#b]?)(.*)$/i);
   if (!rootMatch) return (semitones > 0 ? '+' : '') + semitones + 'st';
-  let root = rootMatch[1].toUpperCase();
-  if (root === 'DB') root = 'C#';
-  else if (root === 'EB') root = 'D#';
-  else if (root === 'GB') root = 'F#';
-  else if (root === 'AB') root = 'G#';
-  else if (root === 'BB') root = 'A#';
+  let root = extractRootNoteName(rootMatch[1]);
   const rest = rootMatch[2];
   const rootIdx = NOTE_NAMES.indexOf(root);
   if (rootIdx < 0) return (semitones > 0 ? '+' : '') + semitones + 'st';
@@ -718,119 +1051,146 @@ function calculateTransposedKey(originalKey, semitones) {
   return NOTE_NAMES[newIdx] + (rest ? ' ' + rest.trim() : '');
 }
 
-function renderPlayerTags(tags) {
-  const bar = $('#playerTagBar');
-  if (!bar) return;
-  bar.innerHTML = '';
-  if (!tags || !tags.length) {
-    bar.classList.add('hidden');
-    return;
-  }
-  bar.classList.remove('hidden');
-  tags.forEach((t) => {
-    const chip = document.createElement('span');
-    const typeClass = t.type ? `tag-${t.type}` : 'tag-genre';
-    chip.className = `tag-chip ${typeClass}`;
-    chip.textContent = t.name || t.tag || t;
-    chip.onclick = (e) => {
-      e.stopPropagation();
-      const tagText = t.name || t.tag || t;
-      const searchInput = $('#search');
-      if (searchInput) {
-        searchInput.value = '/' + tagText;
-        state.searchQ = searchInput.value;
-        runSearch(state.searchQ);
-      }
+function extractKeyFromFilename(filename) {
+  if (!filename) return null;
+  const base = filename.replace(/\.[^.]+$/, '');
+
+  // 1. Camelot (1A..12A, 1B..12B)
+  const camelotMatch = base.match(/(?:^|[\s_\-\(\[])([1-9]|1[0-2])([ABab])(?:[\s_\-\)\]]|\.|$)/);
+  if (camelotMatch) {
+    const num = parseInt(camelotMatch[1], 10);
+    const letter = camelotMatch[2].toUpperCase();
+    const CAMELOT_TO_KEY = {
+      '1B': 'B', '2B': 'F#', '3B': 'C#', '4B': 'G#', '5B': 'D#', '6B': 'A#',
+      '7B': 'F', '8B': 'C', '9B': 'G', '10B': 'D', '11B': 'A', '12B': 'E',
+      '1A': 'G#m', '2A': 'D#m', '3A': 'A#m', '4A': 'Fm', '5A': 'Cm', '6A': 'Gm',
+      '7A': 'Dm', '8A': 'Am', '9A': 'Em', '10A': 'Bm', '11A': 'F#m', '12A': 'C#m'
     };
-    bar.appendChild(chip);
-  });
+    const mapped = CAMELOT_TO_KEY[`${num}${letter}`];
+    if (mapped) return mapped;
+  }
+
+  // 2. Note Name (e.g. D#, C#, E, F, A, G#m, etc.)
+  const keyRe = /(?:^|[\s_\-\(\[])([A-G][#b]?(?:m|maj|min|minor|major)?)(?:\s+(?:maj|min|minor|major))?(?:[\s_\-\)\]]|\.|$)/gi;
+  let match;
+  const matches = [];
+  while ((match = keyRe.exec(base)) !== null) {
+    matches.push(match[1]);
+  }
+  if (matches.length > 0) {
+    let raw = matches[matches.length - 1];
+    const m = raw.match(/^([A-G][#b]?)(.*)$/i);
+    if (m) {
+      let note = m[1].charAt(0).toUpperCase() + (m[1].length > 1 ? m[1].charAt(1) : '');
+      if (note === 'Db' || note === 'DB') note = 'C#';
+      else if (note === 'Eb' || note === 'EB') note = 'D#';
+      else if (note === 'Gb' || note === 'GB') note = 'F#';
+      else if (note === 'Ab' || note === 'AB') note = 'G#';
+      else if (note === 'Bb' || note === 'BB') note = 'A#';
+      const mode = m[2] ? m[2].toLowerCase() : '';
+      const isMin = mode.includes('m') || mode.includes('min');
+      return note + (isMin ? 'm' : '');
+    }
+  }
+  return null;
 }
 
-function extractTagsFromFilename(name) {
-  const tags = [];
-  const lower = (name || '').toLowerCase();
-  if (lower.includes('kick') || lower.includes('snare') || lower.includes('hat') || lower.includes('drum')) {
-    tags.push({ name: 'Drums', type: 'inst' });
-  }
-  if (lower.includes('vocal') || lower.includes('hook') || lower.includes('chant') || lower.includes('choir') || lower.includes('male')) {
-    tags.push({ name: 'Vocals', type: 'inst' });
-    if (lower.includes('choir')) tags.push({ name: 'Choir', type: 'prop' });
-    if (lower.includes('male')) tags.push({ name: 'Male', type: 'prop' });
-  }
-  if (lower.includes('trap')) tags.push({ name: 'Trap', type: 'genre' });
-  if (lower.includes('edm') || lower.includes('future')) tags.push({ name: 'EDM', type: 'genre' });
-  if (lower.includes('soul') || lower.includes('jazz')) tags.push({ name: 'Soul', type: 'genre' });
-  if (lower.includes('piano') || lower.includes('chord')) tags.push({ name: 'Piano', type: 'inst' });
-  if (lower.includes('bass') || lower.includes('sub') || lower.includes('808')) tags.push({ name: 'Bass', type: 'inst' });
-  if (lower.includes('clean') || lower.includes('dry')) tags.push({ name: 'Clean', type: 'prop' });
-  if (lower.includes('reverb') || lower.includes('wet') || lower.includes('space')) tags.push({ name: 'Reverb', type: 'prop' });
-  if (lower.includes('ensemble') || lower.includes('stack')) tags.push({ name: 'Ensemble', type: 'prop' });
-  if (lower.includes('dark') || lower.includes('deep')) tags.push({ name: 'Dark', type: 'mood' });
-  if (lower.includes('happy') || lower.includes('uplift')) tags.push({ name: 'Happy', type: 'mood' });
-  return tags;
-}
+function updateTransposerPopUI() {
+  const root = state.originalRootNote || 'C';
+  const target = state.selectedTargetNote || root;
+  const semitones = state.pitchSemitones || 0;
+  const displayRoot = state.sampleKey && state.sampleKey !== 'ORIGINAL' ? state.sampleKey : root;
 
-async function setPitchShift(semitones) {
-  state.pitchSemitones = semitones;
+  const rootBadge = $('#pianoRootBadge');
+  if (rootBadge) {
+    if (root === target || semitones === 0) {
+      rootBadge.textContent = `Root: ${displayRoot}`;
+    } else {
+      rootBadge.textContent = `Root: ${displayRoot} ➔ ${target}`;
+    }
+  }
+
   const semitoneLabel = $('#pianoSemitoneLabel');
   if (semitoneLabel) {
-    semitoneLabel.textContent = (semitones > 0 ? '+' : '') + semitones + ' ' + tr('player.semitones');
+    if (semitones === 0) {
+      semitoneLabel.textContent = `0 semitones`;
+    } else {
+      semitoneLabel.textContent = `${semitones > 0 ? '+' : ''}${semitones} semitones`;
+    }
   }
+
   const badge = $('#pitchShiftBadge');
   if (badge) {
     badge.textContent = semitonesToDisplay(semitones);
     badge.classList.toggle('active', semitones !== 0);
   }
+
   const transBtn = $('#btnKeyTransposer');
   if (transBtn) {
     transBtn.classList.toggle('shifted', semitones !== 0);
   }
+
   const keyLabel = $('#playerKeyLabel');
   if (keyLabel) {
-    keyLabel.textContent = calculateTransposedKey(state.sampleKey, semitones);
+    if (semitones === 0) {
+      keyLabel.textContent = `KEY: ${displayRoot}`;
+    } else {
+      keyLabel.textContent = `KEY: ${target}`;
+    }
   }
 
-  // Highlight active piano key
+  const resetBtn = $('#btnResetKey');
+  if (resetBtn) {
+    resetBtn.textContent = `${tr('player.originalKey') || 'Original Key'} (${displayRoot})`;
+  }
+
   $$('#pianoKeyboard .piano-key').forEach((k) => {
-    const keySemi = parseInt(k.dataset.semitone, 10);
-    const keyNote = k.dataset.note;
-    const targetNote = semitoneToNote(semitones);
-    k.classList.toggle('active', keySemi === semitones || keyNote === targetNote);
+    const note = k.dataset.note;
+    const isTarget = (note === target);
+    const isRoot = (note === root && root !== target);
+    k.classList.toggle('active', isTarget);
+    k.classList.toggle('root-marker', isRoot);
   });
+}
 
-  try {
-    await bridge('audio.setPitchShift', { semitones });
-  } catch (err) {
-    console.error('setPitchShift failed:', err);
+async function setTargetNote(targetNote) {
+  const root = state.originalRootNote || 'C';
+  const validTarget = extractRootNoteName(targetNote);
+  state.isUserTargetKeyLocked = true;
+  state.userTargetNote = validTarget;
+  state.selectedTargetNote = validTarget;
+  const semitones = calculateSemitoneDistance(root, validTarget);
+  await setPitchShift(semitones);
+  playSynthNote(validTarget, 0.3);
+}
+
+async function setPitchShift(semitones) {
+  state.pitchSemitones = semitones;
+  const root = state.originalRootNote || 'C';
+  const rootIdx = NOTE_NAMES.indexOf(root);
+  const targetIdx = (rootIdx + semitones + 120) % 12;
+  state.selectedTargetNote = NOTE_NAMES[targetIdx];
+
+  updateTransposerPopUI();
+
+  if (state.selected && isMidiFile(state.selected) && state.playing && state.midiNotes) {
+    playMidiEvents(state.midiNotes, state.duration);
+  } else {
+    try {
+      await bridge('audio.setPitchShift', { semitones });
+    } catch (err) {
+      console.error('setPitchShift failed:', err);
+    }
   }
+  drawWaveform();
 }
 
 async function resetOriginalKey() {
-  state.pitchSemitones = 0;
-  const semitoneLabel = $('#pianoSemitoneLabel');
-  if (semitoneLabel) {
-    semitoneLabel.textContent = '0 ' + tr('player.semitones');
-  }
-  const badge = $('#pitchShiftBadge');
-  if (badge) {
-    badge.textContent = '0st';
-    badge.classList.remove('active');
-  }
-  const transBtn = $('#btnKeyTransposer');
-  if (transBtn) {
-    transBtn.classList.remove('shifted');
-  }
-  const keyLabel = $('#playerKeyLabel');
-  if (keyLabel) {
-    keyLabel.textContent = state.sampleKey || 'ORIGINAL';
-  }
-  $$('#pianoKeyboard .piano-key').forEach((k) => k.classList.remove('active'));
-
-  try {
-    await bridge('audio.setOriginalKey', {});
-  } catch (err) {
-    console.error('resetOriginalKey failed:', err);
-  }
+  state.isUserTargetKeyLocked = false;
+  state.userTargetNote = null;
+  state.selectedTargetNote = state.originalRootNote || 'C';
+  await setPitchShift(0);
+  playSynthNote(state.selectedTargetNote, 0.3);
 }
 
 async function toggleSyncBpm() {
@@ -950,15 +1310,116 @@ async function initSettings() {
     console.warn('initSettings failed', e);
   }
   applyI18n();
-  $('#btnSettings').onclick = (e) => {
-    e.stopPropagation();
-    const p = $('#settingsPop');
-    if (p) {
-      p.classList.toggle('hidden');
-      if (!p.classList.contains('hidden') && p._render) p._render();
-    }
-  };
+  initSettingsModal();
 }
+
+function openSettingsModal() {
+  const modal = $('#settingsModal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  renderSettingsModal();
+}
+
+function closeSettingsModal() {
+  const modal = $('#settingsModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function initSettingsModal() {
+  const btnSettings = $('#btnSettings');
+  if (btnSettings) {
+    btnSettings.onclick = (e) => {
+      e.stopPropagation();
+      openSettingsModal();
+    };
+  }
+  const btnClose = $('#btnSettingsClose');
+  if (btnClose) {
+    btnClose.onclick = (e) => {
+      e.stopPropagation();
+      closeSettingsModal();
+    };
+  }
+  const modal = $('#settingsModal');
+  if (modal) {
+    modal.onclick = (e) => {
+      if (e.target === modal) closeSettingsModal();
+    };
+  }
+
+  // Tab switching
+  $$('.settings-tab-btn').forEach((btn) => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const tabName = btn.dataset.tab;
+      $$('.settings-tab-btn').forEach((b) => b.classList.toggle('active', b === btn));
+      $$('.settings-tab-pane').forEach((p) => p.classList.toggle('active', p.id === `tab-${tabName}`));
+    };
+  });
+}
+
+function renderSettingsModal() {
+  bridge('config.getAll').then((cfg) => {
+    cfg = cfg || {};
+    // Tab 1: General
+    $$('#optDisplaySize .setting-chip').forEach((c) => {
+      c.classList.toggle('active', c.dataset.val === state.displaySize);
+      c.onclick = (e) => {
+        e.stopPropagation();
+        const v = c.dataset.val;
+        bridge('config.set', { key: 'displaySize', value: v });
+        applyDisplaySize(v);
+        renderSettingsModal();
+      };
+    });
+    $$('#optNavPos .setting-chip').forEach((c) => {
+      const curNav = state.navPosition || cfg.navPosition || 'top';
+      c.classList.toggle('active', c.dataset.val === curNav);
+      c.onclick = (e) => {
+        e.stopPropagation();
+        const v = c.dataset.val;
+        state.navPosition = v;
+        bridge('config.set', { key: 'navPosition', value: v });
+        applyNavPosition(v);
+        renderSettingsModal();
+      };
+    });
+
+    // Tab 2: File Browser
+    const autoCol = state.autoCollapseTree !== false && cfg.autoCollapseTree !== false;
+    $$('#optAutoCollapse .setting-chip').forEach((c) => {
+      c.classList.toggle('active', c.dataset.val === (autoCol ? 'true' : 'false'));
+      c.onclick = (e) => {
+        e.stopPropagation();
+        const v = c.dataset.val === 'true';
+        state.autoCollapseTree = v;
+        bridge('config.set', { key: 'autoCollapseTree', value: v });
+        if (v && state.currentDir) {
+          tidyExpandedFolders(state.currentDir);
+          renderTree();
+        }
+        renderSettingsModal();
+      };
+    });
+
+    const curCpu = state.scannerCpuMode || cfg.scannerCpuMode || 'normal';
+    $$('#optCpuMode .setting-chip').forEach((c) => {
+      c.classList.toggle('active', c.dataset.val === curCpu);
+      c.onclick = (e) => {
+        e.stopPropagation();
+        const v = c.dataset.val;
+        if (v === 'high' && !confirm(tr('scanner.cpuMode.highWarn') || 'High CPU mode may impact DAW performance. Continue?')) return;
+        state.scannerCpuMode = v;
+        bridge('scanner.setCpuMode', { cpuMode: v });
+        bridge('config.set', { key: 'scannerCpuMode', value: v });
+        const scSelect = $('#scannerCpuMode');
+        if (scSelect) scSelect.value = v;
+        renderSettingsModal();
+      };
+    });
+  });
+}
+
 function applyDisplaySize(size) {
   state.displaySize = size || 'medium';
   document.body.classList.remove('size-small', 'size-medium', 'size-large');
@@ -1006,111 +1467,6 @@ function applyNavPosition(pos) {
   drawWaveform();
   drawMeter();
 }
-function buildSettingsPop() {
-  let pop = $('#settingsPop');
-  if (!pop) {
-    pop = el('div');
-    pop.id = 'settingsPop';
-    pop.classList.add('hidden');
-    document.body.appendChild(pop);
-  }
-  const renderPop = () => {
-    pop.innerHTML = '';
-    bridge('config.getAll').then((cfg) => {
-      cfg = cfg || {};
-      pop.appendChild(el('div', 'sp-title', tr('settings.displaySize')));
-      [['small', 'size.small'], ['medium', 'size.medium'], ['large', 'size.large']].forEach(([v, k]) => {
-        const o = el('div', 'sp-opt' + (state.displaySize === v ? ' on' : ''), tr(k));
-        o.onclick = (e) => {
-          e.stopPropagation();
-          bridge('config.set', { key: 'displaySize', value: v });
-          applyDisplaySize(v);
-          renderPop();
-        };
-        pop.appendChild(o);
-      });
-      pop.appendChild(el('div', 'sp-title', tr('settings.navPosition')));
-      [['top', 'pos.top'], ['bottom', 'pos.bottom'], ['left', 'pos.left'], ['right', 'pos.right']].forEach(([v, k]) => {
-        const o = el('div', 'sp-opt' + ((state.navPosition || cfg.navPosition || 'top') === v ? ' on' : ''), tr(k));
-        o.onclick = (e) => {
-          e.stopPropagation();
-          state.navPosition = v;
-          bridge('config.set', { key: 'navPosition', value: v });
-          applyNavPosition(v);
-          renderPop();
-        };
-        pop.appendChild(o);
-      });
-      pop.appendChild(el('div', 'sp-title', tr('settings.browser')));
-      const autoCol = cfg.autoCollapseTree !== false;
-      const ac = el('div', 'sp-opt' + (autoCol ? ' on' : ''), (autoCol ? '✓ ' : '') + tr('settings.autoCollapse'));
-      ac.onclick = (e) => {
-        e.stopPropagation();
-        const next = !autoCol;
-        state.autoCollapseTree = next;
-        bridge('config.set', { key: 'autoCollapseTree', value: next });
-        if (next && state.currentDir) {
-          tidyExpandedFolders(state.currentDir);
-          renderTree();
-        }
-        renderPop();
-      };
-      pop.appendChild(ac);
-      pop.appendChild(el('div', 'sp-title', tr('scanner.cpuMode')));
-      const curCpu = state.scannerCpuMode || cfg.scannerCpuMode || 'normal';
-      [['low', 'scanner.cpuMode.low'], ['normal', 'scanner.cpuMode.normal'], ['high', 'scanner.cpuMode.high']].forEach(([v, k]) => {
-        const o = el('div', 'sp-opt' + (curCpu === v ? ' on' : ''), tr(k));
-        o.onclick = (e) => {
-          e.stopPropagation();
-          if (v === 'high') {
-            if (!confirm(tr('scanner.cpuMode.highWarn'))) return;
-          }
-          state.scannerCpuMode = v;
-          bridge('scanner.setCpuMode', { cpuMode: v });
-          bridge('config.set', { key: 'scannerCpuMode', value: v });
-          const scSelect = $('#scannerCpuMode');
-          if (scSelect) scSelect.value = v;
-          renderPop();
-        };
-        pop.appendChild(o);
-      });
-      pop.appendChild(el('div', 'sp-title', tr('settings.accent')));
-      [['orange', 'accent.orange'], ['amber', 'accent.amber'], ['muted', 'accent.muted'], ['gray', 'accent.gray']].forEach(([v, k]) => {
-        const o = el('div', 'sp-opt' + (cfg.accent === v ? ' on' : ''), tr(k));
-        o.onclick = (e) => { e.stopPropagation(); bridge('config.set', { key: 'accent', value: v }); applyAccent(v); renderPop(); };
-        pop.appendChild(o);
-      });
-      pop.appendChild(el('div', 'sp-title', tr('settings.language')));
-      const vi = el('div', 'sp-opt' + (cfg.language === 'vi' ? ' on' : ''), 'Tiếng Việt');
-      vi.onclick = (e) => { e.stopPropagation(); LANG = 'vi'; bridge('config.set', { key: 'language', value: 'vi' }); applyI18n(); renderNav(); renderMarket(); renderPop(); };
-      const en = el('div', 'sp-opt' + (cfg.language === 'en' ? ' on' : ''), 'English');
-      en.onclick = (e) => { e.stopPropagation(); LANG = 'en'; bridge('config.set', { key: 'language', value: 'en' }); applyI18n(); renderNav(); renderMarket(); renderPop(); };
-      pop.appendChild(vi); pop.appendChild(en);
-      pop.appendChild(el('div', 'sp-title', tr('settings.effects')));
-      const noiseOn = cfg.noiseOverlay !== false;
-      const nz = el('div', 'sp-opt' + (noiseOn ? ' on' : ''), tr('settings.noise'));
-      nz.onclick = (e) => {
-        e.stopPropagation();
-        const next = !noiseOn;
-        bridge('config.set', { key: 'noiseOverlay', value: next });
-        applyNoise(next);
-        renderPop();
-      };
-      pop.appendChild(nz);
-      pop.appendChild(el('div', 'sp-title', tr('settings.window')));
-      const isDk = !!state.docked;
-      const dockOpt = el('div', 'sp-opt' + (isDk ? ' on' : ''), (isDk ? '✓ ' : '') + tr('settings.dockToReaper'));
-      dockOpt.onclick = (e) => {
-        e.stopPropagation();
-        bridge('window.toggleDock');
-        pop.classList.add('hidden');
-      };
-      pop.appendChild(dockOpt);
-    });
-  };
-  pop._render = renderPop;
-  renderPop();
-}
 
 // ============ Browser ============
 function getRowH() {
@@ -1140,6 +1496,7 @@ async function refreshRoots() {
 
 function renderRoots() {
   const sel = $('#roots');
+  if (!sel) return;
   sel.innerHTML = '';
   state.roots.forEach((r) => {
     const o = el('option', '', r.name);
@@ -1149,7 +1506,8 @@ function renderRoots() {
   sel.value = state.currentDir || '';
   sel.onchange = () => {
     state.searchQ = '';
-    $('#search').value = '';
+    const s = $('#search');
+    if (s) s.value = '';
     openDir(sel.value);
   };
 }
@@ -1157,8 +1515,22 @@ function renderRoots() {
 async function subdirsOf(path) {
   if (state.subCache[path]) return state.subCache[path];
   const subs = await bridge('fs.subdirs', { path });
-  state.subCache[path] = subs;
-  return subs;
+  state.subCache[path] = subs || [];
+  return state.subCache[path];
+}
+
+function buildTreeSync(frag, roots, depth = 0) {
+  for (const r of roots) {
+    const isExpanded = state.expanded.has(r.path);
+    frag.appendChild(folderRowEl(r.path, r.name, depth));
+    if (isExpanded) {
+      const subs = state.subCache[r.path];
+      if (subs && subs.length) {
+        const childRoots = subs.map((s) => ({ name: s, path: joinPath(r.path, s) }));
+        buildTreeSync(frag, childRoots, depth + 1);
+      }
+    }
+  }
 }
 
 async function renderTree() {
@@ -1166,39 +1538,42 @@ async function renderTree() {
   if (!tree) return;
   const seq = ++state.treeSeq;
 
-  const favs = await bridge('browser.favorites');
-  if (seq !== state.treeSeq) return;
-  state.favSet = new Set(favs || []);
-
-  const frag = document.createDocumentFragment();
-
-  for (const root of state.roots) {
-    frag.appendChild(folderRowEl(root.path, root.name, 0));
-    if (state.expanded.has(root.path)) {
-      const subs = await subdirsOf(root.path);
+  if (!state.favSet) {
+    try {
+      const favs = await bridge('browser.favorites');
       if (seq !== state.treeSeq) return;
-      for (const s of subs) {
-        await drawSubFolder(frag, joinPath(root.path, s), s, 1, seq);
-        if (seq !== state.treeSeq) return;
-      }
+      state.favSet = new Set(favs || []);
+    } catch {
+      state.favSet = new Set();
     }
   }
 
+  // 1. FAST SYNCHRONOUS PASS: Update DOM immediately (0ms response!)
   const currentScroll = tree.scrollTop;
+  const frag = document.createDocumentFragment();
+  buildTreeSync(frag, state.roots, 0);
   tree.replaceChildren(frag);
   tree.scrollTop = currentScroll;
-}
 
-async function drawSubFolder(parentEl, path, name, depth, seq) {
-  if (seq && seq !== state.treeSeq) return;
-  parentEl.appendChild(folderRowEl(path, name, depth));
-  if (state.expanded.has(path)) {
-    const subs = await subdirsOf(path);
-    if (seq && seq !== state.treeSeq) return;
-    for (const s of subs) {
-      await drawSubFolder(parentEl, joinPath(path, s), s, depth + 1, seq);
-      if (seq && seq !== state.treeSeq) return;
-    }
+  // 2. PARALLEL BACKGROUND PASS: If any expanded folder is not in cache, fetch in parallel
+  const uncached = Array.from(state.expanded).filter((p) => !state.subCache[p]);
+  if (uncached.length > 0) {
+    await Promise.all(uncached.map(async (p) => {
+      try {
+        const subs = await bridge('fs.subdirs', { path: p });
+        state.subCache[p] = subs || [];
+      } catch {
+        state.subCache[p] = [];
+      }
+    }));
+    if (seq !== state.treeSeq) return;
+
+    // Synchronous re-render once all subdirs are populated
+    const freshFrag = document.createDocumentFragment();
+    buildTreeSync(freshFrag, state.roots, 0);
+    const s = tree.scrollTop;
+    tree.replaceChildren(freshFrag);
+    tree.scrollTop = s;
   }
 }
 
@@ -1240,7 +1615,7 @@ function folderRowEl(path, name, depth) {
         state.expanded.add(path);
       }
     }
-    if (state.currentDir !== path) openDir(path);
+    openDir(path);
     renderTree();
   };
   row.oncontextmenu = (e) => { e.preventDefault(); folderMenu(e, path); };
@@ -1251,7 +1626,6 @@ function sideFileRow(f) {
   const row = el('div', 'tree-row' + (state.selected === f.path ? ' on' : ''));
   row.appendChild(el('span', 'name', f.name));
   row.onclick = () => selectEntry(f);
-  row.ondblclick = () => insertMedia(f.path);
   row.oncontextmenu = (e) => { e.preventDefault(); fileMenu(e, f); };
   armOleDrag(row, f);
   return row;
@@ -1271,21 +1645,25 @@ function disarmOleDrag() {
   window.removeEventListener('pointercancel', a.up);
   state._dragArm = null;
 }
-function armOleDrag(row, f) {
-  if (!f || f.isDir || !f.path) return;
+function armOleDrag(row, fileOrGetter) {
+  if (!row) return;
   row.draggable = false;
   row.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
+    const f = typeof fileOrGetter === 'function' ? fileOrGetter() : fileOrGetter;
+    if (!f || f.isDir || !f.path) return;
     disarmOleDrag();
     const startX = e.clientX;
     const startY = e.clientY;
+    let didDrag = false;
     const move = (ev) => {
       const dx = ev.clientX - startX;
       const dy = ev.clientY - startY;
       if (dx * dx + dy * dy < DRAG_THRESH * DRAG_THRESH) return;
       disarmOleDrag();
+      didDrag = true;
       state._suppressClick = true;
-      setTimeout(() => { state._suppressClick = false; }, 500);
+      setTimeout(() => { state._suppressClick = false; }, 300);
       if (hasWebView) {
         bridge('browser.beginDrag', {
           path: f.path,
@@ -1295,12 +1673,90 @@ function armOleDrag(row, f) {
         }).catch(() => {});
       }
     };
-    const up = () => disarmOleDrag();
+    const up = () => {
+      disarmOleDrag();
+      if (didDrag) {
+        setTimeout(() => { state._suppressClick = false; }, 50);
+      }
+    };
     state._dragArm = { move, up };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', up);
   });
+}
+
+function generateMiniWaveSvg(f) {
+  const p = typeof f === 'string' ? f : (f ? f.path : '');
+  if (!p) return '';
+  let bars = state.envCache && state.envCache[p];
+  if (!bars || !bars.length) {
+    if (state.selected === p && state.envelope && state.envelope.length) {
+      bars = state.envelope;
+    }
+  }
+  // Only render REAL audio waveforms — never render fake placeholder sine waves!
+  if (!bars || !bars.length) {
+    return '';
+  }
+
+  const count = 84;
+  let rects = '';
+  const barW = 280 / count;
+  const drawW = 1.4;
+  const mid = 11;
+  const maxAmp = 10.2;
+
+  for (let i = 0; i < count; ++i) {
+    const idx = Math.floor((i / count) * bars.length);
+    const rawVal = bars[idx] || 0.01;
+    const val = Math.min(1.0, Math.max(0.02, rawVal));
+    const h = Math.max(0.8, Math.pow(val, 0.75) * maxAmp);
+    const x = (i * barW).toFixed(1);
+    const y = (mid - h).toFixed(1);
+    const barH = (h * 2).toFixed(1);
+    rects += `<rect x="${x}" y="${y}" width="${drawW}" height="${barH}" rx="0.7" fill="currentColor"/>`;
+  }
+  return `<svg viewBox="0 0 280 22" preserveAspectRatio="none" class="mini-preview-svg">${rects}</svg>`;
+}
+
+function updateRowMiniWave(path) {
+  if (!path) return;
+  const spacer = $('#fileSpacer');
+  if (!spacer) return;
+  const row = spacer.querySelector(`.file-row[title="${CSS.escape(path)}"]`);
+  if (!row) return;
+  let bg = row.querySelector('.mini-preview-bg');
+  const svg = generateMiniWaveSvg(path);
+  if (!svg) {
+    if (bg) bg.innerHTML = '';
+    return;
+  }
+  if (!bg) {
+    bg = el('div', 'mini-preview-bg');
+    row.insertBefore(bg, row.firstChild);
+  }
+  bg.innerHTML = svg;
+}
+
+function generateMiniMidiSvg(f) {
+  const p = typeof f === 'string' ? f : (f ? f.path : '');
+  let pathHash = 0;
+  for (let i = 0; i < p.length; ++i) {
+    pathHash = (Math.imul(31, pathHash) + p.charCodeAt(i)) | 0;
+  }
+  let rects = '';
+  const numNotes = 12;
+  const colors = ['#55A5FF', '#35D07F', '#B98CFF', '#55A5FF'];
+  for (let i = 0; i < numNotes; ++i) {
+    const x = ((i * 23 + ((pathHash >> (i % 8)) & 15)) % 255);
+    const w = 12 + ((pathHash >> ((i + 2) % 8)) & 18);
+    const row = ((pathHash >> ((i + 1) % 6)) & 3);
+    const y = 3 + row * 4.5;
+    const col = colors[row % colors.length];
+    rects += `<rect x="${x}" y="${y}" width="${w}" height="2.5" rx="1" fill="${col}" opacity="0.45"/>`;
+  }
+  return `<svg viewBox="0 0 280 22" preserveAspectRatio="none" class="mini-preview-svg">${rects}</svg>`;
 }
 
 function openDir(path) {
@@ -1311,10 +1767,6 @@ function openDir(path) {
   state.currentDir = path;
   state.similarSource = null;
   state.similarSourceName = null;
-  if (state.autoCollapseTree && path) {
-    tidyExpandedFolders(path);
-    renderTree();
-  }
   state.searchQ = '';
   state.searchPending = false;
   state.searchGen = ++state.searchSeq;
@@ -1325,9 +1777,29 @@ function openDir(path) {
   loadDir(path, false);
 }
 
+function paintLoadingFiles() {
+  const box = $('#files');
+  if (!box) return;
+
+  const frag = document.createDocumentFragment();
+  const header = el('div', 'files-head');
+  header.textContent = state.currentDir || tr('browser.pickRoot');
+  frag.appendChild(header);
+
+  const loader = el('div', 'files-loader');
+  const spinner = el('div', 'loading-spinner');
+  const text = el('div', 'loading-text', tr('browser.loadingSamples'));
+  loader.appendChild(spinner);
+  loader.appendChild(text);
+  frag.appendChild(loader);
+
+  box.replaceChildren(frag);
+}
+
 function loadDir(path, force) {
   if (!path) return;
   const reqId = ++state.listSeq;
+  paintLoadingFiles();
   const go = () => bridge('fs.list', { path, sort: state.sort }).then((files) => {
     if (reqId !== state.listSeq) return;
     state.rawFiles = files || [];
@@ -1335,6 +1807,10 @@ function loadDir(path, force) {
     state.listDir = path;
     paintFromRaw(isReloadingCurrent);
     probeVisibleAudio();
+  }).catch(() => {
+    if (reqId !== state.listSeq) return;
+    state.rawFiles = [];
+    paintFromRaw();
   });
   if (force) bridge('fs.invalidate', { path }).then(go, go);
   else go();
@@ -1359,6 +1835,9 @@ function paintFromRaw(preserveScroll = false) {
   }
   const box = $('#files');
   if (!box) return;
+
+  const loader = box.querySelector('.files-loader');
+  if (loader) loader.remove();
 
   const savedScroll = preserveScroll ? box.scrollTop : (state.searchQ ? 0 : (state.dirScrolls[state.currentDir] || 0));
 
@@ -1425,6 +1904,19 @@ function paintVisible() {
 function fileRowEl(f, isSelected, compact) {
   const row = el('div', 'file-row' + (isSelected ? ' sel' : '') + (f.isDir ? ' dir' : ''));
   row._path = f.path;
+  if (f.path) row.title = f.path;
+
+  // Mini preview background (Waveform for audio, Piano roll for MIDI)
+  if (!f.isDir) {
+    const bg = el('div', 'mini-preview-bg');
+    if (isMidiFile(f)) {
+      bg.innerHTML = generateMiniMidiSvg(f);
+    } else if (f.isAudio) {
+      bg.innerHTML = generateMiniWaveSvg(f);
+    }
+    row.appendChild(bg);
+  }
+
   const tag = (state.tagCache && state.tagCache[f.path]) || 0;
   if (tag > 0) {
     const d = el('span', 'tagdot');
@@ -1434,25 +1926,21 @@ function fileRowEl(f, isSelected, compact) {
     row.appendChild(el('span', 'tagdot'));
   }
   const label = f.isDir ? '▸ ' + f.name : f.name;
-  row.appendChild(el('span', 'fname', label));
+  const fnameSpan = el('span', 'fname');
+  fnameSpan.appendChild(el('span', 'fname-text', label));
+  row.appendChild(fnameSpan);
   if (!compact && !f.isDir) {
+    if (isMidiFile(f)) {
+      row.appendChild(el('span', 'fmeta-badge midi', 'MIDI'));
+    }
     if (f.duration && !state.probeCache[f.path]) state.probeCache[f.path] = f.duration;
     const dur = state.probeCache[f.path];
     if (dur) row.appendChild(el('span', 'fdur', fmtDur(dur)));
-    if (f.similarity !== undefined || (f.score !== undefined && f.score > 0 && f.score <= 1.0)) {
-      const matchPct = f.similarity || Math.round(f.score * 100);
-      if (matchPct > 0) {
-        row.appendChild(el('span', 'fmeta-badge sim-badge', matchPct + '% ' + tr('browser.matchPercent')));
-      }
-    }
     if (f.bpm && f.bpm > 0) {
       row.appendChild(el('span', 'fmeta-badge', Math.round(f.bpm) + ' BPM'));
     }
     if (f.key) {
       row.appendChild(el('span', 'fmeta-badge', f.key));
-    }
-    if (f.genre) {
-      row.appendChild(el('span', 'fmeta-badge genre', f.genre));
     }
     if (f.size !== undefined) row.appendChild(el('span', 'fsize', fmtSize(f.size)));
   }
@@ -1464,7 +1952,6 @@ function fileRowEl(f, isSelected, compact) {
   };
   row.ondblclick = () => {
     if (f.isDir) openDir(f.path);
-    else insertMedia(f.path);
   };
   row.oncontextmenu = (e) => { e.preventDefault(); fileMenu(e, f); };
   armOleDrag(row, f);
@@ -1472,6 +1959,12 @@ function fileRowEl(f, isSelected, compact) {
 }
 
 function selectEntry(f) {
+  if (!f) return;
+  const now = Date.now();
+  const isDuplicate = state._lastTriggerPath === f.path && (now - (state._lastTriggerTime || 0) < 250);
+  state._lastTriggerPath = f.path;
+  state._lastTriggerTime = now;
+
   state.selected = f.path;
   const spacer = $('#fileSpacer');
   if (spacer) {
@@ -1479,22 +1972,40 @@ function selectEntry(f) {
       r.classList.toggle('sel', r._path === f.path);
     });
   }
-  if (!f.isDir && f.isAudio) {
-    // Defer auto-preview by one frame so a dblclick (insert) has a chance to
-    // fire first — otherwise the user double-clicking to insert also pays the
-    // cost of decoding+stopping an audio preview.
-    if (!state.autoPreview) return;
-    clearTimeout(state._previewArmT);
-    state._previewArmT = setTimeout(() => {
-      // Only fire if selection hasn't moved on.
-      if (state.selected === f.path) playFile(f.path);
-    }, 120);
+  if (!f.isDir) {
+    const filename = f.path.split(/[\\/]/).pop() || '';
+    const extractedKey = (f.key) || extractKeyFromFilename(filename) || 'C';
+    const rootNote = extractRootNoteName(extractedKey);
+    state.sampleKey = extractedKey;
+    state.originalRootNote = rootNote;
+
+    if (state.isUserTargetKeyLocked && state.userTargetNote) {
+      state.selectedTargetNote = state.userTargetNote;
+      state.pitchSemitones = calculateSemitoneDistance(rootNote, state.userTargetNote);
+    } else {
+      state.selectedTargetNote = rootNote;
+      state.pitchSemitones = 0;
+    }
+    updateTransposerPopUI();
+
+    if (!isDuplicate) {
+      if (!state.autoPreview) return;
+      clearTimeout(state._previewArmT);
+      state._previewArmT = setTimeout(() => {
+        if (state.selected === f.path) playFile(f.path);
+      }, 0);
+    }
   }
 }
 
 let _probeBatchTimer = null;
 let _scrollProbeTimer = null;
-function probeVisibleAudio() {
+function probeVisibleAudio(immediate = false) {
+  clearTimeout(_scrollProbeTimer);
+  if (!immediate) {
+    _scrollProbeTimer = setTimeout(() => probeVisibleAudio(true), 120);
+    return;
+  }
   const box = $('#files');
   const files = state.files;
   if (!box || !files || !files.length) return;
@@ -1507,13 +2018,18 @@ function probeVisibleAudio() {
   let end = Math.min(total, Math.ceil((scroll + viewH) / rowH) + 2);
   if (total <= 40) { start = 0; end = total; }
 
-  const slice = files.slice(start, end).filter((f) => f.isAudio && !state.probeCache[f.path] && !state.probeInflight.has(f.path));
-  slice.slice(0, 24).forEach((f) => {
+  const slice = files.slice(start, end).filter((f) => f.isAudio && !isMidiFile(f) && (!state.probeCache[f.path] || !state.envCache?.[f.path]) && !state.probeInflight.has(f.path));
+  slice.slice(0, 16).forEach((f) => {
     state.probeInflight.add(f.path);
     bridge('audio.probe', { path: f.path }).then((d) => {
       state.probeInflight.delete(f.path);
-      if (d && d.ok && d.duration) {
-        state.probeCache[f.path] = d.duration;
+      if (d && d.ok) {
+        if (d.duration) state.probeCache[f.path] = d.duration;
+        if (d.envelope && d.envelope.length) {
+          if (!state.envCache) state.envCache = {};
+          state.envCache[f.path] = d.envelope;
+          updateRowMiniWave(f.path);
+        }
         if (!_probeBatchTimer) {
           _probeBatchTimer = setTimeout(() => {
             _probeBatchTimer = null;
@@ -1684,10 +2200,29 @@ function wireBrowserEvents() {
     }).catch(() => { searchPop.classList.add('hidden'); });
   };
 
+  const searchClear = $('#searchClear');
+  if (searchClear && searchInput) {
+    searchClear.onclick = () => {
+      searchInput.value = '';
+      searchClear.classList.add('hidden');
+      state.searchQ = '';
+      if (searchPop) searchPop.classList.add('hidden');
+      if (state.currentDir) {
+        state.searchPending = false;
+        state.searchGen = ++state.searchSeq;
+        loadDir(state.currentDir, false);
+      }
+      searchInput.focus();
+    };
+  }
+
   if (searchInput) {
     searchInput.addEventListener('input', (e) => {
       clearTimeout(searchTimer);
       const val = e.target.value;
+      if (searchClear) {
+        searchClear.classList.toggle('hidden', !val);
+      }
       updateSuggestions(val);
       searchTimer = setTimeout(() => {
         state.searchQ = val;
@@ -1718,19 +2253,6 @@ function wireBrowserEvents() {
     if (state.currentDir && !(state.searchQ || '').trim()) loadDir(state.currentDir, true);
     else paintFromRaw(true);
   };
-  $('#audioOnly').onclick = (e) => {
-    state.audioOnly = !state.audioOnly;
-    e.target.classList.toggle('on', state.audioOnly);
-    paintFromRaw(true);
-  };
-  const autoBtn = $('#autoPreview');
-  if (autoBtn) {
-    autoBtn.classList.toggle('on', state.autoPreview);
-    autoBtn.onclick = (e) => {
-      state.autoPreview = !state.autoPreview;
-      e.target.classList.toggle('on', state.autoPreview);
-    };
-  }
   const favBtn = $('#favOnly');
   if (favBtn) {
     favBtn.title = tr('browser.favOnly');
@@ -1757,15 +2279,43 @@ function wireBrowserEvents() {
       });
     };
   }
-  $('#files').addEventListener('scroll', () => {
+  const filesBox = $('#files');
+  filesBox.addEventListener('scroll', () => {
     paintVisible();
     clearTimeout(_scrollProbeTimer);
     _scrollProbeTimer = setTimeout(probeVisibleAudio, 100);
   });
 
+  filesBox.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    let row = e.target.closest('.file-row');
+    if (!row || !row._path) {
+      const box = $('#files');
+      if (box && state.files && state.files.length) {
+        const headerH = 24;
+        const rect = box.getBoundingClientRect();
+        const clickY = (e.clientY - rect.top) + box.scrollTop - headerH;
+        const rowH = getRowH();
+        const idx = Math.floor(clickY / rowH);
+        if (idx >= 0 && idx < state.files.length) {
+          selectEntry(state.files[idx]);
+          return;
+        }
+      }
+      return;
+    }
+    const f = (state.files || []).find((x) => x.path === row._path);
+    if (!f) return;
+    selectEntry(f);
+  });
+
   $('#btnPlay').onclick = () => {
-    if (state.playing) bridge('audio.stop').then(refreshPlayState);
-    else if (state.selected) playFile(state.selected);
+    if (state.playing) {
+      stopMidiPlayback();
+      bridge('audio.stop').then(refreshPlayState);
+    } else if (state.selected) {
+      playFile(state.selected);
+    }
   };
   $('#btnLoop').onclick = (e) => {
     state.loop = !state.loop;
@@ -1780,14 +2330,20 @@ function wireBrowserEvents() {
   if (keyTransBtn) {
     keyTransBtn.onclick = (e) => {
       e.stopPropagation();
-      $('#pianoTransposerPop')?.classList.toggle('hidden');
+      const pop = $('#pianoTransposerPop');
+      if (pop) {
+        pop.classList.toggle('hidden');
+        if (!pop.classList.contains('hidden')) {
+          updateTransposerPopUI();
+        }
+      }
     };
   }
   $$('#pianoKeyboard .piano-key').forEach((k) => {
     k.onclick = (e) => {
       e.stopPropagation();
-      const semitone = parseInt(k.dataset.semitone, 10);
-      setPitchShift(semitone);
+      const targetNote = k.dataset.note;
+      setTargetNote(targetNote);
     };
   });
   const resetKeyBtn = $('#btnResetKey');
@@ -1799,18 +2355,41 @@ function wireBrowserEvents() {
   }
   $('#btnLab').onclick = () => { if (state.selected) insertMediaLab(state.selected); };
   $('#volume').oninput = (e) => bridge('audio.setVolume', { value: +e.target.value });
-  $('#waveform').addEventListener('click', (e) => {
-    if (!state.duration) return;
-    const r = e.currentTarget.getBoundingClientRect();
-    const frac = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-    bridge('audio.seek', { fraction: frac });
-    state.position = frac;
-    drawWaveform();
-  });
+
+  const waveCanvas = $('#waveform');
+  if (waveCanvas) {
+    waveCanvas.title = tr('player.dragTip') || 'Kéo vào REAPER';
+    armOleDrag(waveCanvas, () => {
+      const curPath = state.selected || state.playingPath;
+      if (!curPath) return null;
+      const f = (state.files || []).find((x) => x.path === curPath);
+      return f || { path: curPath, isAudio: !isMidiFile(curPath) };
+    });
+    waveCanvas.addEventListener('click', (e) => {
+      if (state._suppressClick) return;
+      if (!state.duration) return;
+      const r = waveCanvas.getBoundingClientRect();
+      const frac = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+      bridge('audio.seek', { fraction: frac }).catch(() => {});
+      state.position = frac;
+      drawWaveform();
+    });
+  }
+
+  const trackInfoEl = $('#trackInfo');
+  if (trackInfoEl) {
+    trackInfoEl.style.cursor = 'grab';
+    trackInfoEl.title = tr('player.dragTip') || 'Kéo vào REAPER';
+    armOleDrag(trackInfoEl, () => {
+      const curPath = state.selected || state.playingPath;
+      if (!curPath) return null;
+      const f = (state.files || []).find((x) => x.path === curPath);
+      return f || { path: curPath, isAudio: !isMidiFile(curPath) };
+    });
+  }
 
   document.addEventListener('click', (e) => {
     if (!e.target.closest('#ctxMenu')) $('#ctxMenu')?.classList.add('hidden');
-    if (!e.target.closest('#settingsPop') && !e.target.closest('#btnSettings')) $('#settingsPop')?.classList.add('hidden');
     if (!e.target.closest('#pianoTransposerPop') && !e.target.closest('#btnKeyTransposer')) $('#pianoTransposerPop')?.classList.add('hidden');
   });
   document.addEventListener('keydown', onBrowserKey);
@@ -1856,11 +2435,14 @@ function onBrowserKey(e) {
   if (e.key === ' ') {
     e.preventDefault();
     if (state.playing) {
+      stopMidiPlayback();
       state.playing = false;
       const bp = $('#btnPlay');
       if (bp) bp.textContent = '>';
+      bridge('audio.stop').then(refreshPlayState);
+    } else if (state.selected) {
+      playFile(state.selected);
     }
-    bridge('reaper.playToggle').then(refreshPlayState);
     return;
   }
   if (state.tab !== 'browser') return;
@@ -1900,6 +2482,45 @@ async function playFile(path) {
       try { await bridge('audio.stop'); } catch {}
       state.playing = false;
     }
+    if (isMidiFile(path)) {
+      state.playingPath = path;
+      state.selected = path;
+      state.envelope = [];
+      const filename = path.split(/[\\/]/).pop() || '';
+      const info = $('#trackInfo');
+      if (info) info.textContent = `${filename} | MIDI Sequence`;
+      const tags = extractTagsFromFilename(filename);
+      state.sampleTags = tags;
+      renderPlayerTags(tags);
+
+      try {
+        const res = await bridge('audio.readMidi', { path });
+        if (res && res.ok && res.base64) {
+          const binStr = atob(res.base64);
+          const bytes = new Uint8Array(binStr.length);
+          for (let i = 0; i < binStr.length; ++i) bytes[i] = binStr.charCodeAt(i);
+          const parsed = parseMidiBuffer(bytes.buffer);
+          state.midiNotes = parsed.notes;
+          state.duration = parsed.duration;
+          state.originalRootNote = parsed.tonic;
+          if (state.isUserTargetKeyLocked && state.userTargetNote) {
+            state.selectedTargetNote = state.userTargetNote;
+            state.pitchSemitones = calculateSemitoneDistance(parsed.tonic, state.userTargetNote);
+          } else {
+            state.selectedTargetNote = parsed.tonic;
+            state.pitchSemitones = 0;
+          }
+          updateTransposerPopUI();
+
+          playMidiEvents(parsed.notes, parsed.duration);
+          drawWaveform();
+          return;
+        }
+      } catch (err) {
+        console.warn('MIDI read error:', err);
+      }
+      return;
+    }
     const fileObj = (state.files || []).find((x) => x.path === path);
     const sampleBpm = (fileObj && fileObj.bpm) || (state.selected === path ? state.sampleBpm : 0) || 0;
     const d = await bridge('audio.play', {
@@ -1927,17 +2548,28 @@ async function playFile(path) {
     state.sampleTags = tags;
     renderPlayerTags(tags);
 
-    // BPM & Key extraction: try DB via getSampleMeta first, fallback to filename regex
-    const keyLabel = $('#playerKeyLabel');
-    // Default from filename
+    // BPM & Key extraction: try filename first, then DB lookup
     const bpmMatch = filename.match(/(\d+)\s*bpm/i);
     const filenameBpm = bpmMatch ? parseFloat(bpmMatch[1]) : 0;
-    const keyMatch = filename.match(/_([A-G][#b]?(?:m|maj|min|minor|major)?)(?:_|\.|$)/i);
-    const filenameKey = keyMatch ? keyMatch[1].toUpperCase() : 'ORIGINAL';
+    const filenameKey = extractKeyFromFilename(filename) || 'C';
+
+    const rootNote = extractRootNoteName(filenameKey);
+    state.originalRootNote = rootNote;
+    if (state.isUserTargetKeyLocked && state.userTargetNote) {
+      state.selectedTargetNote = state.userTargetNote;
+      state.pitchSemitones = calculateSemitoneDistance(rootNote, state.userTargetNote);
+    } else {
+      state.selectedTargetNote = rootNote;
+      state.pitchSemitones = 0;
+    }
+    updateTransposerPopUI();
+    if (state.pitchSemitones !== 0) {
+      bridge('audio.setPitchShift', { semitones: state.pitchSemitones }).catch(()=>{});
+    }
 
     // Try to get real metadata from DB / detection
     bridge('audio.getSampleMeta', { path }).then((meta) => {
-      let bpm = 0, key = 'ORIGINAL';
+      let bpm = 0, key = '';
       let genre = '', mood = '';
       if (meta && meta.ok !== false) {
         if (meta.bpm && meta.bpm > 30) bpm = meta.bpm;
@@ -1945,22 +2577,32 @@ async function playFile(path) {
         if (meta.genre) genre = meta.genre;
         if (meta.mood) mood = meta.mood;
       }
-      // Fallback to filename if DB has nothing
       if (!bpm) bpm = filenameBpm;
-      if (key === 'ORIGINAL' || !key) key = filenameKey;
+      if (!key || key === 'ORIGINAL') key = filenameKey;
 
       state.sampleBpm = bpm || 0;
-      state.sampleKey = key || 'ORIGINAL';
+      state.sampleKey = key || 'C';
 
-      // Update key label
-      if (keyLabel) keyLabel.textContent = calculateTransposedKey(state.sampleKey, state.pitchSemitones);
+      const detectedRoot = extractRootNoteName(state.sampleKey);
+      state.originalRootNote = detectedRoot;
+      if (state.isUserTargetKeyLocked && state.userTargetNote) {
+        state.selectedTargetNote = state.userTargetNote;
+        state.pitchSemitones = calculateSemitoneDistance(detectedRoot, state.userTargetNote);
+      } else {
+        state.selectedTargetNote = detectedRoot;
+        state.pitchSemitones = 0;
+      }
+
+      updateTransposerPopUI();
+      if (state.pitchSemitones !== 0) {
+        bridge('audio.setPitchShift', { semitones: state.pitchSemitones }).catch(()=>{});
+      }
 
       // Render tags from DB if available, else heuristic
       if (genre || mood) {
         const tags = [];
         if (genre) tags.push({ name: genre, type: 'genre' });
         if (mood) tags.push({ name: mood, type: 'mood' });
-        // Also add key as tag
         if (key && key !== 'ORIGINAL') tags.push({ name: key, type: 'prop' });
         state.sampleTags = tags;
         renderPlayerTags(tags);
@@ -1974,29 +2616,97 @@ async function playFile(path) {
         }).catch(()=>{});
       }
     }).catch(() => {
-      // Fallback to filename only
       state.sampleBpm = filenameBpm;
       state.sampleKey = filenameKey;
-      if (keyLabel) keyLabel.textContent = calculateTransposedKey(state.sampleKey, state.pitchSemitones);
+      updateTransposerPopUI();
     });
 
-    if (keyLabel && !keyLabel.textContent) keyLabel.textContent = calculateTransposedKey(state.sampleKey, state.pitchSemitones);
+    if (keyLabel && !keyLabel.textContent) keyLabel.textContent = state.selectedTargetNote || 'C';
 
+    startPlayerAnimLoop();
     drawWaveform();
   } catch {
     toast(tr('toast.decodeFail'));
   }
 }
+
+let _meterSmoothedVal = 0;
+let _playerRafId = null;
+
+function startPlayerAnimLoop() {
+  if (_playerRafId) return;
+  let lastTime = performance.now();
+
+  function step(now) {
+    if (!state.playing) {
+      _meterSmoothedVal = 0;
+      _playerRafId = null;
+      drawMeterSmoothed(0);
+      drawWaveform();
+      return;
+    }
+
+    const dt = Math.min(0.08, (now - lastTime) / 1000);
+    lastTime = now;
+
+    // Smoothly extrapolate position at 60 FPS
+    if (state.duration > 0) {
+      state.position = Math.min(1, state.position + dt / state.duration);
+    }
+
+    // Target peak from envelope at current position
+    const curPath = state.selected || state.playingPath || '';
+    const env = (state.envelope && state.envelope.length) ? state.envelope : ((state.envCache && state.envCache[curPath]) || []);
+    let targetPeak = state.peak || 0;
+    if (env && env.length > 0) {
+      const idx = Math.min(env.length - 1, Math.floor(Math.max(0, state.position) * env.length));
+      targetPeak = Math.max(targetPeak, env[idx] || 0);
+    } else {
+      targetPeak = Math.max(targetPeak, 0.4);
+    }
+
+    // Analog hardware VU meter ballistics: Instant attack, smooth exponential decay
+    if (targetPeak > _meterSmoothedVal) {
+      _meterSmoothedVal = targetPeak; // Instant transient attack
+    } else {
+      _meterSmoothedVal = Math.max(0, _meterSmoothedVal - dt * 2.4); // Organic smooth decay
+    }
+
+    const timeLbl = $('#timeLabel');
+    if (timeLbl) timeLbl.textContent = `${(state.position * state.duration).toFixed(1)} / ${state.duration.toFixed(1)}s`;
+    drawMeterSmoothed(_meterSmoothedVal);
+    drawWaveform();
+
+    _playerRafId = requestAnimationFrame(step);
+  }
+  _playerRafId = requestAnimationFrame(step);
+}
+
 function refreshPlayState() {
   state.playing = false;
-  $('#btnPlay').textContent = '>';
+  if (_playerRafId) {
+    cancelAnimationFrame(_playerRafId);
+    _playerRafId = null;
+  }
+  _meterSmoothedVal = 0;
+  const bp = $('#btnPlay');
+  if (bp) {
+    bp.textContent = '>';
+    bp.classList.remove('playing');
+  }
+  drawMeterSmoothed(0);
   drawWaveform();
 }
+
 function updatePreviewLive() {
-  $('#timeLabel').textContent = `${(state.position * state.duration).toFixed(1)} / ${state.duration.toFixed(1)}s`;
-  drawMeter();
-  drawWaveform();
+  const timeLbl = $('#timeLabel');
+  if (timeLbl) timeLbl.textContent = `${(state.position * state.duration).toFixed(1)} / ${state.duration.toFixed(1)}s`;
+  if (!state.playing) {
+    drawMeterSmoothed(0);
+    drawWaveform();
+  }
 }
+
 function drawWaveform() {
   const c = $('#waveform');
   if (!c) return;
@@ -2007,54 +2717,182 @@ function drawWaveform() {
   const ctx = c.getContext('2d');
   const W = c.width, H = c.height;
   ctx.clearRect(0, 0, W, H);
-  const acc = state._accentCache || '#FF6B2C';
-  const env = state.envelope;
+  const curPath = state.selected || state.playingPath || '';
+
+  if (isMidiFile(curPath)) {
+    // Piano Roll Canvas Rendering for MIDI files
+    const rows = 8;
+    const cols = 16;
+    const cellH = H / rows;
+    const cellW = W / cols;
+
+    // Background grid
+    ctx.fillStyle = '#0B0E14';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+    ctx.lineWidth = 1;
+    for (let r = 0; r <= rows; ++r) {
+      ctx.beginPath();
+      ctx.moveTo(0, r * cellH);
+      ctx.lineTo(W, r * cellH);
+      ctx.stroke();
+    }
+    for (let col = 0; col <= cols; ++col) {
+      ctx.beginPath();
+      ctx.moveTo(col * cellW, 0);
+      ctx.lineTo(col * cellW, H);
+      ctx.stroke();
+    }
+
+    const notes = state.midiNotes;
+    const dur = state.duration || 4.0;
+    const shift = state.pitchSemitones || 0;
+
+    if (notes && notes.length > 0) {
+      let minNote = 127, maxNote = 0;
+      notes.forEach(n => {
+        minNote = Math.min(minNote, n.note);
+        maxNote = Math.max(maxNote, n.note);
+      });
+      if (minNote > maxNote) { minNote = 48; maxNote = 72; }
+      const noteRange = Math.max(12, maxNote - minNote + 2);
+      const curTime = state.position * dur;
+
+      notes.forEach((n) => {
+        const nx = (n.time / dur) * W;
+        const nw = Math.max(3, (n.duration / dur) * W - 1);
+        const transposedMidi = n.note + shift;
+        const normPitch = (transposedMidi - minNote) / noteRange;
+        const ny = H - 6 - Math.max(0, Math.min(H - 8, normPitch * (H - 8)));
+        const nh = Math.max(3, cellH - 1);
+
+        const isNoteActive = state.playing && (curTime >= n.time && curTime <= n.time + n.duration);
+
+        const grad = ctx.createLinearGradient(nx, ny, nx + nw, ny);
+        if (isNoteActive) {
+          grad.addColorStop(0, '#FFFFFF');
+          grad.addColorStop(1, '#38BDF8');
+        } else {
+          grad.addColorStop(0, '#38BDF8');
+          grad.addColorStop(1, '#0284C7');
+        }
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(nx, ny, nw, nh, 1.5);
+        else ctx.rect(nx, ny, nw, nh);
+        ctx.fill();
+      });
+    } else {
+      // Fallback
+      let pathHash = 0;
+      for (let i = 0; i < curPath.length; ++i) {
+        pathHash = (Math.imul(31, pathHash) + curPath.charCodeAt(i)) | 0;
+      }
+      const baseRootIdx = NOTE_NAMES.indexOf(state.originalRootNote || 'C');
+      const numNotes = 20;
+      for (let i = 0; i < numNotes; ++i) {
+        const step = ((i * 3 + ((pathHash >> (i % 8)) & 3)) % cols);
+        const span = 1 + (((pathHash >> ((i + 2) % 8)) & 3) % 3);
+        const noteDegree = ((i * 2 + (pathHash & 7)) % 12);
+        const transposedPitch = (baseRootIdx + noteDegree + shift + 120) % 12;
+        const pitchRow = 7 - Math.floor((transposedPitch / 12) * 8);
+
+        const nx = step * cellW + 1;
+        const ny = pitchRow * cellH + 1.5;
+        const nw = Math.max(8, span * cellW - 2);
+        const nh = Math.max(2, cellH - 3);
+
+        const grad = ctx.createLinearGradient(nx, ny, nx + nw, ny);
+        grad.addColorStop(0, '#38BDF8');
+        grad.addColorStop(1, '#0284C7');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(nx, ny, nw, nh, 2);
+        else ctx.rect(nx, ny, nw, nh);
+        ctx.fill();
+      }
+    }
+
+    // Playhead line
+    const px = (W - 2) * Math.min(1, Math.max(0, state.position));
+    if (state.playing || state.position > 0) {
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.fillRect(px, 0, 1.2, H);
+    }
+    return;
+  }
+
+  // Audio Waveform Rendering
+  const env = (state.envelope && state.envelope.length) ? state.envelope : ((state.envCache && state.envCache[curPath]) || []);
   const mid = H / 2;
-  const amp = H / 2 - 2;
+  const amp = H / 2 - 3;
   const px = (W - 2) * Math.min(1, Math.max(0, state.position));
+
+  // Centerline
+  ctx.fillStyle = 'rgba(255,255,255,0.05)';
+  ctx.fillRect(0, mid - 0.5, W, 1);
 
   if (env && env.length) {
     const numBars = env.length;
     const barW = W / numBars;
-    const drawW = Math.max(1, barW - 0.7);
+    const drawW = Math.max(1, barW - 1.2); // Airy, separated micro-bars
 
-    // Render waveform bars with played vs unplayed two-tone coloring
     for (let i = 0; i < numBars; ++i) {
       const x = i * barW;
       const val = env[i];
       const curved = Math.pow(Math.min(1, val), 0.75);
-      const h = Math.max(0.75, curved * amp);
+      const h = Math.max(1, curved * amp);
       const isPlayed = (x + barW / 2) <= px;
 
-      ctx.fillStyle = isPlayed ? acc : 'rgba(255,255,255,0.22)';
-      ctx.fillRect(x, mid - h, drawW, Math.max(1.5, h * 2));
+      // Soft, non-glaring Studio Slate-Cyan & muted white
+      ctx.fillStyle = isPlayed ? 'rgba(56, 189, 248, 0.75)' : 'rgba(255,255,255,0.12)';
+
+      const barY = mid - h;
+      const barH = Math.max(2, h * 2);
+      if (ctx.roundRect) {
+        ctx.beginPath();
+        ctx.roundRect(x, barY, drawW, barH, 0.6);
+        ctx.fill();
+      } else {
+        ctx.fillRect(x, barY, drawW, barH);
+      }
     }
 
     // Playhead cursor
     if (state.playing || state.position > 0) {
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(px, 0, 1.5, H);
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.fillRect(px, 0, 1.2, H);
     }
   } else {
-    // Centerline when idle / loading
-    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    // Subtle idle placeholder
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
     ctx.fillRect(0, mid - 0.5, W, 1);
-    if (state.playing || state.position > 0) {
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(px, 0, 1.5, H);
-    }
   }
 }
-function drawMeter() {
+
+function drawMeterSmoothed(peak) {
   const c = $('#meter');
+  if (!c) return;
   const w = c.clientWidth || 300;
   if (c.width !== w) c.width = w;
   const ctx = c.getContext('2d');
   const W = c.width, H = c.height;
   ctx.clearRect(0, 0, W, H);
-  const fillW = (W - 4) * Math.min(1, state.peak);
-  ctx.fillStyle = state._accentCache || '#FF6B2C';
-  if (fillW > 0.5) ctx.fillRect(2, 2, fillW, H - 4);
+  if (!state.playing || peak <= 0.01) return;
+
+  const fillW = Math.max(2, W * Math.min(1, Math.pow(peak, 0.75) * 1.05));
+  const grad = ctx.createLinearGradient(0, 0, W, 0);
+  grad.addColorStop(0, '#2EA0D6');
+  grad.addColorStop(0.65, '#22C55E');
+  grad.addColorStop(0.85, '#EAB308');
+  grad.addColorStop(1, '#EF4444');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, fillW, H);
+}
+
+function drawMeter() {
+  drawMeterSmoothed(_meterSmoothedVal || state.peak || 0);
 }
 
 // ============ Insert / Lab ============
@@ -2132,6 +2970,34 @@ function startDelete(f) {
 }
 
 // ============ Context menus ============
+function positionContextMenu(e) {
+  const m = $('#ctxMenu');
+  if (!m) return;
+  m.style.visibility = 'hidden';
+  m.classList.remove('hidden');
+
+  const mw = m.offsetWidth || 210;
+  const mh = m.offsetHeight || 240;
+  const winW = window.innerWidth;
+  const winH = window.innerHeight;
+
+  let x = e.clientX;
+  let y = e.clientY;
+
+  // Flip left if near right edge
+  if (x + mw > winW - 8) {
+    x = Math.max(8, x - mw);
+  }
+  // Flip up if near bottom edge
+  if (y + mh > winH - 8) {
+    y = Math.max(8, y - mh);
+  }
+
+  m.style.left = `${x}px`;
+  m.style.top = `${y}px`;
+  m.style.visibility = 'visible';
+}
+
 function showMenu(e, items) {
   const m = $('#ctxMenu');
   m.innerHTML = '';
@@ -2143,10 +3009,7 @@ function showMenu(e, items) {
     row.onclick = () => { m.classList.add('hidden'); it.action(); };
     m.appendChild(row);
   });
-  m.classList.remove('hidden');
-  const mw = 250, mh = m.offsetHeight || 200;
-  m.style.left = Math.min(e.clientX, window.innerWidth - mw - 8) + 'px';
-  m.style.top = Math.min(e.clientY, window.innerHeight - mh - 8) + 'px';
+  positionContextMenu(e);
 }
 function triggerFolderScan(folderPath, forceRescan = false) {
   if (!folderPath) return;
@@ -2248,6 +3111,7 @@ function fileMenu(e, f) {
   tagSwatchRow.appendChild(swatches);
   m.appendChild(el('div', 'ctx-sep'));
   m.appendChild(tagSwatchRow);
+  positionContextMenu(e);
 }
 
 function folderMenu(e, path) {
@@ -2491,7 +3355,6 @@ async function initVersion() {
 }
 
 async function boot() {
-  buildSettingsPop();
   applyStubVisibility();
   await initSettings();
   renderNav();

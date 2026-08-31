@@ -1,7 +1,8 @@
-# Original User Request
+## 2026-08-31T08:14:30Z
+<USER_REQUEST>
+Your working directory is: c:\Users\smk28\Desktop\reals lab extension\.agents\teamwork_preview_victory_auditor_1
 
-## Initial Request — 2026-08-31T07:18:50Z
-
+<original_task>
 Perform a comprehensive adversarial code audit, performance benchmarking, and regression verification for the File Browser recursive sample/MIDI listing feature in Reals Lab extension for REAPER.
 
 Requirements:
@@ -27,3 +28,6 @@ Rules & Environment:
 - Follow AGENTS.md rules (C++20, zero-warning, pass ctest, commit conventions).
 - Execute the SWE Light loop (one teamwork_preview_implementer, then repeated teamwork_preview_reviewer rounds).
 - When done, report back with your final handoff and victory claim.
+</original_task>
+
+</USER_REQUEST>

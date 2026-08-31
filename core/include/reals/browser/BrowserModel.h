@@ -14,6 +14,7 @@ namespace reals::browser {
 
 struct FileEntry {
     std::string name;
+    std::string lowerName;
     std::string path;
     std::string ext;     // lowercase, without dot
     unsigned long long sizeBytes = 0;

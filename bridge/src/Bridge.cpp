@@ -26,6 +26,7 @@
 #include <cstdio>
 #include <deque>
 #include <filesystem>
+#include <fstream>
 #include <mutex>
 #include <regex>
 #include <thread>
@@ -158,7 +159,7 @@ struct Bridge::Impl {
     std::string syncPath;
     float syncSampleBpm = 0.0f;
 
-    // Helper: detect BPM for a file (DB -> filename -> TempoDetector)
+    // Helper: detect BPM for a file (DB -> filename regex -> TempoDetector)
     float detectBpmForPath(const std::string& path) {
         if (path.empty()) return 0.0f;
         // 1. DB lookup
@@ -166,32 +167,49 @@ struct Bridge::Impl {
             LOG_INFO("SYNC_DIAG", "detectBpmForPath: found in DB: " + path + " -> " + std::to_string(rec->bpm));
             return static_cast<float>(rec->bpm);
         }
-        // 2. Filename regex: e.g. "Loop_128bpm" or "128 BPM"
+        // 2. Comprehensive filename regex:
+        //    a. "128bpm", "128.5 BPM", "128_bpm", "128-bpm"
+        //    b. "BPM128", "bpm_128", "tempo_130"
+        //    c. "Drums_128_Am.wav", "[125] Synth.wav", "140_Kick.wav"
         try {
-            std::regex re(R"((\d{2,3})\s*bpm)", std::regex_constants::icase);
-            std::smatch m;
             std::string fname;
             try {
                 auto p = platform::u8path(path);
                 fname = platform::pathToUtf8(p.filename());
             } catch (...) { fname = path; }
             if (fname.empty()) fname = path;
-            if (std::regex_search(fname, m, re) && m.size() > 1) {
-                float v = std::stof(m[1].str());
-                if (v >= 40.0f && v <= 250.0f) {
-                    LOG_INFO("SYNC_DIAG", "detectBpmForPath: found from filename regex: " + fname + " -> " + std::to_string(v));
-                    return v;
+
+            std::smatch m;
+            static const std::vector<std::regex> kRegexes = {
+                std::regex(R"((\d{2,3}(?:\.\d+)?)\s*(?:bpm|tempo))", std::regex_constants::icase),
+                std::regex(R"((?:bpm|tempo)[_\s-]*(\d{2,3}(?:\.\d+)?))", std::regex_constants::icase),
+                std::regex(R"((?:^|[_\s\(\[\-])(\d{2,3})(?:[_\s\)\]\-]|\.(?:wav|mp3|flac|ogg|aif|aiff|m4a|mid|midi)))", std::regex_constants::icase)
+            };
+
+            for (const auto& re : kRegexes) {
+                if (std::regex_search(fname, m, re) && m.size() > 1) {
+                    float v = std::stof(m[1].str());
+                    if (v >= 50.0f && v <= 240.0f) {
+                        LOG_INFO("SYNC_DIAG", "detectBpmForPath: found from filename regex: " + fname + " -> " + std::to_string(v));
+                        return v;
+                    }
                 }
-            }
-            // Also try full path
-            if (std::regex_search(path, m, re) && m.size() > 1) {
-                float v = std::stof(m[1].str());
-                if (v >= 40.0f && v <= 250.0f) {
-                    LOG_INFO("SYNC_DIAG", "detectBpmForPath: found from full path regex: " + path + " -> " + std::to_string(v));
-                    return v;
+                if (std::regex_search(path, m, re) && m.size() > 1) {
+                    float v = std::stof(m[1].str());
+                    if (v >= 50.0f && v <= 240.0f) {
+                        LOG_INFO("SYNC_DIAG", "detectBpmForPath: found from path regex: " + path + " -> " + std::to_string(v));
+                        return v;
+                    }
                 }
             }
         } catch (...) {}
+
+        // MIDI files do not have PCM audio waveforms for TempoDetector
+        const std::string lowerP = platform::toLowerUtf8(path);
+        if (lowerP.ends_with(".mid") || lowerP.ends_with(".midi")) {
+            return 0.0f;
+        }
+
         // 3. Local TempoDetector (decode up to 30s mono)
         float bpm = audio::Engine::detectBpm(path);
         if (bpm >= 40.0f && bpm <= 250.0f) {
@@ -219,23 +237,55 @@ struct Bridge::Impl {
             }
             return k;
         }
-        // 2. Filename regex: _C#m, _F#_ etc.
+        // 2. Filename regex & Camelot parsing
         try {
-            std::regex re(R"(_([A-G][#b]?(?:m|maj|min|minor|major)?)(?:_|\.|$))", std::regex_constants::icase);
-            std::smatch m;
             std::string fname;
             try {
                 auto p = platform::u8path(path);
                 fname = platform::pathToUtf8(p.filename());
             } catch (...) { fname = path; }
             if (fname.empty()) fname = path;
-            if (std::regex_search(fname, m, re) && m.size() > 1) {
-                std::string k = m[1].str();
-                // Normalize to uppercase
-                for (auto& c : k) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-                return k;
+
+            static const std::regex camelotRe(R"((?:^|[\s_\-\(\[])([1-9]|1[0-2])([ABab])(?:[\s_\-\)\]]|\.|$))");
+            std::smatch cm;
+            if (std::regex_search(fname, cm, camelotRe) && cm.size() > 2) {
+                int num = std::stoi(cm[1].str());
+                char let = static_cast<char>(std::toupper(static_cast<unsigned char>(cm[2].str()[0])));
+                static const std::unordered_map<std::string, std::string> cMap = {
+                    {"1B", "B"}, {"2B", "F#"}, {"3B", "C#"}, {"4B", "G#"}, {"5B", "D#"}, {"6B", "A#"},
+                    {"7B", "F"}, {"8B", "C"}, {"9B", "G"}, {"10B", "D"}, {"11B", "A"}, {"12B", "E"},
+                    {"1A", "G#m"}, {"2A", "D#m"}, {"3A", "A#m"}, {"4A", "Fm"}, {"5A", "Cm"}, {"6A", "Gm"},
+                    {"7A", "Dm"}, {"8A", "Am"}, {"9A", "Em"}, {"10A", "Bm"}, {"11A", "F#m"}, {"12A", "C#m"}
+                };
+                std::string keyCombo = std::to_string(num) + let;
+                auto it = cMap.find(keyCombo);
+                if (it != cMap.end()) return it->second;
+            }
+
+            static const std::regex keyRe(R"((?:^|[\s_\-\(\[])([A-G][#b]?)(?:m|maj|min|minor|major)?(?:\s+(?:maj|min|minor|major))?(?:[\s_\-\)\]]|\.|$))", std::regex_constants::icase);
+            std::smatch km;
+            if (std::regex_search(fname, km, keyRe) && km.size() > 1) {
+                std::string k = km[1].str();
+                if (!k.empty()) {
+                    k[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(k[0])));
+                    if (k.size() > 1) {
+                        if (k[1] == 'b' || k[1] == 'B') {
+                            if (k[0] == 'D') k = "C#";
+                            else if (k[0] == 'E') k = "D#";
+                            else if (k[0] == 'G') k = "F#";
+                            else if (k[0] == 'A') k = "G#";
+                            else if (k[0] == 'B') k = "A#";
+                        }
+                    }
+                    return k;
+                }
             }
         } catch (...) {}
+        // MIDI files do not have PCM audio waveforms for KeyDetector
+        const std::string lowerP = platform::toLowerUtf8(path);
+        if (lowerP.ends_with(".mid") || lowerP.ends_with(".midi")) {
+            return {};
+        }
         // 3. Local KeyDetector
         std::string k = audio::Engine::detectKey(path);
         if (!k.empty()) {
@@ -992,30 +1042,81 @@ std::string Bridge::handle(const std::string& requestJson) {
             res["ok"] = true;
         } else if (cmd == "audio.probe") {
             const std::string p = narrowPath(args.value("path", ""));
-            audio::TrackInfo info;
-            bool found = false;
-            {
-                const std::lock_guard lock(m_impl->cacheMutex);
-                auto it = m_impl->probeCache.find(p);
-                if (it != m_impl->probeCache.end()) {
-                    info = it->second;
-                    found = true;
-                }
-            }
-            if (!found) {
-                info = audio::Engine::probeFile(p);
-                if (info.sampleRate > 0) {
+            const std::string lowerP = platform::toLowerUtf8(p);
+            if (lowerP.ends_with(".mid") || lowerP.ends_with(".midi")) {
+                json d;
+                d["duration"] = 0.0;
+                d["sampleRate"] = 0;
+                d["channels"] = 0;
+                d["ok"] = false;
+                res["ok"] = true;
+                res["data"] = d;
+            } else {
+                audio::TrackInfo info;
+                bool found = false;
+                std::vector<float> env;
+                {
                     const std::lock_guard lock(m_impl->cacheMutex);
-                    m_impl->probeCache[p] = info;
+                    auto it = m_impl->probeCache.find(p);
+                    if (it != m_impl->probeCache.end()) {
+                        info = it->second;
+                        found = true;
+                    }
+                    auto itEnv = m_impl->envCache.find(p);
+                    if (itEnv != m_impl->envCache.end()) {
+                        env = itEnv->second;
+                    }
                 }
+                if (!found) {
+                    info = audio::Engine::probeFile(p);
+                    if (info.sampleRate > 0) {
+                        const std::lock_guard lock(m_impl->cacheMutex);
+                        m_impl->probeCache[p] = info;
+                    }
+                }
+                if (env.empty() && info.sampleRate > 0) {
+                    m_impl->runEnvelopeScan(p);
+                }
+                json d;
+                d["duration"] = info.durationSeconds;
+                d["sampleRate"] = info.sampleRate;
+                d["channels"] = info.channels;
+                d["envelope"] = env;
+                d["ok"] = info.sampleRate > 0;
+                res["ok"] = true;
+                res["data"] = d;
             }
-            json d;
-            d["duration"] = info.durationSeconds;
-            d["sampleRate"] = info.sampleRate;
-            d["channels"] = info.channels;
-            d["ok"] = info.sampleRate > 0;
-            res["ok"] = true;
-            res["data"] = d;
+        } else if (cmd == "audio.readMidi" || cmd == "fs.readBase64") {
+            const std::string p = narrowPath(args.value("path", ""));
+            std::ifstream file(platform::u8path(p), std::ios::binary);
+            if (file.is_open()) {
+                std::vector<uint8_t> buffer((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+                static const char base64_chars[] =
+                    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                    "abcdefghijklmnopqrstuvwxyz"
+                    "0123456789+/";
+                std::string b64;
+                b64.reserve(((buffer.size() + 2) / 3) * 4);
+                size_t i = 0;
+                while (i < buffer.size()) {
+                    uint32_t octet_a = i < buffer.size() ? buffer[i++] : 0;
+                    uint32_t octet_b = i < buffer.size() ? buffer[i++] : 0;
+                    uint32_t octet_c = i < buffer.size() ? buffer[i++] : 0;
+                    uint32_t triple = (octet_a << 16) | (octet_b << 8) | octet_c;
+                    b64.push_back(base64_chars[(triple >> 18) & 0x3F]);
+                    b64.push_back(base64_chars[(triple >> 12) & 0x3F]);
+                    b64.push_back(i > buffer.size() + 1 ? '=' : base64_chars[(triple >> 6) & 0x3F]);
+                    b64.push_back(i > buffer.size() ? '=' : base64_chars[triple & 0x3F]);
+                }
+                json d;
+                d["base64"] = b64;
+                d["size"] = buffer.size();
+                res["ok"] = true;
+                res["data"] = d;
+            } else {
+                res["ok"] = false;
+                res["error"] = "Cannot open file";
+            }
         } else if (cmd == "audio.seek") {
             eng.seekFraction(args.value("fraction", 0.0));
             res["ok"] = true;
@@ -1215,6 +1316,11 @@ std::string Bridge::handle(const std::string& requestJson) {
                 res["ok"] = false;
                 res["error"] = "file not found";
             } else {
+                const std::string lowerP = platform::toLowerUtf8(p);
+                if (lowerP.ends_with(".mid") || lowerP.ends_with(".midi")) {
+                    res["ok"] = false;
+                    res["error"] = "MIDI files do not support audio AI analysis";
+                } else {
                 // Decode the REAL audio (mono, capped at 30 s). The previous
                 // implementation synthesized a 440 Hz sine here, so every
                 // tempo/key/genre/mood/embedding result was fabricated.
@@ -1305,6 +1411,7 @@ std::string Bridge::handle(const std::string& requestJson) {
 
                 res["ok"] = true;
                 res["data"] = {{"analysis", analysis}};
+                }
                 }
             }
         } else if (cmd == "ai.searchSemantic") {
@@ -1660,12 +1767,13 @@ std::string Bridge::handle(const std::string& requestJson) {
                 // rendering synchronously on the WebView message thread adds
                 // drag latency and re-introduces the double-DSP problem the
                 // DragExporter safeguard (Mechanism B) exists to clean up.
-                if (syncOn || std::abs(pitchShift) > 0.001) {
-                    float sampleBpm = args.value("sampleBpm", 0.0f);
-                    if (sampleBpm <= 0.0f) {
-                        sampleBpm = m_impl->detectBpmForPath(p);
-                    }
-                    double projectBpm = m_actions->projectTempo();
+                float sampleBpm = args.value("sampleBpm", 0.0f);
+                if (sampleBpm <= 0.0f) {
+                    sampleBpm = m_impl->detectBpmForPath(p);
+                }
+                double projectBpm = m_actions->projectTempo();
+
+                if (syncOn || std::abs(pitchShift) > 0.001 || (sampleBpm > 30.0f && projectBpm > 30.0f)) {
                     double playrate = 1.0;
                     if (sampleBpm > 30.0f && projectBpm > 30.0) {
                         playrate = projectBpm / sampleBpm;

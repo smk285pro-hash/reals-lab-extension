@@ -49,6 +49,20 @@ bool ensureDir(std::string_view path);
 // List immediate files of a directory (names only, UTF-8).
 [[nodiscard]] std::vector<std::string> listFiles(std::string_view dir);
 
+struct DirEntryInfo {
+    std::string name;
+    std::string lowerName;
+    std::string fullPath;
+    unsigned long long sizeBytes = 0;
+    long long modifiedEpoch = 0;
+    bool isDirectory = false;
+};
+
+// Fast recursive directory enumeration (uses FindFirstFileExW/large fetch on Windows,
+// directory_iterator on POSIX). Automatically skips hidden/system directories.
+[[nodiscard]] std::vector<DirEntryInfo> scanDirectoryRecursive(
+    std::string_view rootDir, int maxDepth = 6, size_t maxFiles = 5000);
+
 // Unicode-aware lowercase for UTF-8 strings (Vietnamese/Japanese filenames).
 // ASCII-only on platforms without a case API; full Unicode on Windows.
 [[nodiscard]] std::string toLowerUtf8(std::string_view s);

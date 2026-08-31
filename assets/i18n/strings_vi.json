@@ -45,6 +45,7 @@
   "browser.tagFilter": "Nhãn",
   "browser.parent": "Thư mục cha",
   "browser.searching": "Đang tìm...",
+  "browser.loadingSamples": "Đang tải sample...",
   "browser.ctx.clearRecents": "Xóa vừa mở",
   "browser.refresh": "Làm mới",
   "browser.favorites": "Yêu thích",
@@ -179,5 +180,6 @@
   "toast.scannerError": "Lỗi quét",
   "toast.similarError": "Lỗi tìm mẫu tương tự",
   "sync.noBpm": "Sync: không tìm thấy BPM, thử 120",
+  "player.dragTip": "Kéo vào REAPER",
   "lab.alreadyRunning": "Đang có job chạy — chờ xong đã nhé"
 }
