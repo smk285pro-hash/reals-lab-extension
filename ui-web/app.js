@@ -2137,22 +2137,17 @@ function openDir(path) {
 }
 
 function paintLoadingFiles() {
+  const header = $('#filesHead');
+  if (header) header.textContent = state.currentDir || tr('browser.pickRoot');
   const box = $('#files');
   if (!box) return;
-
-  const frag = document.createDocumentFragment();
-  const header = el('div', 'files-head');
-  header.textContent = state.currentDir || tr('browser.pickRoot');
-  frag.appendChild(header);
 
   const loader = el('div', 'files-loader');
   const spinner = el('div', 'loading-spinner');
   const text = el('div', 'loading-text', tr('browser.loadingSamples'));
   loader.appendChild(spinner);
   loader.appendChild(text);
-  frag.appendChild(loader);
-
-  box.replaceChildren(frag);
+  box.replaceChildren(loader);
 }
 
 function loadDir(path, force) {
@@ -2206,20 +2201,18 @@ function paintFromRaw(preserveScroll = false) {
 
   const savedScroll = preserveScroll ? box.scrollTop : (state.searchQ ? 0 : (state.dirScrolls[state.currentDir] || 0));
 
-  let header = box.querySelector('.files-head');
-  if (!header) {
-    header = el('div', 'files-head');
-    box.appendChild(header);
-  }
-  const q = (state.searchQ || '').trim();
-  if (state.similarSource) {
-    header.textContent = `${tr('browser.similarTo')}: ${state.similarSourceName || ''} (${state.files.length})`;
-  } else if (state.favOnly) {
-    header.textContent = `★ ${tr('browser.favOnly')} (${state.files.length})`;
-  } else {
-    header.textContent = q
-      ? (state.searchPending ? tr('browser.searching') : `${tr('browser.results')}: ${state.files.length}`)
-      : (state.currentDir || tr('browser.pickRoot'));
+  const header = $('#filesHead') || box.querySelector('.files-head');
+  if (header) {
+    const q = (state.searchQ || '').trim();
+    if (state.similarSource) {
+      header.textContent = `${tr('browser.similarTo')}: ${state.similarSourceName || ''} (${state.files.length})`;
+    } else if (state.favOnly) {
+      header.textContent = `★ ${tr('browser.favOnly')} (${state.files.length})`;
+    } else {
+      header.textContent = q
+        ? (state.searchPending ? tr('browser.searching') : `${tr('browser.results')}: ${state.files.length}`)
+        : (state.currentDir || tr('browser.pickRoot'));
+    }
   }
 
   paintSimilarBanner();
@@ -2242,11 +2235,10 @@ function paintVisible() {
   const box = $('#files');
   if (!spacer || !box) return;
   const files = state.files;
-  const headerH = 24;
   const total = files.length;
   const rowH = getRowH();
   spacer.style.height = Math.max(rowH, total * rowH) + 'px';
-  const scroll = box.scrollTop - headerH;
+  const scroll = box.scrollTop;
   const viewH = box.clientHeight || 300;
   let start = Math.max(0, Math.floor(scroll / rowH) - VIRT_OVERSCAN);
   let end = Math.min(total, Math.ceil((scroll + viewH) / rowH) + VIRT_OVERSCAN);
@@ -2417,8 +2409,7 @@ function probeVisibleAudio(immediate = false) {
   const box = $('#files');
   const files = state.files;
   if (!box || !files || !files.length) return;
-  const headerH = 24;
-  const scroll = Math.max(0, box.scrollTop - headerH);
+  const scroll = box.scrollTop;
   const viewH = box.clientHeight || 300;
   const total = files.length;
   const rowH = getRowH();
@@ -2463,33 +2454,17 @@ function runSearch(q) {
 
 function findSimilarSamples(f) {
   if (!f || !f.path) return;
-  const targetName = f.name || f.path.split(/[\\/]/).pop();
-  toast(tr('browser.ctx.findSimilar') + '...');
   state.similarSource = f.path;
-  state.similarSourceName = targetName;
+  state.similarSourceName = f.name;
   state.searchQ = '';
-  if ($('#search')) $('#search').value = '';
-
-  bridge('search.findSimilar', { path: f.path, limit: 100 }).then((res) => {
-    if (res && res.results && res.results.length > 0) {
-      state.rawFiles = res.results.map((r) => ({
-        path: r.path,
-        name: r.filename || r.path.split(/[\\/]/).pop(),
-        isDir: false,
-        isAudio: true,
-        duration: r.duration,
-        bpm: r.bpm,
-        key: r.key ? (r.key + (r.mode === 'minor' ? 'm' : '')) : (r.camelot || ''),
-        genre: r.genre || r.mood || '',
-        score: r.score,
-        similarity: r.similarity || Math.round((r.score || 0) * 100),
-        size: r.filesize,
-      }));
-      state.files = state.rawFiles;
-      paintFromRaw(false);
-    } else {
-      toast(tr('browser.noResults') || 'No similar samples found');
-    }
+  const searchInput = $('#search');
+  if (searchInput) searchInput.value = '';
+  paintLoadingFiles();
+  bridge('browser.findSimilar', { path: f.path, limit: 30 }).then((data) => {
+    const list = (data && data.results) ? data.results : [];
+    state.rawFiles = list;
+    paintFromRaw(false);
+    probeVisibleAudio();
   }).catch((err) => {
     console.error('findSimilar error', err);
     toast(tr('toast.similarError'));
@@ -2552,10 +2527,8 @@ function moveSelection(delta) {
 
   const box = $('#files');
   if (box && box.offsetParent !== null) {
-    const headEl = box.querySelector('.files-head');
-    const headerH = headEl ? headEl.offsetHeight : 34;
     const rowH = getRowH();
-    const itemTop = headerH + i * rowH;
+    const itemTop = i * rowH;
     const itemBottom = itemTop + rowH;
     const clientH = box.clientHeight || 300;
 
