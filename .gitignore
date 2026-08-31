@@ -35,3 +35,7 @@ test_output.txt
 
 # GitNexus
 .gitnexus/
+
+# Agents scratch
+.agents/
+

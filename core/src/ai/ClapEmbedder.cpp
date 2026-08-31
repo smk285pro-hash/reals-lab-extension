@@ -116,16 +116,22 @@ std::vector<float> ClapEmbedder::embedAudio(const float* pcm, size_t frames, int
     cfg.nMels = 64;
     auto logMel = FeatureExtractor::computeLogMel(audio, cfg);
 
-    // Populate embedding dimensions based on acoustic features:
-    // Dims 0..63: Average Mel band energy profile
+    // Dims 0..63: Average Mel band energy profile (mean-centered to capture spectral shape/timbre without DC loudness bias)
     if (!logMel.empty()) {
+        std::vector<float> avgMel(64, 0.0f);
         for (const auto& frame : logMel) {
             for (int m = 0; m < 64 && m < static_cast<int>(frame.size()); ++m) {
-                embedding[m] += frame[m];
+                avgMel[m] += frame[m];
             }
         }
+        float melSum = 0.0f;
         for (int m = 0; m < 64; ++m) {
-            embedding[m] /= static_cast<float>(logMel.size());
+            avgMel[m] /= static_cast<float>(logMel.size());
+            melSum += avgMel[m];
+        }
+        const float melMean = melSum / 64.0f;
+        for (int m = 0; m < 64; ++m) {
+            embedding[m] = avgMel[m] - melMean;
         }
     }
 
@@ -169,11 +175,13 @@ std::vector<float> ClapEmbedder::embedAudio(const float* pcm, size_t frames, int
         embedding[94] += 0.75f; // vinyl
     }
 
-    // Fill remaining high-dimensional representations via DCT / pseudo-random orthogonal projection
+    // Fill remaining high-dimensional representations via Type-II orthogonal DCT spectral expansion
+    constexpr float kPi = 3.14159265358979323846f;
     for (size_t d = 100; d < kEmbeddingDim; ++d) {
         float val = 0.0f;
+        const float k = static_cast<float>(d - 100 + 1);
         for (int m = 0; m < 64; ++m) {
-            val += embedding[m] * std::cos(static_cast<float>(m * d) * 0.05f);
+            val += embedding[m] * std::cos((kPi / 64.0f) * (static_cast<float>(m) + 0.5f) * k);
         }
         embedding[d] = val * 0.1f;
     }
