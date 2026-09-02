@@ -1,32 +1,35 @@
-# BRIEFING — 2026-08-31T19:18:25Z
+# BRIEFING — 2026-09-02T15:30:00Z
 
 ## Mission
-Coordinate implementation and validation of Global Favorites, Global Search across roots, clean default roots, and ultra-high performance zero-lag file browsing in Reals Lab REAPER Extension.
+Sentinel monitoring, progress reporting, and victory audit coordination for comprehensive adversarial audit and empirical verification of audio preview and transposition pipeline in Reals Lab.
 
 ## 🔒 My Identity
 - Archetype: sentinel
 - Working directory: c:\Users\smk28\Desktop\reals lab extension\.agents\sentinel
-- Orchestrator: 9a06e46c-3ec5-426b-83b8-d0e041f58ad5 (Gen 2)
-- Victory Auditor: 6e61065d-b78b-4ad2-b075-7e7eb0bde22a
+- Orchestrator: 1e419e13-ffa6-4185-987c-dd3d06140151 (teamwork_preview_orchestrator)
+- Victory Auditor: TBD (to be spawned on victory claim)
 
 ## 🔒 Key Constraints
 - No technical decisions — relay only
 - Victory Audit is MANDATORY before reporting completion
-- Must follow AGENTS.md & user rules
+- GitNexus tools must be used for code intelligence, impact analysis, and change detection
+- Follow AGENTS.md rules (Vietnamese for chat, English for code/docs, C++20 standards, clean architectures)
 
 ## User Context
-- **Last user request**: Implement Global Favorites, Global Search across all roots, clean default root directories, and zero-lag file browsing.
+- **Last user request**: Comprehensive adversarial audit and empirical verification of the complete audio preview and transposition pipeline (R1: Audio DSP quality & hardware hook, R2: Key transposer & BPM lock invariant, R3: Automated test suite & build quality).
 - **Pending clarifications**: none
-- **Delivered results**: none (awaiting victory audit verdict)
+- **Delivered results**: none (orchestrator dispatched)
 
 ## Project Status
-- **Phase**: auditing
+- **Phase**: in progress
+- **Route**: General (teamwork_preview_orchestrator)
 
 ## Victory Audit Status
-- **Triggered**: yes
+- **Triggered**: no
 - **Verdict**: pending
 - **Retry count**: 0
 
 ## Artifact Index
-- c:\Users\smk28\Desktop\reals lab extension\ORIGINAL_REQUEST.md — Authoritative record of user request
-- c:\Users\smk28\Desktop\reals lab extension\.agents\orchestrator_2\handoff.md — Orchestrator completion report
+- c:\Users\smk28\Desktop\reals lab extension\.agents\ORIGINAL_REQUEST.md — Original verbatim user request
+- c:\Users\smk28\Desktop\reals lab extension\ORIGINAL_REQUEST.md — Original verbatim user request (root)
+- c:\Users\smk28\Desktop\reals lab extension\.agents\orchestrator_1\progress.md — Orchestrator progress tracking

@@ -1,63 +1,63 @@
-# BRIEFING — 2026-09-02T13:27:00Z
+# BRIEFING — 2026-09-02T22:30:05+07:00
 
 ## Mission
-Conduct a comprehensive investigation of all logic and algorithmic errors in file browsing, BPM detection/synchronization, and musical Key/Tone transposition across Reals Lab (core/, bridge/, and ui-web/), and produce a programmatic accuracy benchmark & fix roadmap.
+Comprehensive Adversarial Audit & Empirical Verification of Audio Preview and Transposition Pipeline for Reals Lab.
 
 ## 🔒 My Identity
 - Archetype: orchestrator
 - Roles: orchestrator, user_liaison, human_reporter, successor
 - Working directory: c:\Users\smk28\Desktop\reals lab extension\.agents\orchestrator_1
-- Original parent: parent (sentinel)
-- Original parent conversation ID: 2ab3ff06-2efb-4c06-897d-d281b1133995
+- Original parent: parent
+- Original parent conversation ID: 7be3537f-bfc1-4a6b-98f2-0aa66a97425f
 
 ## 🔒 My Workflow
-- **Pattern**: Project Orchestration Pattern
-- **Scope document**: c:\Users\smk28\Desktop\reals lab extension\.agents\orchestrator_1\PROJECT.md
-1. **Decompose**: Partition investigation into R1 (Key/Tone Transposer), R2 (Tempo/BPM Detection), R3 (Metadata Hydration & DB Sync), and R4 (Accuracy Benchmarking & Roadmap).
+- **Pattern**: Project / Canonical Iteration Loop
+- **Scope document**: c:\Users\smk28\Desktop\reals lab extension\PROJECT.md
+1. **Survey & Decompose**:
+   - Survey codebase via parallel Explorers using GitNexus MCP tools.
+   - Decompose into 3 Milestones:
+     - M1: Audio DSP Quality & Hardware Hook Signal Integrity Audit (R1)
+     - M2: Key Transposer & BPM Lock Invariant Verification (R2)
+     - M3: Automated Test Suite & Build Verification with Zero Warnings & Full Verification (R3)
 2. **Dispatch & Execute**:
-   - Phase 1: Parallel deep technical exploration via 3 specialized Explorers using GitNexus code intelligence.
-   - Phase 2: Empirical Benchmarking & Verification Suite via Challenger/Worker.
-   - Phase 3: Synthesis of Root Causes, Verification Results, and Master Fix Roadmap.
-3. **On failure**: Retry → Replace → Skip → Redistribute → Redesign.
-4. **Succession**: Self-succeed at 16 spawns.
+   - For each milestone: Explorer(s) -> Worker -> Reviewer(s) -> Challenger(s) -> Forensic Auditor -> Gate.
+3. **On failure**:
+   - Retry -> Replace -> Skip -> Redistribute -> Redesign -> Escalate.
+4. **Succession**:
+   - Self-succeed at 16 spawns.
 
 ## 🔒 Key Constraints
-- NEVER write, modify, or create source code files directly.
-- NEVER run build/test commands directly — delegate to workers.
-- NEVER investigate at the code level directly — dispatch Explorers.
-- Use GitNexus in all contexts for symbol relationships, impact, and query.
-- Communication with user in Vietnamese (friendly tone), documentation and code in English.
-- Pass ORIGINAL_REQUEST.md path verbatim to all subagents.
+- NEVER write source code directly. Delegate all changes to subagents.
+- NEVER run build/test commands directly.
+- GitNexus MCP tools must be used for code navigation, symbol impact analysis, and change detection.
+- Follow AGENTS.md rules strictly (C++20, zero-warning, smart pointers, thread safety, update PLAN.md).
+- Binary Veto: Auditor integrity violation fails milestone immediately.
 
 ## Current Parent
-- Conversation ID: 2ab3ff06-2efb-4c06-897d-d281b1133995
-- Updated: 2026-09-02T13:27:00Z
+- Conversation ID: 7be3537f-bfc1-4a6b-98f2-0aa66a97425f
+- Updated: 2026-09-02T22:30:05+07:00
 
 ## Key Decisions Made
-- Decomposition across 3 parallel technical investigation tracks (R1, R2, R3) followed by R4 verification benchmark.
-- All subagents must use GitNexus code intelligence tools.
+- Surveying codebase with 3 parallel Explorers (1ae5e20d, b9959b0e, 2d2fdd9a).
 
 ## Team Roster
 | Agent | Type | Work Item | Status | Conv ID |
 |-------|------|-----------|--------|---------|
-| explorer_m1_1 | teamwork_preview_explorer | M1. Key/Tone Transposer Root Cause Audit | completed | 3e746737-a796-4a87-8dc8-23e6c9f63966 |
-| explorer_m2_1 | teamwork_preview_explorer | M2. BPM Detection & Time-Stretch Deep Audit | completed | 3d5509ad-edba-4d6d-8dae-5eaa43b55420 |
-| explorer_m3_1 | teamwork_preview_explorer | M3. File Browser Metadata Hydration & DB Sync | completed | f3f36204-379f-46ab-940a-cb6783a4c25d |
-| worker_m4_1 | teamwork_preview_worker | M4. Programmatic Accuracy Benchmark & Suite | completed | 9cada0c6-23c8-488b-b462-e1c4354bff31 |
+| explorer_survey_1 | teamwork_preview_explorer | Survey R1: Audio DSP & Hardware Hook | in-progress | 1ae5e20d-e9b7-4021-8062-a4a85b7f14b8 |
+| explorer_survey_2 | teamwork_preview_explorer | Survey R2: Key Transposer & State Sync | in-progress | b9959b0e-a708-4ebf-b42b-b98ad9a75c2a |
+| explorer_survey_3 | teamwork_preview_explorer | Survey R3: Test Suite & Build Quality | in-progress | 2d2fdd9a-2373-4f32-9a53-38469037cb15 |
 
 ## Succession Status
 - Succession required: no
-- Spawn count: 4 / 16
-- Pending subagents: none
+- Spawn count: 3 / 16
+- Pending subagents: 1ae5e20d-e9b7-4021-8062-a4a85b7f14b8, b9959b0e-a708-4ebf-b42b-b98ad9a75c2a, 2d2fdd9a-2373-4f32-9a53-38469037cb15
 - Predecessor: none
 - Successor: not yet spawned
 
 ## Active Timers
-- Heartbeat cron: stopped
+- Heartbeat cron: 1e419e13-ffa6-4185-987c-dd3d06140151/task-11
 - Safety timer: none
 
 ## Artifact Index
-- .agents/orchestrator_1/DISPATCH.md — Incoming user/parent dispatch
-- .agents/orchestrator_1/BRIEFING.md — Working memory & identity
-- .agents/orchestrator_1/progress.md — Liveness & status tracking
-- .agents/orchestrator_1/PROJECT.md — Architecture & task decomposition
+- ORIGINAL_REQUEST.md — Original verbatim user request
+- PROJECT.md — Master project architecture and milestone index

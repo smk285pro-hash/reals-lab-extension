@@ -15,22 +15,22 @@ struct SoundTouchProcessor::Impl {
     bool lowLatency = true;
 
     void applyLowLatencySettings() {
-        // Studio High Fidelity settings: eliminate metallic artifacts & aliasing distortion
         st.setSetting(SETTING_USE_AA_FILTER, 1);
-        st.setSetting(SETTING_AA_FILTER_LENGTH, 64);
         st.setSetting(SETTING_USE_QUICKSEEK, 0); // Full precision correlation (no flutter)
 
         if (lowLatency) {
-            // Responsive profile: sequence = 40ms, seek window = 15ms, overlap = 8ms
-            // Clean bass down to 40Hz and clean highs with fast response time
-            st.setSetting(SETTING_SEQUENCE_MS, 40);
-            st.setSetting(SETTING_SEEKWINDOW_MS, 15);
-            st.setSetting(SETTING_OVERLAP_MS, 8);
+            // Low-latency profile: sequence = 20ms, seek window = 8ms, overlap = 6ms, aa = 32
+            // Pipeline latency ~28ms at 44.1kHz (< 30ms requirement)
+            st.setSetting(SETTING_SEQUENCE_MS, 20);
+            st.setSetting(SETTING_SEEKWINDOW_MS, 8);
+            st.setSetting(SETTING_OVERLAP_MS, 6);
+            st.setSetting(SETTING_AA_FILTER_LENGTH, 32);
         } else {
             // Studio Master profile: optimal for full acoustic clarity
             st.setSetting(SETTING_SEQUENCE_MS, 82);
             st.setSetting(SETTING_SEEKWINDOW_MS, 28);
             st.setSetting(SETTING_OVERLAP_MS, 12);
+            st.setSetting(SETTING_AA_FILTER_LENGTH, 64);
         }
     }
 };

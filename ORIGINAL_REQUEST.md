@@ -1,36 +1,36 @@
 # Original User Request
 
-## 2026-09-02T13:26:27Z
+## Initial Request — 2026-09-02T22:29:27+07:00
 
-Conduct a comprehensive investigation of all logic and algorithmic errors in file browsing, BPM detection/synchronization, and musical Key/Tone transposition across Reals Lab (core/, bridge/, and ui-web/).
+You are the PROJECT ORCHESTRATOR for Reals Lab.
 
 Working directory: c:\Users\smk28\Desktop\reals lab extension
-Integrity mode: development
+Original Request file: c:\Users\smk28\Desktop\reals lab extension\ORIGINAL_REQUEST.md
+Your metadata directory: c:\Users\smk28\Desktop\reals lab extension\.agents\orchestrator_1
 
-## Requirements
+## Task: Comprehensive Adversarial Audit & Empirical Verification of Audio Preview and Transposition Pipeline
 
-### R1. Root Cause Audit for Key/Tone Transposer & Root Note Fallback
-Audit the entire Tone Transposer pipeline (KeyDetector, detectKeyForPath, extractKeyFromFilename, extractRootNoteName, calculateSemitoneDistance, and setPitchShift). Identify why unlabelled samples (files without Key in their filename) default to 'C', causing semitone calculations to apply incorrect pitch shifts when the user selects a target key on the piano keyboard.
+Please lead the complete execution of the user's request:
 
-### R2. Algorithmic BPM Detection & Metadata Propagation Deep Audit
-Analyze the BPM extraction and time-stretch ratio calculation (TempoDetector, detectBpmForPath, fs.list, BrowserModel::listDir, db::Database). Investigate why unlabelled audio samples (loops without "XXXbpm" in their filename) fail to resolve their true tempo or get assigned inaccurate fallback values, leading to improper time-stretching during preview and DAW drag-and-drop.
+### R1. Audio DSP Quality & Hardware Hook Signal Integrity Audit
+Perform a rigorous audit of the audio rendering and resampling pipeline:
+1. Verify `ma_decoder` initialization with 4th-order Butterworth anti-aliasing low-pass filter (`lpfOrder = 4`) and uniform stereo float32 buffering across all mono/stereo files.
+2. Verify SoundTouch DSP processing (`SETTING_USE_AA_FILTER = 1`, 64-tap Sinc filter, `SETTING_USE_QUICKSEEK = 0`, standard sequence windows) ensuring zero aliasing foldover, zero transient skipping, and zero phase distortion.
+3. Verify REAPER `Audio_RegHardwareHook` direct 64-bit ASIO master output mixing (`reals::audio::Engine::instance().init(false)`) ensuring bit-perfect audio without Windows WASAPI loopback degradation.
 
-### R3. File Browser Metadata Hydration & Database Sync Analysis
-Examine fs.list vs db::Database metadata synchronization. Determine why directory navigation returns bare file system entries without hydrating pre-computed BPM, Key, and Duration from the SQLite library database, leaving the frontend relying on superficial filename heuristics.
+### R2. Key Transposer & BPM Lock Invariant Verification
+Audit the musical pitch shifting and state synchronization logic:
+1. Verify that `state.isUserTargetKeyLocked` strictly preserves `state.userTargetNote` across sample selection, `audio.state` / `audio.syncState` events, and background metadata hydration.
+2. Verify that `audio.play` and `browser.beginDrag` compute and pass the exact semitone shift relative to the sample's root note and the user's locked note without lag or glitch.
+3. Verify SQLite metadata hydration in `fs.list` via `Database::getSamplesByPaths()`.
 
-### R4. Programmatic Accuracy Benchmark & Fix Roadmap
-Develop a concrete verification suite and benchmark measuring:
-1. Musical key detection accuracy and semitone transposition correctness on labelled vs unlabelled samples.
-2. Tempo detection accuracy (within ±1 BPM) across drum loops, melodies, and full mixes.
-3. Database metadata coverage during file listing.
+### R3. Automated Test Suite & Build Quality
+1. Verify that `ctest --preset windows` (or `reals_tests.exe`) passes all unit and integration tests with 0 failures.
+2. Verify MSVC compilation passes with 0 warnings.
+3. Ensure all critical invariants are clearly documented with explanatory inline comments (`CRIT-*`) and recorded in `PLAN.md`.
 
-## Acceptance Criteria
-
-### Technical Analysis & Bug Diagnostics
-- [ ] Detailed trace explaining why unlabelled samples default to Root 'C' and distort user pitch transposition.
-- [ ] Detailed trace explaining why TempoDetector fails or produces octave errors on unlabelled loops.
-- [ ] Evaluation of fs.list missing DB metadata hydration.
-
-### Empirical Benchmarking & Verification
-- [ ] Benchmark testing key detection on 12 chromatic scales with harmonic Chroma verification.
-- [ ] Benchmark testing tempo detection across standard EDM/Hip-hop/Pop tempos (70-175 BPM).
+## Mandatory Constraints & Protocol:
+1. Use GitNexus tools (via MCP) for symbol context, impact analysis, query, and detect_changes.
+2. Follow AGENTS.md rules strictly (C++20, zero-warning, smart pointers, thread safety, update PLAN.md).
+3. Maintain your `progress.md` and `BRIEFING.md` in `.agents/orchestrator_1`.
+4. When finished, produce a comprehensive handoff report (`handoff.md`) and notify parent.

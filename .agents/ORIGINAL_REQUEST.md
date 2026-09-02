@@ -34,3 +34,45 @@ Develop a concrete verification suite and benchmark measuring:
 ### Empirical Benchmarking & Verification
 - [ ] Benchmark testing key detection on 12 chromatic scales with harmonic Chroma verification.
 - [ ] Benchmark testing tempo detection across standard EDM/Hip-hop/Pop tempos (70-175 BPM).
+
+## 2026-09-02T15:28:35Z
+
+Conduct a comprehensive adversarial audit and empirical verification of the complete audio preview and transposition pipeline in Reals Lab (across `core/`, `bridge/`, `extension/`, and `ui-web/`).
+
+Working directory: c:\Users\smk28\Desktop\reals lab extension
+Integrity mode: development
+
+## Requirements
+
+### R1. Audio DSP Quality & Hardware Hook Signal Integrity Audit
+Perform a rigorous audit of the audio rendering and resampling pipeline:
+1. Verify `ma_decoder` initialization with 4th-order Butterworth anti-aliasing low-pass filter (`lpfOrder = 4`) and uniform stereo float32 buffering across all mono/stereo files.
+2. Verify SoundTouch DSP processing (`SETTING_USE_AA_FILTER = 1`, 64-tap Sinc filter, `SETTING_USE_QUICKSEEK = 0`, standard sequence windows) ensuring zero aliasing foldover, zero transient skipping, and zero phase distortion.
+3. Verify REAPER `Audio_RegHardwareHook` direct 64-bit ASIO master output mixing (`reals::audio::Engine::instance().init(false)`) ensuring bit-perfect audio without Windows WASAPI loopback degradation.
+
+### R2. Key Transposer & BPM Lock Invariant Verification
+Audit the musical pitch shifting and state synchronization logic:
+1. Verify that `state.isUserTargetKeyLocked` strictly preserves `state.userTargetNote` across sample selection, `audio.state` / `audio.syncState` events, and background metadata hydration.
+2. Verify that `audio.play` and `browser.beginDrag` compute and pass the exact semitone shift relative to the sample's root note and the user's locked note without lag or glitch.
+3. Verify SQLite metadata hydration in `fs.list` via `Database::getSamplesByPaths()`.
+
+### R3. Automated Test Suite & Build Quality
+1. Verify that `ctest --preset windows` (or `reals_tests.exe`) passes all unit and integration tests with 0 failures.
+2. Verify MSVC compilation passes with 0 warnings.
+3. Ensure all critical invariants are clearly documented with explanatory inline comments (`CRIT-*`) and recorded in `PLAN.md`.
+
+## Acceptance Criteria
+
+### Audio & DSP Verification
+- [ ] Mono and stereo audio files decode and render to 2-channel stereo with zero channel demuxing errors.
+- [ ] SoundTouch pitch shifting exhibits pristine clarity with active Sinc anti-aliasing.
+- [ ] REAPER hardware hook routing functions with zero Windows audio interference.
+
+### Tone & Metadata Invariants
+- [ ] Target key lock remains immutable across arbitrary file changes and async audio events.
+- [ ] `fs.list` returns pre-hydrated BPM and Key metadata for indexed library folders.
+
+### Documentation & Invariants
+- [ ] Inline code comments document all critical invariants (`CRIT-KEY-LOCK`, `CRIT-METADATA-HYDRATE`, `CRIT-TEMPO-OCTAVE`).
+- [ ] `PLAN.md` reflects all architectural decisions and lessons learned.
+
