@@ -726,16 +726,35 @@ private:
 ExtHostActions g_actions;
 
 // ---------------------------------------------------------------------------
-// ui-web folder resolution: installed copy first, dev tree second.
+// ui-web folder resolution: DLL folder first, installed copy second, dev tree third.
 // ---------------------------------------------------------------------------
 std::wstring resolveUiWebDir() {
-    // Dev tree first (compile-time path). Customers don't have it, so they
-    // fall through to the installed copy under %APPDATA%\RealsLab\ui-web.
+    // 1. Portable: check ui-web next to the DLL (e.g. %APPDATA%\REAPER\UserPlugins\ui-web)
+    if (g_hInstance) {
+        wchar_t dllPath[MAX_PATH];
+        if (GetModuleFileNameW(static_cast<HMODULE>(g_hInstance), dllPath, MAX_PATH) > 0) {
+            std::wstring dllDir = dllPath;
+            const size_t lastSlash = dllDir.find_last_of(L"\\/");
+            if (lastSlash != std::wstring::npos) {
+                dllDir = dllDir.substr(0, lastSlash);
+                const std::wstring candidate = dllDir + L"\\ui-web";
+                if (GetFileAttributesW((candidate + L"\\index.html").c_str()) != INVALID_FILE_ATTRIBUTES)
+                    return candidate;
+            }
+        }
+    }
+    // 2. Installed copy under %APPDATA%\RealsLab\ui-web
+    const std::wstring installed = toWide(reals::platform::joinPath(reals::platform::dataDir(), "ui-web"));
+    if (GetFileAttributesW((installed + L"\\index.html").c_str()) != INVALID_FILE_ATTRIBUTES)
+        return installed;
+
+    // 3. Dev tree (compile-time path on developer machine)
     const std::wstring dev(REALS_UI_WEB_DIR_W);
     if (!dev.empty() &&
         GetFileAttributesW((dev + L"\\index.html").c_str()) != INVALID_FILE_ATTRIBUTES)
         return dev;
-    return toWide(reals::platform::joinPath(reals::platform::dataDir(), "ui-web"));
+
+    return installed;
 }
 
 // ---------------------------------------------------------------------------
