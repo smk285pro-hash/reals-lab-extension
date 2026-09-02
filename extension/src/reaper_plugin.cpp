@@ -1464,8 +1464,10 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
             int hookRes = Audio_RegHardwareHook(true, &g_audioHook.hook);
             g_audioHook.isRegistered = (hookRes != 0);
             LOG_INFO(kTag, "entry: Audio_RegHardwareHook registered res=" + std::to_string(hookRes));
+            reals::audio::Engine::instance().init(!g_audioHook.isRegistered);
         } else {
             LOG_ERROR(kTag, "entry: Audio_RegHardwareHook API not available");
+            reals::audio::Engine::instance().init(true);
         }
 
         reals::config::Config::instance().load();

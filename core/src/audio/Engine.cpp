@@ -403,8 +403,10 @@ void Engine::stop() {
     const std::lock_guard lock(m_impl->stateMutex);
     if (!m_impl->soundLoaded)
         return;
-    ma_sound_stop(&m_impl->sound);
-    ma_sound_uninit(&m_impl->sound);
+    if (m_impl->dspSource.useDevice) {
+        ma_sound_stop(&m_impl->sound);
+        ma_sound_uninit(&m_impl->sound);
+    }
     m_impl->dspSource.close();
     m_impl->soundLoaded = false;
     m_impl->track = TrackInfo{};
