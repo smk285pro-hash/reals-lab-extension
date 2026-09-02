@@ -684,7 +684,7 @@ body.size-large {
 .file-row .fname-end {
   flex-shrink:0; white-space:nowrap;
 }
-.file-row .fmeta-badge,
+.file-row .fmeta-badge:not(.sim-badge),
 .file-row .fdur,
 .file-row .fsize,
 .file-row .star,
@@ -1207,10 +1207,29 @@ body.hide-mini-wave .mini-preview-bg { display:none !important; }
   color: var(--text-primary);
 }
 .file-row .fmeta-badge.sim-badge {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
   background: var(--accent-soft);
   color: var(--accent);
   border: 1px solid var(--accent-border);
   font-weight: 700;
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  margin-left: auto;
+  margin-right: 8px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme="pastel-pink"] .file-row .fmeta-badge.sim-badge {
+  background: #FFE6EF !important;
+  color: #E64573 !important;
+  border: 1px solid #FAD4E2 !important;
+  font-weight: 700 !important;
+  box-shadow: 0 1px 4px rgba(255, 133, 162, 0.2);
 }
 
 /* ===== Kawaii / Cutecore Theme Decorations ===== */

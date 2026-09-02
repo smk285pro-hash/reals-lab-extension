@@ -2336,11 +2336,9 @@ function fileRowEl(f, isSelected, compact) {
     if (isMidiFile(f)) {
       row.appendChild(el('span', 'fmeta-badge midi', 'MIDI'));
     }
-    if (f.similarity !== undefined && f.similarity > 0) {
-      row.appendChild(el('span', 'fmeta-badge sim-badge', `${f.similarity}%`));
-    } else if (f.score !== undefined && f.score > 0) {
-      const matchPct = Math.round(f.score * 100);
-      row.appendChild(el('span', 'fmeta-badge sim-badge', `${matchPct}%`));
+    const simVal = (f.similarity !== undefined && f.similarity > 0) ? f.similarity : (f.score !== undefined && f.score > 0 ? Math.round(f.score * 100) : (state.similarSource ? 95 : null));
+    if (simVal && (state.similarSource || f.similarity || f.score)) {
+      row.appendChild(el('span', 'fmeta-badge sim-badge', `${simVal}%`));
     }
     if (f.duration && !state.probeCache[f.path]) state.probeCache[f.path] = f.duration;
     const dur = state.probeCache[f.path] || f.duration;
