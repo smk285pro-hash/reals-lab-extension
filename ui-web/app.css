@@ -918,7 +918,8 @@ body.hide-mini-wave .mini-preview-bg { display:none !important; }
 
 /* ===== Mini Piano Popup Transposer ===== */
 .piano-popup {
-  position:absolute; left:50%; transform:translateX(-50%); bottom:110px;
+  /* Anchor above the waveform/preview area so it never overlaps the transport bar. */
+  position:absolute; left:50%; transform:translateX(-50%); bottom:180px;
   width:min(340px, 94%); max-width:340px; z-index:60;
   background:var(--bg-panel); border:1px solid var(--border-default); border-radius:10px;
   padding:10px; box-shadow:var(--shadow-modal);
@@ -1502,11 +1503,11 @@ html[data-theme="pastel-pink"] #trackInfo {
 /* Bottom Status Bar */
 html[data-theme="pastel-pink"] #statusbar {
   background: transparent !important;
-  color: #8C7085 !important;
+  color: #6E5368 !important;
   border-top: 1px solid #F8D8E5 !important;
 }
 html[data-theme="pastel-pink"] #statusbar a {
-  color: #8C7085 !important;
+  color: #6E5368 !important;
 }
 html[data-theme="pastel-pink"] #statusbar .conn i {
   background: #10B981 !important;

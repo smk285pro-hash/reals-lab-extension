@@ -11,6 +11,7 @@ const I18N = {
     'market.installed': 'Đã cài', 'market.download': 'Tải về',
     'market.tagUpdate': 'CẬP NHẬT', 'market.installedNote': 'đã cài',
     'market.apiStub': 'Dữ liệu mẫu — API marketplace sẽ nối ở Phase 3',
+    'market.buy': 'Mua Pro',
     'market.chip.all': 'Tất cả', 'market.chip.effects': 'Effects', 'market.chip.midi': 'MIDI',
     'market.chip.utility': 'Utility', 'market.chip.scripts': 'Scripts', 'market.chip.free': 'Miễn phí',
     'lab.title': 'AUDIO LAB', 'lab.dropHint': 'Kéo file vào đây hoặc chọn từ Browser để phân tích',
@@ -115,6 +116,7 @@ const I18N = {
     'market.installed': 'Installed', 'market.download': 'Download',
     'market.tagUpdate': 'UPDATE', 'market.installedNote': 'installed',
     'market.apiStub': 'Sample data — marketplace API lands in Phase 3',
+    'market.buy': 'Get Pro',
     'market.chip.all': 'All', 'market.chip.effects': 'Effects', 'market.chip.midi': 'MIDI',
     'market.chip.utility': 'Utility', 'market.chip.scripts': 'Scripts', 'market.chip.free': 'Free',
     'lab.title': 'AUDIO LAB', 'lab.dropHint': 'Drop files here or pick from Browser to analyze',
@@ -837,12 +839,20 @@ function handleEvent(event, data) {
   }
   if (event === 'fs.changed') {
     const dir = data.path;
-    clearTimeout(state._watchT);
-    state._watchT = setTimeout(() => {
+    // Per-dir debounce: previously a single timer was reused, so a second
+    // folder change within 250ms cleared the first folder's pending reload
+    // entirely (its subCache stayed stale). Now each dir keeps its own timer
+    // so concurrent watches from multiple folders all refresh correctly.
+    if (!state._watchTimers) state._watchTimers = new Map();
+    const timers = state._watchTimers;
+    const existing = timers.get(dir);
+    if (existing) clearTimeout(existing);
+    timers.set(dir, setTimeout(() => {
+      timers.delete(dir);
       delete state.subCache[dir];
       if (dir === state.currentDir && !(state.searchQ || '').trim())
         loadDir(state.currentDir, true);
-    }, 250);
+    }, 250));
     return;
   }
   if (event === 'audio.envelope') {
@@ -1778,11 +1788,18 @@ const VIRT_OVERSCAN = 8;
 async function initBrowser() {
   state.roots = await bridge('fs.roots');
   if (state.roots.length) state.currentDir = state.roots[0].path;
+  // Restore the last visited directory (saved on every openDir call) so the
+  // user lands back where they left off instead of always on the first root.
+  try {
+    const saved = localStorage.getItem('reals_last_dir');
+    if (saved && state.roots.some((r) => r.path === saved)) {
+      state.currentDir = saved;
+    }
+  } catch {}
   try {
     const t = await bridge('browser.tags');
     state.tagCache = (t && t.tags) || {};
   } catch { state.tagCache = {}; }
-  renderRoots();
   renderTree();
   wireBrowserEvents();
   if (state.currentDir) openDir(state.currentDir);
@@ -1790,26 +1807,14 @@ async function initBrowser() {
 
 async function refreshRoots() {
   state.roots = await bridge('fs.roots');
-  renderRoots();
+  // The legacy <select id="roots"> dropdown no longer exists in index.html
+  // (roots are surfaced via the folder tree instead), so there's nothing
+  // to render here — we just keep state.roots fresh for renderTree().
 }
 
-function renderRoots() {
-  const sel = $('#roots');
-  if (!sel) return;
-  sel.innerHTML = '';
-  state.roots.forEach((r) => {
-    const o = el('option', '', r.name);
-    o.value = r.path;
-    sel.appendChild(o);
-  });
-  sel.value = state.currentDir || '';
-  sel.onchange = () => {
-    state.searchQ = '';
-    const s = $('#search');
-    if (s) s.value = '';
-    openDir(sel.value);
-  };
-}
+// Removed dead function renderRoots(): the <select id="roots"> it targeted
+// doesn't exist in index.html, so every call was an early `return`. The
+// folder tree (#treeNodes / #tree) is the only roots surface now.
 
 async function subdirsOf(path) {
   if (state.subCache[path]) return state.subCache[path];
@@ -2155,8 +2160,15 @@ function openDir(path) {
   state.searchPending = false;
   state.searchGen = ++state.searchSeq;
   if ($('#search')) $('#search').value = '';
-  const sel = $('#roots');
-  if (sel) sel.value = path;
+  // Reset favorites-only mode when navigating to a folder — otherwise the
+  // list stays filtered by the previous folder's favorites, leaving the
+  // user with a stale/empty view that doesn't match the current dir.
+  if (state.favOnly) {
+    state.favOnly = false;
+    state.savedDirBeforeFav = null;
+    const favBtn = $('#favOnly');
+    if (favBtn) favBtn.classList.remove('on');
+  }
   bridge('fs.watch', { path }).catch(() => {});
   loadDir(path, false);
 }
@@ -2202,7 +2214,7 @@ function loadDir(path, force) {
 }
 
 function filteredFiles() {
-  return state.rawFiles.filter((f) => {
+  const out = state.rawFiles.filter((f) => {
     if (f.isDir) return false;
     if (f.name && (f.name.toLowerCase() === 'desktop.ini' || f.name.toLowerCase() === 'thumbs.db' || f.name === '.DS_Store')) return false;
     if (state.audioOnly && !f.isAudio) return false;
@@ -2210,11 +2222,42 @@ function filteredFiles() {
     if (state.tagFilter > 0 && (state.tagCache[f.path] || 0) !== state.tagFilter) return false;
     return true;
   });
+  // Sort the filtered result so the Sort dropdown actually takes effect in
+  // search / favorites / tag-filter modes too (previously only the bridge
+  // reload on plain dir mode applied sorting).
+  sortFileList(out);
+  return out;
+}
+
+// Shared comparator for the Sort dropdown (0 = name, 1 = size, 2 = date).
+// Used both when reloading a dir (via bridge) and when filtering in-memory so
+// Sort works consistently across all modes.
+function sortFileList(list) {
+  if (!Array.isArray(list) || list.length < 2) return;
+  const coll = (typeof Intl !== 'undefined' && Intl.Collator)
+    ? new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+    : null;
+  const cmp = coll ? coll.compare : (a, b) => String(a).localeCompare(String(b));
+  list.sort((a, b) => {
+    if (state.sort === 1) {
+      const sa = (a.size !== undefined ? a.size : (a.filesize || 0)) || 0;
+      const sb = (b.size !== undefined ? b.size : (b.filesize || 0)) || 0;
+      return sb - sa; // largest first
+    }
+    if (state.sort === 2) {
+      const ta = (a.modified !== undefined ? a.modified : (a.mtime || 0)) || 0;
+      const tb = (b.modified !== undefined ? b.modified : (b.mtime || 0)) || 0;
+      return tb - ta; // newest first
+    }
+    // default: name (0)
+    return cmp(a.name || '', b.name || '');
+  });
 }
 
 function paintFromRaw(preserveScroll = false) {
   if (state.similarSource) {
-    state.files = state.rawFiles || [];
+    state.files = (state.rawFiles || []).slice();
+    sortFileList(state.files);
   } else {
     state.files = filteredFiles();
   }
@@ -2355,6 +2398,9 @@ function fileRowEl(f, isSelected, compact) {
   row.onclick = (e) => {
     if (state._suppressClick) { e.preventDefault(); e.stopPropagation(); return; }
     e.preventDefault();
+    e.stopPropagation(); // prevent bubbling to filesBox.onclick, which would
+    // call selectEntry a second time (double-call waste: UI re-render,
+    // transposer update, and play-arm timer each run twice).
     selectEntry(f);
   };
   row.ondblclick = () => {
@@ -3554,14 +3600,52 @@ function insertMedia(path) {
 }
 function insertMediaLab(path) { bridge('reaper.lab', { path, job: 'analyze' }).then(() => toast(tr('toast.labQueued'))); }
 
+// Exit the search mode (clear query + input + state) so that the header
+// and the freshly reloaded folder list reflect reality after a delete or
+// rename. Without this, loadDir() repopulates rawFiles from the parent dir
+// but searchQ stays set, leaving the header saying "Search results: N"
+// while the list actually shows the whole folder.
+function exitSearchMode() {
+  if (!(state.searchQ || '').trim()) return; // nothing to clear
+  state.searchQ = '';
+  state.searchPending = false;
+  state.searchGen = ++state.searchSeq;
+  state.listDir = null;
+  const s = $('#search');
+  if (s) s.value = '';
+  const sc = $('#searchClear');
+  if (sc) sc.classList.add('hidden');
+}
+
 function startRename(f) {
   if (!f || f.isDir) return;
   $('#renameModal').classList.remove('hidden');
-  $('#renameInput').value = f.name;
-  $('#renameInput').focus();
+  // Pre-select just the name stem (without extension) so typing a new name
+  // doesn't accidentally wipe the extension, and so Enter renames only the
+  // stem. We also auto-append the original extension below if the user
+  // submits without one.
+  const dotIdx = (f.name || '').lastIndexOf('.');
+  const hasExt = dotIdx > 0 && dotIdx < f.name.length - 1;
+  const stem = hasExt ? f.name.slice(0, dotIdx) : f.name;
+  const ext = hasExt ? f.name.slice(dotIdx) : '';
+  const input = $('#renameInput');
+  input.value = f.name;
+  input.focus();
+  // Defer selection a bit so the modal focus/hover settles — 0ms was racy and
+  // the caret ended up at the end of the field instead of selecting the stem.
+  setTimeout(() => {
+    try { input.setSelectionRange(0, stem.length); } catch (e) {}
+  }, 50);
   $('#renameOk').onclick = () => {
-    const newName = ($('#renameInput').value || '').trim();
-    if (!newName || newName === f.name) { $('#renameModal').classList.add('hidden'); return; }
+    let newName = ($('#renameInput').value || '').trim();
+    if (!newName) { $('#renameModal').classList.add('hidden'); return; }
+    // Preserve the original extension if the user typed a name without one
+    // (e.g. "My Kick" → "My Kick.wav"). If they explicitly typed a different
+    // extension, keep their choice as-is.
+    if (ext && !/\.[a-zA-Z0-9]+$/.test(newName)) {
+      newName = newName + ext;
+    }
+    if (newName === f.name) { $('#renameModal').classList.add('hidden'); return; }
     const sep = f.path.includes('\\') ? '\\' : '/';
     const dir = f.path.slice(0, f.path.lastIndexOf(sep));
     bridge('browser.rename', { from: f.path, to: joinPath(dir, newName) })
@@ -3577,6 +3661,7 @@ function startRename(f) {
           state.favSet.add(joinPath(dir, newName));
         }
         if (state.selected === f.path) state.selected = joinPath(dir, newName);
+        exitSearchMode();
         loadDir(dir, true);
         renderTree();
       })
@@ -3599,6 +3684,7 @@ function startDelete(f) {
         if (state.selected === f.path) state.selected = null;
         const sep = f.path.includes('\\') ? '\\' : '/';
         const dir = f.path.slice(0, f.path.lastIndexOf(sep));
+        exitSearchMode();
         loadDir(dir, true);
         renderTree();
       })
@@ -3619,16 +3705,19 @@ function positionContextMenu(e) {
   const winW = window.innerWidth;
   const winH = window.innerHeight;
 
-  let x = e.clientX;
-  let y = e.clientY;
+  // Default to cursor position; only flip/shrink when truly needed so the
+  // menu stays anchored to the click point instead of jumping to a screen edge.
+  let x = (typeof e.clientX === 'number' && e.clientX > 0) ? e.clientX : (e.pageX | 0) || 8;
+  let y = (typeof e.clientY === 'number' && e.clientY > 0) ? e.clientY : (e.pageY | 0) || 8;
 
-  // Flip left if near right edge
+  // Flip left only if the menu would overflow the right edge.
   if (x + mw > winW - 8) {
-    x = Math.max(8, x - mw);
+    x = Math.max(8, winW - mw - 8);
   }
-  // Flip up if near bottom edge
+  // Flip up only if the menu would overflow the bottom edge — keep the top
+  // anchored to the cursor when there is room (don't yank it to the top).
   if (y + mh > winH - 8) {
-    y = Math.max(8, y - mh);
+    y = Math.max(8, winH - mh - 8);
   }
 
   m.style.left = `${x}px`;
@@ -3804,8 +3893,8 @@ function renderMarket() {
   const trending = [
     { n: 'MegaGrit Multiband Distortion', ini: 'MG', c: '#5b4a6b', tag: { cls: 'free', text: 'FREE' }, metaText: 'JSFX · Bao phuc Nguyen', btnText: tr('market.download') },
     { n: 'Hackey Trackey for REAPER', ini: 'HT', c: '#3d5a52', tag: { cls: 'free', text: 'FREE' }, metaText: 'ReaScript Lua · Bao phuc Nguyen', btnText: tr('market.download') },
-    { n: 'JSFX Mastering Suite', ini: 'MS', c: '#3e4c6b', tag: { cls: 'pro', text: 'PRO' }, metaText: 'JSFX · Bao phuc Nguyen', btnText: '199K', btnSecondary: true },
-    { n: 'Yumyoo Beatmaker Toolkit', ini: 'YT', c: '#524058', tag: { cls: 'pro', text: 'PRO' }, metaText: 'ReaScript Lua · Bao phuc Nguyen', btnText: '249K', btnSecondary: true },
+    { n: 'JSFX Mastering Suite', ini: 'MS', c: '#3e4c6b', tag: { cls: 'pro', text: 'PRO' }, metaText: 'JSFX · 199K · Bao phuc Nguyen', btnText: tr('market.buy') },
+    { n: 'Yumyoo Beatmaker Toolkit', ini: 'YT', c: '#524058', tag: { cls: 'pro', text: 'PRO' }, metaText: 'ReaScript Lua · 249K · Bao phuc Nguyen', btnText: tr('market.buy') },
   ];
   const installed = [
     { n: 'Properties Ribbon', ini: 'PR', c: '#4a5a52', tag: { cls: 'upd', text: tr('market.tagUpdate') + ' 2.1' }, metaText: 'v2.0 · ' + tr('market.installedNote'), btnText: tr('update.button') },

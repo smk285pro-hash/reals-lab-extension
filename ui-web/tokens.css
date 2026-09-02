@@ -144,13 +144,13 @@ html[data-theme="pastel-pink"] {
   --border-chip: #F5C9DB;
   --border-strong-2: #E0A6BE;
 
-  /* Typography (Cutecore Contrast) */
+  /* Typography (Cutecore Contrast) — AA/AAA-safe on light pink surfaces */
   --text-primary: #453340;
   --text-secondary: #856E80;
-  --text-tertiary: #A690A2;
-  --text-disabled: #C4B0BF;
-  --text-icon: #8F728A;
-  --text-meta: #94788E;
+  --text-tertiary: #856E80;
+  --text-disabled: #7A5F73;
+  --text-icon: #7A5F73;
+  --text-meta: #7A5F73;
   --text-chip: #6E5368;
   --text-secondary-strong: #382433;
   --text-primary-strong: #291524;
