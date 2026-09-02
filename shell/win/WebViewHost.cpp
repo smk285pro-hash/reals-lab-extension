@@ -214,10 +214,14 @@ void WebViewHost::create(HWND hwnd, const std::wstring& userDataFolder,
                             if (SUCCEEDED(m_impl->controller.As(&controller4)) && controller4)
                                 controller4->put_AllowExternalDrop(FALSE);
 
-                            // Lock DevTools, Zoom Controls, Browser Accelerators, and Default Context Menus
+                            // Lock DevTools, Zoom Controls, Browser Accelerators in Release (allow in Debug)
                             ComPtr<ICoreWebView2Settings> settings;
                             if (SUCCEEDED(m_impl->web->get_Settings(&settings)) && settings) {
+#ifdef NDEBUG
                                 settings->put_AreDevToolsEnabled(FALSE);
+#else
+                                settings->put_AreDevToolsEnabled(TRUE);
+#endif
                                 settings->put_IsZoomControlEnabled(FALSE);
                                 settings->put_AreDefaultContextMenusEnabled(FALSE);
                                 settings->put_IsBuiltInErrorPageEnabled(FALSE);
@@ -225,7 +229,11 @@ void WebViewHost::create(HWND hwnd, const std::wstring& userDataFolder,
 
                                 ComPtr<ICoreWebView2Settings3> settings3;
                                 if (SUCCEEDED(settings.As(&settings3)) && settings3) {
+#ifdef NDEBUG
                                     settings3->put_AreBrowserAcceleratorKeysEnabled(FALSE);
+#else
+                                    settings3->put_AreBrowserAcceleratorKeysEnabled(TRUE);
+#endif
                                 }
 
                                 ComPtr<ICoreWebView2Settings5> settings5;

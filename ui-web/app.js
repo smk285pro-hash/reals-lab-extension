@@ -3048,13 +3048,11 @@ function onBrowserKey(e) {
     return;
   }
 
-  // 5. Lock F5 / Ctrl+R in production WebView2
+  // 5. Support F5 / Ctrl+R to reload UI (both in browser and in WebView2)
   if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && (e.key === 'r' || e.key === 'R'))) {
     e.preventDefault();
     e.stopPropagation();
-    if (!hasWebView) {
-      window.location.reload();
-    }
+    window.location.reload();
     return;
   }
   if (typingInField()) {
