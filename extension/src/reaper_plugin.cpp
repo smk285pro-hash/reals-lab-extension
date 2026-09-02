@@ -1325,8 +1325,10 @@ static int realsTranslateAccel(MSG* /*msg*/, accelerator_register_t* /*ctx*/) {
     HWND focus = GetFocus();
     if (focus && (focus == g_hwnd || IsChild(g_hwnd, focus))) {
         // When Reals Lab or its child (WebView2) has keyboard focus, return -1
-        // to tell REAPER to pass keystrokes directly to our window instead of
-        // triggering DAW transport play/stop or REAPER global actions.
+        // to route keystrokes directly into our WebView2 DOM.
+        // Inside app.js, Spacebar is intentionally wired to trigger 'reaper.playToggle'
+        // (DAW Transport: Play/stop) so producers can start/stop project playback
+        // seamlessly while browsing samples, without losing window focus.
         return -1;
     }
     return 0;

@@ -352,12 +352,15 @@ Audit tìm thấy ~25 lỗi (9 nghiêm trọng), đã sửa hết, build zero-wa
     5. Cập nhật metric Peak, RMS và con trỏ vị trí atomic thời gian thực về UI để hiển thị sóng âm và volume meter mượt mà 100%.
   - **Kiểm thử**: 256/256 tests pass 100%, MSVC /W4 zero-warning. DLL đã được tự động deploy vào `%APPDATA%\REAPER\UserPlugins`.
 
-- **[P1.21] Định hướng Mô hình Thương mại & Lộ trình Tính năng (2026-08-31)**:
-  - **Mô hình Hybrid B2C**:
-    - **Tier Local (Extension/Client)**: Preview sample, Phase Sync 0ms, Local DSP, Local SQLite scanner -> Bán mua đứt trọn đời (Perpetual $39 - $59) hoặc bản Free câu khách (không tốn chi phí server).
-    - **Tier Cloud (AI Lab trên Server)**: Tách stem, AI generation, Cloud semantic search -> Bán dạng Subscription ($7.99 - $9.99/tháng) hoặc Credit / Token (Pay-as-you-go, ví dụ $5/50 credits), tuyệt đối không bán vĩnh viễn để tránh rủi ro chi phí server/GPU.
-  - **Lộ trình Tính năng**:
-    - Ưu tiên số 1: Ổn định lõi âm thanh, Playhead Phase Sync sample-accurate, DSP SoundTouch và AI Lab.
+- **[P1.22] Quyết định Thiết kế Trải nghiệm Phím Cách (Spacebar DAW Transport) & Cô lập Hoàn toàn Sample Timeline khi Đổi Tone/Tempo (2026-09-02)**:
+  - **Quy tắc Phím Cách (Spacebar Workflow)**:
+    1. Khi đang gõ chữ trong ô tìm kiếm / input field: phím cách nhập ký tự khoảng trắng `' '` bình thường.
+    2. Khi đang duyệt file / thao tác trên giao diện Reals Lab: phím cách **BẮT BUỘC gửi lệnh điều khiển `reaper.playToggle` để Play / Stop bài nhạc trong DAW (REAPER)**. Giúp Producer / Beatmaker vừa duyệt nghe sample vừa có thể bật/tắt toàn bộ bản phối của dự án ngay lập tức mà không cần click chuột ra ngoài cửa sổ timeline của REAPER.
+    3. Việc nghe thử (preview) sample trong Reals Lab được thực hiện qua click chọn file, Auto-Preview, phím Enter hoặc nút Play trên thanh điều khiển.
+  - **Cô lập Tuyệt đối Sample trên Timeline khi Thay đổi Tone / Tempo trong Reals Lab**:
+    1. Cơ chế `processPendingSyncPlayrates` chỉ can thiệp duy nhất vào MediaItem vừa mới được kéo/thả (`GetSelectedMediaItem`) bằng đường dẫn tuyệt đối chính xác (`srcPath == normTarget`).
+    2. Ngay sau khi gán xong Take Info, tác vụ chờ được xóa sạch tức thì khỏi bộ nhớ và thời gian hết hạn rút ngắn xuống 4 giây (thay vì 60 giây).
+    3. Mọi thao tác chỉnh Tone Transposer, đổi BPM, hay preview thử nghiệm trong Reals Lab tuyệt đối KHÔNG làm ảnh hưởng đến bất kỳ sample nào đã nằm trên track của REAPER từ trước.
     - Các tính năng duyệt file nâng cao (File Browser UX chuyên sâu) tạm thời gác lại xử lý ở phase sau.
 
 - **[P1.22] Khắc phục Toàn diện Tính năng Kéo Thả Sample Tự Động Khớp Tempo / BPM vào REAPER (2026-08-31)**:

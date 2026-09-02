@@ -3063,17 +3063,22 @@ function onBrowserKey(e) {
     }
     return;
   }
-  if (e.key === ' ') {
-    e.preventDefault();
-    if (state.playing) {
-      stopMidiPlayback();
-      state.playing = false;
-      const bp = $('#btnPlay');
-      if (bp) bp.textContent = '▶';
-      bridge('audio.stop').then(refreshPlayState);
-    } else if (state.selected) {
-      playFile(state.selected);
+  // ---------------------------------------------------------------------------
+  // Spacebar Behavior Rule (DAW Producer / Beatmaker Workflow):
+  // When typing in a text/search input field: allow normal space character entry.
+  // When browsing files / navigating the UI: Spacebar MUST toggle the DAW (REAPER)
+  // project transport (Play/Stop), allowing producers to start/stop their arrangement
+  // without losing focus or switching windows. Sample preview in Reals Lab is triggered
+  // by selection / Enter / Play button.
+  // (QUY TẮC: Phím cách khi duyệt file BẮT BUỘC dùng để Play/Stop bài nhạc trong DAW).
+  // ---------------------------------------------------------------------------
+  if (e.key === ' ' || e.code === 'Space') {
+    if (typingInField()) {
+      return; // allow typing space in search boxes
     }
+    e.preventDefault();
+    e.stopPropagation();
+    bridge('reaper.playToggle').catch(() => {});
     return;
   }
   if (state.tab !== 'browser') return;
