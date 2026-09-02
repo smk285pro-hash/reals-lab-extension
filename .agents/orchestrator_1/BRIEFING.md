@@ -1,78 +1,63 @@
-# BRIEFING — 2026-09-01T01:25:20+07:00
+# BRIEFING — 2026-09-02T13:27:00Z
 
 ## Mission
-Orchestrate the implementation and verification of Global Favorites, Global Search, Clean Initial Default Roots, and Performance Optimization for Reals Lab REAPER Extension with 100% build/test success.
+Conduct a comprehensive investigation of all logic and algorithmic errors in file browsing, BPM detection/synchronization, and musical Key/Tone transposition across Reals Lab (core/, bridge/, and ui-web/), and produce a programmatic accuracy benchmark & fix roadmap.
 
 ## 🔒 My Identity
-- Archetype: teamwork_preview_orchestrator
+- Archetype: orchestrator
 - Roles: orchestrator, user_liaison, human_reporter, successor
-- Working directory: c:\Users\smk28\Desktop\reals lab extension\.agents\orchestrator_1\
-- Original parent: parent
-- Original parent conversation ID: 54b97d7a-e7a5-4ea1-951d-472e0a01f7c4
+- Working directory: c:\Users\smk28\Desktop\reals lab extension\.agents\orchestrator_1
+- Original parent: parent (sentinel)
+- Original parent conversation ID: 2ab3ff06-2efb-4c06-897d-d281b1133995
 
 ## 🔒 My Workflow
-- **Pattern**: Project Pattern (Dual Track: Implementation Track + E2E Testing Track)
-- **Scope document**: c:\Users\smk28\Desktop\reals lab extension\PROJECT.md
-1. **Survey**: Spawn 3 parallel Explorers / Spec Miners (Completed).
-2. **Decompose & Delegate**: Created PROJECT.md and TEST_INFRA.md.
-3. **Dispatch & Execute**:
-   - Dispatched Lead Worker for M1-M4 implementation and test suite development (`f1fa5308-3ccc-4354-a14d-fe1d4029bbb9`).
-   - Next: Reviewers (2) + Challengers (2) + Forensic Auditor (1) -> Gate Check.
-4. **On failure**: Retry -> Replace -> Skip -> Redistribute -> Redesign.
-5. **Succession**: At 16 spawns, write handoff.md, kill timers, spawn successor.
-
-- **Work items**:
-  1. Survey & Codebase Exploration [done]
-  2. Test Infrastructure & E2E Testing Track [in-progress]
-  3. Milestone 1: Clean Default Roots [in-progress]
-  4. Milestone 2: Global Favorites View [in-progress]
-  5. Milestone 3: Global Recursive Search [in-progress]
-  6. Milestone 4: Performance & Benchmarking [in-progress]
-  7. Final Milestone: E2E Verification & Audit [pending]
-- **Current phase**: 2B (Iteration Loop - Worker Execution)
-- **Current focus**: Implementation of M1-M4 & Automated Benchmarks
+- **Pattern**: Project Orchestration Pattern
+- **Scope document**: c:\Users\smk28\Desktop\reals lab extension\.agents\orchestrator_1\PROJECT.md
+1. **Decompose**: Partition investigation into R1 (Key/Tone Transposer), R2 (Tempo/BPM Detection), R3 (Metadata Hydration & DB Sync), and R4 (Accuracy Benchmarking & Roadmap).
+2. **Dispatch & Execute**:
+   - Phase 1: Parallel deep technical exploration via 3 specialized Explorers using GitNexus code intelligence.
+   - Phase 2: Empirical Benchmarking & Verification Suite via Challenger/Worker.
+   - Phase 3: Synthesis of Root Causes, Verification Results, and Master Fix Roadmap.
+3. **On failure**: Retry → Replace → Skip → Redistribute → Redesign.
+4. **Succession**: Self-succeed at 16 spawns.
 
 ## 🔒 Key Constraints
-- NEVER write, modify, or create source code files directly (Dispatch-only orchestrator).
-- NEVER run build/test commands directly — delegate to subagents.
-- Audit is a binary veto.
-- All UI text must use `tr("key")`, strings in `assets/i18n/`.
-- C++20, zero warnings (`-Wall -Wextra`), no `using namespace std;` in headers.
-- Always use GitNexus tools and rules for code intelligence and impact analysis.
-- Follow AGENTS.md, PLAN.md, DESIGN.md, SPEC.md strictly.
+- NEVER write, modify, or create source code files directly.
+- NEVER run build/test commands directly — delegate to workers.
+- NEVER investigate at the code level directly — dispatch Explorers.
+- Use GitNexus in all contexts for symbol relationships, impact, and query.
+- Communication with user in Vietnamese (friendly tone), documentation and code in English.
+- Pass ORIGINAL_REQUEST.md path verbatim to all subagents.
 
 ## Current Parent
-- Conversation ID: 54b97d7a-e7a5-4ea1-951d-472e0a01f7c4
-- Updated: 2026-09-01T01:19:00+07:00
+- Conversation ID: 2ab3ff06-2efb-4c06-897d-d281b1133995
+- Updated: 2026-09-02T13:27:00Z
 
 ## Key Decisions Made
-- Completed Survey Phase (Explorers 1, 2, 3).
-- Authored PROJECT.md and TEST_INFRA.md.
-- Dispatched Lead Worker for implementation and test writing.
+- Decomposition across 3 parallel technical investigation tracks (R1, R2, R3) followed by R4 verification benchmark.
+- All subagents must use GitNexus code intelligence tools.
 
 ## Team Roster
 | Agent | Type | Work Item | Status | Conv ID |
 |-------|------|-----------|--------|---------|
-| explorer_survey_core | teamwork_preview_explorer | Survey Core C++ & Storage | done | 165dc95b-5dc2-4f93-b0ec-b0da110809c2 |
-| explorer_survey_ui | teamwork_preview_explorer | Survey UI, Frontend & IPC | done | f8d68feb-3729-44d7-85d7-26794327e984 |
-| explorer_survey_tests | teamwork_preview_explorer | Survey Build, Tests & Benchmarks | done | 8cba39ea-809a-447b-a13d-d204396fd24d |
-| worker_m1_m4 | teamwork_preview_worker | Implement M1-M4 & Tests | in-progress | f1fa5308-3ccc-4354-a14d-fe1d4029bbb9 |
+| explorer_m1_1 | teamwork_preview_explorer | M1. Key/Tone Transposer Root Cause Audit | completed | 3e746737-a796-4a87-8dc8-23e6c9f63966 |
+| explorer_m2_1 | teamwork_preview_explorer | M2. BPM Detection & Time-Stretch Deep Audit | completed | 3d5509ad-edba-4d6d-8dae-5eaa43b55420 |
+| explorer_m3_1 | teamwork_preview_explorer | M3. File Browser Metadata Hydration & DB Sync | completed | f3f36204-379f-46ab-940a-cb6783a4c25d |
+| worker_m4_1 | teamwork_preview_worker | M4. Programmatic Accuracy Benchmark & Suite | completed | 9cada0c6-23c8-488b-b462-e1c4354bff31 |
 
 ## Succession Status
 - Succession required: no
 - Spawn count: 4 / 16
-- Pending subagents: f1fa5308-3ccc-4354-a14d-fe1d4029bbb9
+- Pending subagents: none
 - Predecessor: none
 - Successor: not yet spawned
 
 ## Active Timers
-- Heartbeat cron: 2ece16d4-00dc-45ee-99bd-9c7cc471f29b/task-7
+- Heartbeat cron: stopped
 - Safety timer: none
 
 ## Artifact Index
-- ORIGINAL_REQUEST.md — Authoritative user requirements
-- PROJECT.md — Master project specification & feature inventory
-- TEST_INFRA.md — E2E test methodology & thresholds
-- DISPATCH.md — Orchestrator dispatch record
-- progress.md — Live status and heartbeat
-- plan.md — Orchestration execution plan
+- .agents/orchestrator_1/DISPATCH.md — Incoming user/parent dispatch
+- .agents/orchestrator_1/BRIEFING.md — Working memory & identity
+- .agents/orchestrator_1/progress.md — Liveness & status tracking
+- .agents/orchestrator_1/PROJECT.md — Architecture & task decomposition

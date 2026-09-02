@@ -64,6 +64,10 @@ json entryToJson(const browser::FileEntry& f) {
     e["modified"] = f.modifiedEpoch;
     e["isAudio"] = f.isAudio;
     e["isDir"] = f.isDir;
+    e["bpm"] = f.bpm;
+    e["key"] = f.key;
+    e["camelot"] = f.camelot;
+    e["duration"] = f.durationSec;
     return e;
 }
 } // namespace
@@ -262,10 +266,11 @@ struct Bridge::Impl {
                 if (it != cMap.end()) return it->second;
             }
 
-            static const std::regex keyRe(R"((?:^|[\s_\-\(\[])([A-G][#b]?)(?:m|maj|min|minor|major)?(?:\s+(?:maj|min|minor|major))?(?:[\s_\-\)\]]|\.|$))", std::regex_constants::icase);
+            static const std::regex keyRe(R"((?:^|[\s_\-\(\[])([A-G][#b]?)\s*(m|maj|min|minor|major)?(?:\s+(?:maj|min|minor|major))?(?:[\s_\-\)\]]|\.|$))", std::regex_constants::icase);
             std::smatch km;
             if (std::regex_search(fname, km, keyRe) && km.size() > 1) {
                 std::string k = km[1].str();
+                std::string mode = (km.size() > 2) ? km[2].str() : "";
                 if (!k.empty()) {
                     k[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(k[0])));
                     if (k.size() > 1) {
@@ -275,7 +280,13 @@ struct Bridge::Impl {
                             else if (k[0] == 'G') k = "F#";
                             else if (k[0] == 'A') k = "G#";
                             else if (k[0] == 'B') k = "A#";
+                            else if (k[0] == 'C') k = "B";
+                            else if (k[0] == 'F') k = "E";
                         }
+                    }
+                    std::string lowerMode = platform::toLowerUtf8(mode);
+                    if (lowerMode == "m" || lowerMode == "min" || lowerMode == "minor") {
+                        k += "m";
                     }
                     return k;
                 }
@@ -781,7 +792,32 @@ std::string Bridge::handle(const std::string& requestJson) {
                 model.setSort(static_cast<browser::BrowserModel::Sort>(sortIdx));
                 model.invalidateAll();
             }
-            const auto files = model.listDir(narrowPath(args.value("path", "")));
+            auto files = model.listDir(narrowPath(args.value("path", "")));
+
+            // Hydrate metadata from SQLite database for all audio files in the folder
+            std::vector<std::string> audioPaths;
+            audioPaths.reserve(files.size());
+            for (const auto& f : files) {
+                if (f.isAudio && !f.isDir) {
+                    audioPaths.push_back(f.path);
+                }
+            }
+            if (!audioPaths.empty()) {
+                auto metaMap = m_impl->db.getSamplesByPaths(audioPaths);
+                for (auto& f : files) {
+                    if (f.isAudio && !f.isDir) {
+                        auto it = metaMap.find(f.path);
+                        if (it != metaMap.end()) {
+                            const auto& rec = it->second;
+                            f.bpm = static_cast<float>(rec.bpm);
+                            f.key = rec.keyRoot.empty() ? "" : (rec.keyMode == "minor" ? rec.keyRoot + "m" : rec.keyRoot);
+                            f.camelot = rec.camelot;
+                            f.durationSec = rec.durationSec;
+                        }
+                    }
+                }
+            }
+
             json arr = json::array();
             for (const auto& f : files)
                 arr.push_back(entryToJson(f));

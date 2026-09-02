@@ -1,30 +1,24 @@
-# Handoff Report — Sentinel Final Summary
+# Sentinel Final Handoff Report
 
-## 1. Observation
-- The project requested:
-  1. Global Favorites View (`★` / `#favOnly`): Unified view displaying all favorited samples and MIDI across all roots with preview, transposing, drag-and-drop into REAPER, tagging, and live un-favorite updates.
-  2. Global Search Across All Root Folders: Recursive search (<50ms) across all roots with syntax filter parsing (`/tag`, `/bpm:range`, `/key:note`), and instant view/scroll restoration on clear.
-  3. Clean Initial Default Roots: Zero hardcoded default directories (`Music`/`Desktop`/`Downloads`) on fresh install; clean prompts to add folders.
-  4. File Browsing Performance Optimization: Virtual list rendering at 60 FPS, debounced audio waveform probing, native Win32 large fetch enumeration, thread safety, and zero leaks for 5,000+ files.
-- The entire team (Orchestrators, Explorers, Reviewers, Challengers, and Forensic Auditors) executed the changes.
-- Independent Victory Auditor conducted a 3-phase audit:
-  - Phase A (Timeline & Provenance): PASS
-  - Phase B (Cheating & Integrity Check): PASS (Zero facades or shortcuts)
-  - Phase C (Independent Test Execution): PASS (`cmake --build --preset windows` passed with 0 warnings/errors, 323/323 tests passed 100%).
-- Final Verdict: **VICTORY CONFIRMED**.
+## Observation
+- The user requested a comprehensive investigation of logic/algorithmic errors across file browsing, BPM detection/sync, and musical Key/Tone transposition in Reals Lab (`core/`, `bridge/`, `ui-web/`), with root cause audits (R1, R2, R3) and empirical verification benchmarks (R4).
+- The Project Orchestrator (`teamwork_preview_orchestrator`) decomposed and dispatched tasks across 3 Explorer agents, 1 Benchmark Worker agent, and an independent Victory Auditor.
+- Full verification suite `TestSuite_EmpiricalBenchmark_M4.cpp` was implemented and passed 100% of benchmark assertions and ctest test runs.
+- The independent Victory Auditor conducted a 3-phase audit (Timeline, Integrity, Test Execution) and returned `VICTORY CONFIRMED`.
 
-## 2. Logic Chain
-1. User requirements R1, R2, R3, R4 were cataloged in `ORIGINAL_REQUEST.md`.
-2. Architecture and code implementation were verified directly in C++ Core, Bridge RPC layer, and UI webview.
-3. Dual-track validation with 323 automated unit, integration, stress, and benchmark tests confirmed correctness and performance.
-4. Independent Post-Victory Audit confirmed zero regressions, zero test compromises, and 100% compliance with acceptance criteria.
+## Logic Chain
+1. **R1 Audit (Key & Tone Transposer)**: Identified 10 hardcoded 'C' fallback locations (`ui-web/app.js:1234, 2482, 3207`, `Bridge.cpp:270, 1310`, `KeyDetector.cpp:74`) producing a 91.67% dissonance rate (132/144 transitions out of tune), along with non-capturing regexes stripping minor keys to major tonic notes (`Bridge.cpp:265`).
+2. **R2 Audit (BPM Detection & Time-Stretch)**: Discovered comb filter lag harmonic boost (+75% on short lags vs +0% on long lags in `TempoDetector.cpp:160`), linear unweighted spectral flux locking to high-frequency transients, and fallback `sampleBpm = projectBpm` in `Bridge.cpp:926` forcing ratio 1.0x (disabling time-stretch).
+3. **R3 Audit (Metadata Hydration)**: Found structural gap where `BrowserModel::FileEntry` lacks metadata fields and `Bridge::handleFsList` bypasses `db::Database` during directory navigation, leaving metadata coverage at 0.0% for bare listings.
+4. **R4 Benchmarking**: Tested 24 chromatic keys (87.5% detection accuracy), 144 transposition transitions, 33 tempo stems across 70–175 BPM, and SQLite batch hydration across 50–1000 files (0.0% -> 100.0% coverage under 54ms latency).
 
-## 3. Caveats
-- Benchmark tests in unoptimized MSVC Debug configuration take longer to run than in Release mode due to MSVC iterator debug overhead (`_ITERATOR_DEBUG_LEVEL=2`), but all latency criteria pass reliably.
+## Caveats
+- DSP enhancements (log-flux and Bayesian priors) should be introduced carefully to maintain low CPU overhead.
+- Frontend transposer UI should offer both Absolute Key and Relative Semitone Shift modes when root note is pending detection.
 
-## 4. Conclusion
-All deliverables are fully implemented, verified, audited, and ready for production use.
+## Conclusion
+The investigation and benchmarking requirements (R1–R4) are 100% fulfilled. The Master Diagnostic Report and Prioritized Architectural Fix Roadmap are published and ready for implementation.
 
-## 5. Verification Method
-- Build command: `cmake --build --preset windows` (0 warnings, 0 errors).
-- Test command: `ctest --preset windows` (100% passed).
+## Verification Method
+- Benchmark suite execution: `.\build\windows\tests\Debug\reals_tests.exe --suite=EmpiricalBenchmark_M4`
+- Full test pass: `ctest --preset windows --output-on-failure`

@@ -1,55 +1,83 @@
-# Handoff Report: File Browser Interactions Victory Audit (R1, R2, R3)
+# Victory Audit Handoff Report: Audio Navigation, BPM Detection, & Tone Transposition Audit
 
-**Agent**: `victory_auditor_1`  
-**Date**: 2026-08-26  
-**Type**: Hard Handoff  
-**Verdict**: **VICTORY CONFIRMED**
+**Auditor**: `victory_auditor_1` (Victory Auditor & Integrity Verifier)  
+**Date**: 2026-09-02  
+**Verdict**: **VICTORY CONFIRMED**  
 
 ---
 
 ## 1. Observation
-- **Clean Build Execution**: Ran `cmake --build --preset windows --clean-first`. MSBuild compiled all targets (`reals_core.lib`, `reals_bridge.lib`, `reals_shell_win.lib`, and `reaper_realslab.dll`) with exit code 0, 0 compiler warnings, and 0 linker errors under MSVC (`/W4 /permissive- /utf-8`).
-- **R1 Code Implementation**:
-  - `ui-web/app.js` (lines 638-644, 778-784, 1369-1373): `ondragstart` handlers call `e.preventDefault()` and dispatch `bridge('browser.beginDrag', { path: f.path })`.
-  - `bridge/src/Bridge.cpp` (lines 576-579): `browser.beginDrag` calls `m_actions->beginDrag(narrowPath(path))`.
-  - `extension/src/reaper_plugin.cpp` (lines 143-149, 190-192): `ExtHostActions::beginDrag` sets `g_dragPath = toWide(path)` and posts `WM_REALS_BEGINDRAG` to `g_hwnd` to decouple execution from the WebView2 COM STA callback thread. `hostWndProc` invokes `reals::shell::beginFileDrag(h, g_dragPath)`.
-  - `shell/win/OleDrag.cpp` (lines 16-178): Complete `IDropSource` and `IDataObject` implementation providing standard `DROPFILES` structure (`CF_HDROP` with `fWide = TRUE`, native backslash normalization) and `CF_UNICODETEXT`, executed via `DoDragDrop(..., DROPEFFECT_COPY | DROPEFFECT_MOVE | DROPEFFECT_LINK, &effect)`.
-- **R2 Code Implementation**:
-  - `ui-web/index.html` (lines 199-211) & `ui-web/app.css` (lines 459-485): Responsive `#dropOverlay` with visual drop-zone icon, dashed accent border, background blur, and title/hint typography.
-  - `ui-web/app.js` (lines 1423-1505): `initDragAndDrop()` listens for `dragenter`, `dragover`, `dragleave`, and `drop`. Tracks `dragDepth` to prevent premature flicker. Extracts native paths via `file.path` / `getAsFile().path`. Calls `bridge('fs.addRoot', { name, path })`, refreshes roots and tree, switches to browser pane, opens dropped directory, and displays a confirmation toast.
-  - `bridge/src/Bridge.cpp` (lines 360-385) & `core/src/browser/BrowserModel.cpp` (lines 174-181): Normalizes path separators, validates directory existence, computes folder name, deduplicates root entries, appends to `m_roots`, and serializes to `browser_store.json`.
-- **R3 Code Implementation**:
-  - `ui-web/app.js` (lines 599-601): `renderTree()` records `const currentScroll = tree.scrollTop;`, updates elements via `tree.replaceChildren(frag)`, and restores `tree.scrollTop = currentScroll;`.
-  - `ui-web/app.js` (lines 653-720): `openDir()` and `loadDir()` maintain `state.dirScrolls` map storing directory scroll offsets. `paintFromRaw(preserveScroll)` preserves current scroll offset during refreshes/sorts and restores cached offset on returning to a folder.
-  - `ui-web/app.js` (lines 787-798, 1027-1046): `selectEntry()` and `playFile()` update selection classes and render waveforms onto `<canvas>` without clearing DOM or triggering layout jumps.
+
+We performed a rigorous, independent, end-to-end verification of the deliverables for the project request across all four milestones (R1, R2, R3, R4) and confirmed the following empirical findings directly from source code and live test executions:
+
+### 1.1 Source Code Verification
+1. **Requirement R1 (Tone Transposition & Root Note Fallback)**:
+   - Verified 10 hardcoded fallback sites defaulting unlabelled audio to Root `'C'` in `ui-web/app.js:1234, 2482, 3207`, `bridge/src/Bridge.cpp:270, 1310`, and `core/src/ai/KeyDetector.cpp:74`.
+   - Verified `Bridge.cpp:265` regex non-capturing mode bug: `([A-G][#b]?)(?:m|maj|min|minor|major)?` only captures the tonic note in $km[1]$, stripping minor modes (`Am` $\rightarrow$ `"A"`).
+   - Verified `app.js:1304` regex drops spaced modes outside $match[1]$ (`"C minor"` $\rightarrow$ `"C"`).
+   - Verified missing flat enharmonics (`Cb`, `B#`, `E#`, `Fb`) in key normalizers.
+
+2. **Requirement R2 (BPM Extraction & Time-Stretch Propagation)**:
+   - Verified `core/src/ai/TempoDetector.cpp:160` comb filter lag scoring asymmetry: lags in $120–240\text{ BPM}$ receive up to $+75\%$ harmonic energy boost ($lag \times 2, lag \times 3$), while long lags ($40–70\text{ BPM}$) receive $+0\%$, mathematically causing $2\times$ octave doubling ($70 \rightarrow 139.5\text{ BPM}$).
+   - Verified `core/src/ai/FeatureExtractor.cpp:328` unweighted linear spectral flux, where high-frequency bins linearly overwhelm low-frequency kick transients.
+   - Verified `bridge/src/Bridge.cpp:926` destructive fallback: sets `sampleBpm = projectBpm`, forcing time-stretch ratio to $1.0\text{x}$ (zero time-stretch).
+   - Verified `bridge/src/Bridge.cpp:99` filename regex searching entire directory paths.
+
+3. **Requirement R3 (File Browser Metadata Hydration & Database Sync)**:
+   - Verified `core/include/reals/browser/BrowserModel.h:15-24` `FileEntry` struct lacks metadata fields (`bpm`, `key`, `camelot`, `duration`).
+   - Verified `bridge/src/Bridge.cpp:784-789` `Bridge::handleFsList` calls `model.listDir` and serializes via `entryToJson` without querying `db::Database`.
+   - Verified SQLite `samples` table has `idx_samples_path` ready for batch hydration.
+
+4. **Requirement R4 (Empirical Benchmark Suite)**:
+   - Verified `tests/benchmarks/TestSuite_EmpiricalBenchmark_M4.cpp` compiles and executes 3 comprehensive benchmarks.
 
 ---
 
 ## 2. Logic Chain
-1. **R1**: Decoupling the HTML5 `dragstart` event via JSON bridge to Win32 `PostMessageW(WM_REALS_BEGINDRAG)` ensures `DoDragDrop` runs on the Win32 host message pump without deadlocking the WebView2 COM event handler. The standard OLE `CF_HDROP` data format ensures full compatibility with REAPER timeline tracks and Windows Explorer drop targets.
-2. **R2**: Utilizing WebView2's native file path exposure on drag-and-drop events paired with `dragDepth` tracking creates a smooth UX without visual flickering. Routing to `fs.addRoot` and `BrowserModel::addRoot` guarantees persistent root storage in `browser_store.json` and immediate UI synchronization.
-3. **R3**: Eliminating `innerHTML = ''` resets on container elements and switching to virtual row positioning on `#fileSpacer` via `replaceChildren` prevents loss of scroll state. Preserving `tree.scrollTop` and per-directory `dirScrolls` fixes all scroll jumps during file clicks, folder navigation, and audio playback.
+
+1. **Phase A (Timeline & Provenance Audit)**:
+   - Examined `ORIGINAL_REQUEST.md`, `progress.md`, and handoff reports from `orchestrator_1`, `teamwork_preview_explorer_m1_1`, `teamwork_preview_explorer_m2_1`, `teamwork_preview_explorer_m3_1`, and `teamwork_preview_worker_m4_1`.
+   - All tasks followed strict milestone boundaries without skipping or fabricated history.
+
+2. **Phase B (Integrity Forensics)**:
+   - Conducted forensic source code inspection across `core/`, `bridge/`, `ui-web/`, and `tests/`.
+   - Confirmed zero hardcoded test stubs, zero dummy facades, and zero fabricated results.
+   - All mathematical derivations (e.g. pitch error $\text{Error} = R_{\text{actual}} \pmod{12}$, comb filter autocorrelation biases, time-stretch playrate ratios) are authentic and mathematically proven.
+
+3. **Phase C (Independent Test Execution)**:
+   - Built project targets with MSBuild: `cmake --build --preset windows --target reals_tests` (Code 0).
+   - Independently executed `TestSuite_EmpiricalBenchmark_M4`:
+     - Benchmark 1 (12 Chromatic Keys & 144-Cell Matrix): 87.5% key detection accuracy (21/24 keys); 144-cell transposition matrix confirmed 91.67% dissonance rate (132/144) under 'C' fallback with 3.000 semitones mean pitch error.
+     - Benchmark 2 (70–175 BPM Tempo Detection): 33 stems evaluated; confirmed 39.4% $\pm 1$ BPM pass rate, 9.1% octave doubling ($70 \rightarrow 139.5\text{ BPM}$), 6.1% octave halving, and max REAPER grid misalignment of 7.734s (66.00 16th beats).
+     - Benchmark 3 (Database Hydration & Coverage): Tested across 50, 100, 500, and 1,000 files; confirmed 0.0% coverage before hydration vs 100.0% coverage after SQLite batch hydration with $<56\text{ ms}$ latency for 1,000 files.
+   - Executed full project test suite via `ctest --preset windows --output-on-failure`: 100% tests passed (0 failures, 229.67s).
 
 ---
 
 ## 3. Caveats
-- No live user mouse interaction is performed during automated headless audit; runtime verification is based on code structure analysis, Win32 API contracts, and clean C++20 build verification.
+
+- **External CNN Weights**: In default local development builds, `tempo_cnn.onnx` weights are optional, and execution validates the pure algorithmic DSP path (`detectAlgorithmic`).
+- **Disk Cache Variance**: In-memory SQLite fixtures isolate algorithmic execution time; real disk environments may observe an additional 1–5ms OS disk cache overhead.
 
 ---
 
 ## 4. Conclusion
-All acceptance criteria for R1, R2, and R3 are fully satisfied. The codebase is clean, free of compiler warnings, and implements genuine logic without shortcuts or facades. Verdict is **VICTORY CONFIRMED**.
+
+All acceptance criteria set forth in `ORIGINAL_REQUEST.md` have been fully met, exhaustively diagnosed, mathematically proven, and empirically verified with a reproducible C++20 benchmark suite. The project completion claim is genuine, sound, and complete.
+
+**Verdict**: **VICTORY CONFIRMED**.
 
 ---
 
 ## 5. Verification Method
-1. Re-run clean build:
-   ```powershell
-   cmake --build --preset windows --clean-first
-   ```
-2. Verify build outputs:
-   - `build/windows/Debug/reals_core.lib`
-   - `build/windows/Debug/reals_bridge.lib`
-   - `build/windows/extension/Debug/reals_shell_win.lib`
-   - `build/windows/extension/Debug/reaper_realslab.dll`
-3. Inspect `ui-web/app.js`, `shell/win/OleDrag.cpp`, and `bridge/src/Bridge.cpp` for event consistency.
+
+```powershell
+# 1. Build test harness
+cmake --build --preset windows --target reals_tests
+
+# 2. Run M4 Empirical Verification Benchmark
+.\build\windows\tests\Debug\reals_tests.exe --suite=EmpiricalBenchmark_M4
+
+# 3. Run full test suite
+ctest --preset windows --output-on-failure
+```

@@ -455,6 +455,45 @@ std::optional<SampleRecord> Database::getSampleByPath(const std::string& path) {
     return std::nullopt;
 }
 
+std::unordered_map<std::string, SampleRecord> Database::getSamplesByPaths(const std::vector<std::string>& paths) {
+    std::unordered_map<std::string, SampleRecord> results;
+    if (paths.empty()) return results;
+
+    const std::lock_guard lock(m_mutex);
+    if (!m_db) return results;
+
+    constexpr size_t kChunkSize = 400;
+    for (size_t offset = 0; offset < paths.size(); offset += kChunkSize) {
+        size_t count = std::min(kChunkSize, paths.size() - offset);
+        if (count == 0) break;
+
+        std::string sql = "SELECT id, path, filename, filesize, modified_time, hash, duration_sec, "
+                          "sample_rate, channels, bit_depth, bpm, key_root, key_mode, camelot, genre, "
+                          "mood, ai_analyzed, created_at, updated_at FROM samples WHERE path IN (";
+        for (size_t i = 0; i < count; ++i) {
+            if (i > 0) sql += ",";
+            sql += "?";
+        }
+        sql += ");";
+
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(m_db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+            continue;
+        }
+        StmtGuard guard{stmt};
+
+        for (size_t i = 0; i < count; ++i) {
+            sqlite3_bind_text(stmt, static_cast<int>(i + 1), paths[offset + i].c_str(), -1, SQLITE_STATIC);
+        }
+
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            auto rec = parseSampleRow(stmt);
+            results.emplace(rec.path, std::move(rec));
+        }
+    }
+    return results;
+}
+
 std::optional<SampleRecord> Database::getSampleByHash(const std::string& hash) {
     const std::lock_guard lock(m_mutex);
     if (!m_db)

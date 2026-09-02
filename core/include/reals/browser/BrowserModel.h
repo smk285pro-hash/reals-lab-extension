@@ -21,6 +21,10 @@ struct FileEntry {
     long long modifiedEpoch = 0;
     bool isAudio = false;
     bool isDir = false;
+    float bpm = 0.0f;
+    std::string key;
+    std::string camelot;
+    double durationSec = 0.0;
 };
 
 class BrowserModel {

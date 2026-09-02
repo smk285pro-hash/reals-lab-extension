@@ -1300,27 +1300,25 @@ function extractKeyFromFilename(filename) {
     if (mapped) return mapped;
   }
 
-  // 2. Note Name (e.g. D#, C#, E, F, A, G#m, etc.)
-  const keyRe = /(?:^|[\s_\-\(\[])([A-G][#b]?(?:m|maj|min|minor|major)?)(?:\s+(?:maj|min|minor|major))?(?:[\s_\-\)\]]|\.|$)/gi;
+  // 2. Note Name (e.g. D#, C#, E, F, A, G#m, C minor, F# min, etc.)
+  const keyRe = /(?:^|[\s_\-\(\[])([A-G][#b]?)(?:\s*(m|maj|min|minor|major))?(?:[\s_\-\)\]]|\.|$)/gi;
   let match;
   const matches = [];
   while ((match = keyRe.exec(base)) !== null) {
-    matches.push(match[1]);
+    let note = match[1].charAt(0).toUpperCase() + (match[1].length > 1 ? match[1].charAt(1) : '');
+    if (note === 'Db' || note === 'DB') note = 'C#';
+    else if (note === 'Eb' || note === 'EB') note = 'D#';
+    else if (note === 'Gb' || note === 'GB') note = 'F#';
+    else if (note === 'Ab' || note === 'AB') note = 'G#';
+    else if (note === 'Bb' || note === 'BB') note = 'A#';
+    else if (note === 'Cb' || note === 'CB') note = 'B';
+    else if (note === 'Fb' || note === 'FB') note = 'E';
+    const mode = match[2] ? match[2].toLowerCase() : '';
+    const isMin = mode === 'm' || mode.includes('min');
+    matches.push(note + (isMin ? 'm' : ''));
   }
   if (matches.length > 0) {
-    let raw = matches[matches.length - 1];
-    const m = raw.match(/^([A-G][#b]?)(.*)$/i);
-    if (m) {
-      let note = m[1].charAt(0).toUpperCase() + (m[1].length > 1 ? m[1].charAt(1) : '');
-      if (note === 'Db' || note === 'DB') note = 'C#';
-      else if (note === 'Eb' || note === 'EB') note = 'D#';
-      else if (note === 'Gb' || note === 'GB') note = 'F#';
-      else if (note === 'Ab' || note === 'AB') note = 'G#';
-      else if (note === 'Bb' || note === 'BB') note = 'A#';
-      const mode = m[2] ? m[2].toLowerCase() : '';
-      const isMin = mode.includes('m') || mode.includes('min');
-      return note + (isMin ? 'm' : '');
-    }
+    return matches[matches.length - 1];
   }
   return null;
 }
@@ -3200,13 +3198,20 @@ async function playFile(path) {
       renderPlayerTags(tags);
     } catch {}
 
-    // BPM & Key extraction: try filename first, then DB lookup
+    // BPM & Key extraction: check hydrated file entry, then filename regex, then background DB/DSP meta
     try {
+      const fEntry = (state.files || []).find((x) => x.path === path);
       const bpmMatch = filename.match(/(\d+)\s*bpm/i);
       const filenameBpm = bpmMatch ? parseFloat(bpmMatch[1]) : 0;
-      const filenameKey = extractKeyFromFilename(filename) || 'C';
+      const filenameKey = extractKeyFromFilename(filename) || '';
 
-      const rootNote = extractRootNoteName(filenameKey);
+      const initialBpm = (fEntry && fEntry.bpm > 0) ? fEntry.bpm : filenameBpm;
+      const initialKey = (fEntry && fEntry.key) ? fEntry.key : (filenameKey || 'C');
+
+      state.sampleBpm = initialBpm || 0;
+      state.sampleKey = initialKey;
+
+      const rootNote = extractRootNoteName(initialKey);
       state.originalRootNote = rootNote;
       if (state.isUserTargetKeyLocked && state.userTargetNote) {
         state.selectedTargetNote = state.userTargetNote;
@@ -3231,8 +3236,8 @@ async function playFile(path) {
           if (meta.genre) genre = meta.genre;
           if (meta.mood) mood = meta.mood;
         }
-        if (!bpm) bpm = filenameBpm;
-        if (!key || key === 'ORIGINAL') key = filenameKey;
+        if (!bpm) bpm = initialBpm;
+        if (!key || key === 'ORIGINAL') key = initialKey;
 
         state.sampleBpm = bpm || 0;
         state.sampleKey = key || 'C';

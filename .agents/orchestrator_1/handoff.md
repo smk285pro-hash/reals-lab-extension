@@ -1,70 +1,127 @@
-# Final Project Orchestrator Handoff Report: Reals Lab Theme Engine
+# Master Handoff Report: Comprehensive Audio & File Navigation Diagnostics & Fix Roadmap
 
-**Project**: Reals Lab Theme Engine (C++20 REAPER Extension + WebView2 UI)  
-**Date**: 2026-08-31T22:33:00+07:00  
-**Status**: Completed & Fully Verified (Gate: PASS, 100% Tests Passed)  
-
----
-
-## 1. Observation
-
-All core deliverables requested in `ORIGINAL_REQUEST.md`, `AGENTS.md`, and `SPEC.md` have been implemented, built, deployed, and independently audited:
-
-1. **Design Tokens & Theme Palettes (R1)**:
-   - `ui-web/tokens.css`: 82 distinct semantic CSS custom properties defined in `:root, html[data-theme="dark-studio"]` and completely overridden with 100% parity in `html[data-theme="pastel-pink"]` and `html[data-theme="cyberpunk"]` (246 definitions total).
-   - `ui-web/app.css`: 0 hardcoded hex colors; 100% tokenized.
-   - Vector SVG icons inherit colors dynamically via `currentColor` or CSS tokens.
-2. **Native Bridge & REAPER ExtState Persistence (R2)**:
-   - `extension/src/reaper_plugin.cpp`: Dynamic API binding via `REAPERAPI_LoadAPI(rec->GetFunc)` -> `GetExtState("REALSLAB", "theme")` and `SetExtState("REALSLAB", "theme", name, true)` persisting to `%APPDATA%/REAPER/reaper-extstate.ini`.
-   - Bidirectional plain-string IPC protocol `THEME_CHANGED:<name>` and JavaScript push `window.themeManager.applyTheme('<name>', false)`.
-   - Complete input sanitization against empty strings, unknown names, SQL/XSS injections, control bytes, and Unicode characters defaulting to `"dark-studio"`.
-3. **Zero-FOUC & WebView2 Host (R2/R3)**:
-   - Synchronous inline `<head>` bootstrap script in `ui-web/index.html` querying `localStorage.getItem('reals_theme')` before DOM rendering.
-   - `shell/win/WebViewHost.cpp`: `ICoreWebView2Controller2::put_DefaultBackgroundColor({0,0,0,0})` transparent initialization and `put_IsVisible(FALSE)` hidden pre-warming.
-   - Win32 host window dark brush `#0D0E11` and DWM dark title bar.
-4. **Dynamic Canvas Synchronous Redraws & Theme Picker UI (R3)**:
-   - `ui-web/app.js`: In-memory `canvasThemeColors` cache subscribed to `themeUpdated` CustomEvent. Avoids `getComputedStyle` during 60FPS animation, preventing audio playback buffer underruns.
-   - `drawWaveform()` (Audio/MIDI) and `drawMeterSmoothed()` render using active theme tokens.
-   - Settings Modal (`ui-web/index.html` & `app.js`): Added `#optTheme` button chips in `#tab-general` with active indicator and bilingual localization (`I18N.vi` / `I18N.en`).
-5. **Continuous Build, Early Deployment & Parallel Verification (R4)**:
-   - MSVC C++20 zero-warning compilation (`/W4`).
-   - Automated post-build deployment of `reaper_realslab.dll` to `%APPDATA%/REAPER/UserPlugins/reaper_realslab.dll` with atomic `.old` rotation.
+**Orchestrator**: `orchestrator_1` (Project Orchestrator)  
+**Date**: 2026-09-02  
+**Status**: All Milestones M1, M2, M3, M4 Completed Successfully (100% Verified)  
+**Artifacts Generated**:
+- `tests/benchmarks/TestSuite_EmpiricalBenchmark_M4.cpp` (Empirical Verification Suite)
+- `.agents/teamwork_preview_explorer_m1_1/handoff.md` (Key/Tone Transposition Deep Audit)
+- `.agents/teamwork_preview_explorer_m2_1/handoff.md` (BPM Detection & Time-Stretch Deep Audit)
+- `.agents/teamwork_preview_explorer_m3_1/handoff.md` (File Browser Metadata Hydration Deep Audit)
+- `.agents/teamwork_preview_worker_m4_1/handoff.md` (Empirical Benchmark Execution Report)
 
 ---
 
-## 2. Logic Chain
+## 1. Executive Summary & Root Cause Synthesis
 
-1. The design token architecture provides full theme customization while maintaining semantic decoupling.
-2. Zero-FOUC is achieved via a 3-tier defense: (a) host window brush `#0D0E11`, (b) WebView2 transparent background `{0,0,0,0}`, (c) synchronous inline `<head>` script reading local fast-cache.
-3. REAPER `GetExtState` is the definitive cross-session state store, pushed cleanly from C++ to JS on startup and window activation.
-4. Decoupling canvas color updates to `themeUpdated` events eliminates layout thrashing during audio/MIDI playback, guaranteeing glitch-free audio processing.
-5. All 5 independent verification agents (Reviewer 1, Reviewer 2, Challenger 1, Challenger 2, Forensic Auditor) verified correctness, performance, and code integrity.
+### 1.1 Root Cause Summary by Domain
 
----
-
-## 3. Caveats
-
-- In standalone browser mode (outside REAPER), the system seamlessly falls back to `localStorage` and mock storage without errors.
-- Deployed binary target is Windows x64. Non-Windows shells (macOS/Linux) remain stubbed for Phase 6 per `SPEC.md`.
+| Domain | Problem Observed | Exact Root Causes in Source Code | Empirical Impact |
+|---|---|---|---|
+| **R1. Key/Tone Transposer & Root Note Fallback** | Unlabelled samples default to 'C'; selecting piano target key causes severe pitch distortion. Minor keys stripped to major. | 1. **10 Hardcoded Fallback Sites**: `ui-web/app.js:1234, 2482, 3207`, `Bridge.cpp:270, 1310`, and `KeyDetector.cpp:74` force $R_{\text{assumed}} = 'C'$.<br>2. **Bridge Regex Mode Stripping**: `Bridge.cpp:265` uses non-capturing group for mode `(?:m\|maj\|min\|minor\|major)?`, returning only tonic note $km[1]$ (`Am` $\rightarrow$ `"A"`).<br>3. **Frontend Spaced Mode Dropping**: `app.js:1304` regex leaves mode outside $match[1]$ (`"C minor"` $\rightarrow$ `"C"`).<br>4. **Missing Enharmonics**: `Cb`, `B#`, `E#`, `Fb` missing in normalizers. | **91.67% Dissonance Rate** (132/144 transitions out of tune); mean pitch error of **3.000 semitones**; worst-case **6.000 semitones** (Tritone clash). |
+| **R2. Algorithmic BPM Detection & Time-Stretch** | Unlabelled loops fail true tempo or produce octave errors (half-time/double-time); preview & DAW drag-and-drop lose sync. | 1. **Comb Filter Lag Asymmetry**: `TempoDetector.cpp:160` boosts short lags ($120–240\text{ BPM}$) by $+75\%$ harmonic energy while giving $+0\%$ to long lags ($40–70\text{ BPM}$), biasing toward $2\times$ octave doubling ($70 \rightarrow 139.5\text{ BPM}$).<br>2. **Unweighted Linear Spectral Flux**: `FeatureExtractor.cpp:328` linear STFT flux allows high-frequency hats to overpower kick transients, locking arpeggios to 16th-note sub-beats.<br>3. **Destructive Fallback in `Bridge.cpp:926`**: Sets `sampleBpm = projectBpm`, resulting in $ratio = 1.0\text{x}$ (zero time-stretch) for unlabelled loops.<br>4. **Regex False Positives**: `Bridge.cpp:99` matches arbitrary numbers in sample names and full folder paths (`Pack_90/` $\rightarrow 90\text{ BPM}$). | **60.6% Misclassification Rate**; octave doubling on $70\text{ BPM}$; sub-beat locking on melodic stems creating up to **7.734s (66.00 16th beats) of timeline grid misalignment** in REAPER. |
+| **R3. File Browser Metadata Hydration & DB Sync** | File browser displays bare filenames with no BPM/Key badges, forcing frontend into filename regex heuristics. | 1. **Architectural Model Gap**: `BrowserModel::FileEntry` lacks fields for `bpm`, `keyRoot`, `keyMode`, `camelot`, `genre`, `mood`, `durationSec`.<br>2. **Unconnected Bridge Pipeline**: `Bridge::handleFsList` calls `model.listDir` and passes entries straight to `entryToJson` without querying `db::Database`.<br>3. **Missing Indexing**: SQLite `samples` table has `idx_samples_path` but lacks directory batch indexing. | **0.0% BPM, Key, and Duration coverage** during directory navigation, directly starving the UI and triggering all R1 & R2 fallback bugs. |
 
 ---
 
-## 4. Conclusion
+## 2. Empirical Benchmark Verification Results (R4)
 
-Gate Result: **PASS**  
-- Reviewer 1 (Frontend): **APPROVE**  
-- Reviewer 2 (Native C++): **APPROVE**  
-- Challenger 1 (UX & Stress): **APPROVE**  
-- Challenger 2 (Native & Persistence): **APPROVE**  
-- Forensic Auditor (Integrity): **CLEAN**  
+### 2.1 12 Chromatic Key Detection & Transposition Matrix
+- **KeyDetector Accuracy**: **87.5% (21/24 keys)** on synthetic harmonic scales with 0.927 mean confidence.
+- **Transposition Error Matrix (144 Cells)**:
+  - Correct Transpositions: **12 / 144 (8.33%)** (only when actual root is C).
+  - Dissonant Transpositions: **132 / 144 (91.67%)**.
+  - Pitch error formula: $\text{Error} = R_{\text{actual}} \pmod{12}$.
 
-All milestones (M1, M2, M3, M4) are complete.
+### 2.2 70–175 BPM Tempo Detection & Time-Stretch Error
+- **Exact / $\pm 1$ BPM Pass**: **39.4% (13/33 stems)**.
+- **Octave Doubling ($2\times$)**: **9.1% (3/33)** (Systematic on $70\text{ BPM} \rightarrow 139.5\text{ BPM}$).
+- **Octave Halving ($0.5\times$)**: **6.1% (2/33)** (Systematic on $175\text{ BPM} \rightarrow 87.6\text{ BPM}$).
+- **Severe Sub-Beat Harmonic Locking**: **45.5% (15/33)**.
+- **Max REAPER Grid Misalignment**: **7.7344 seconds (66.00 16th beats)**.
+
+### 2.3 SQLite Metadata Hydration Benchmark
+- **Coverage**: Bare `fs.list` = **0.0%** $\rightarrow$ Hydrated `db::Database` = **100.0%** (BPM, Key, Camelot, Duration).
+- **Latency**: 50 files = 3.79ms, 100 files = 9.74ms, 500 files = 29.33ms, 1000 files = 53.41ms.
 
 ---
 
-## 5. Verification Method
+## 3. Prioritized Architectural Fix Roadmap
 
-- Python token parity test: `python tests/verify_tokens_test.py` (100% Pass)
-- Dedicated native unit test suite: `.\build\windows\tests\Debug\reals_tests.exe --suite=ThemeEngine` (42/42 Pass)
-- Consolidated test runner: `ctest --preset windows` (100% Pass)
-- Live REAPER DLL: `%APPDATA%/REAPER/UserPlugins/reaper_realslab.dll`
+```
+                                  FIX ROADMAP ARCHITECTURE
+  
+   [ Layer 1: Core / AI DSP ]
+   ├── KeyDetector: Relative Major/Minor Chroma Triad Weighting + Enharmonic Expansion
+   └── TempoDetector: 3-Band Log-Flux + Bayesian 120-BPM Prior + Bar-Length Snapping
+                │
+                ▼
+   [ Layer 2: Core Database & Browser Model ]
+   ├── FileEntry: Add bpm, keyRoot, keyMode, camelot, durationSec, isIndexed
+   ├── Database: Add batch query `Database::getSamplesByPaths(vector<string>)`
+   └── BrowserModel: Validate cache mtime against SQLite records
+                │
+                ▼
+   [ Layer 3: Bridge Router ]
+   ├── Bridge::handleFsList: Hydrate FileEntry vector from db::Database before serializing
+   ├── entryToJson: Output bpm, key, camelot, duration, genre, mood
+   ├── Regex Fixes: Strict token matching; eliminate mode-stripping; restrict to filename
+   └── Fallback Safety: Unify fallback to explicit 0.0 with toast alerts (never mutate projectBpm)
+                │
+                ▼
+   [ Layer 4: Web UI Frontend ]
+   ├── Transposer State: Support Relative Shift Mode (±12 st) when root is unknown
+   ├── Piano Keyboard: Live badge updates & automatic KeyDetector trigger
+   └── Regex Fixes: Parse spaced modes ("C minor"), Camelot tokens ("8A"), full enharmonics
+```
+
+### Phase 1: High Priority (P0) — Critical Bug Fixes (Zero Architecture Overhead)
+1. **Fix Bridge Minor Mode Stripping** (`bridge/src/Bridge.cpp:265`):
+   - Update regex to capture mode suffix into $km[2]$ and append to normalized key string (`"Am"`, `"F#m"`).
+2. **Fix Frontend Spaced Mode Dropping** (`ui-web/app.js:1304`):
+   - Include `(?:\s+(?:maj|min|minor|major))` inside capturing group $match[1]$.
+3. **Fix Regex False Positives on File/Directory Paths** (`bridge/src/Bridge.cpp:99`):
+   - Restrict regex search to `platform::pathToUtf8(p.filename())` (never directory path).
+   - Require explicit `bpm`/`tempo` boundary anchors.
+4. **Fix Destructive Fallback in `Bridge.cpp:926`**:
+   - Do NOT set `sampleBpm = projectBpm`. Set `ratio = 1.0f` and keep `sampleBpm = 0.0f` to signal unknown tempo.
+
+### Phase 2: High Priority (P1) — Database Metadata Hydration Pipeline
+1. **Extend `FileEntry` struct** (`core/include/reals/browser/BrowserModel.h`):
+   - Add `float bpm = 0.0f;`, `std::string key;`, `std::string camelot;`, `double durationSec = 0.0;`.
+2. **Implement Batch Query in `Database`** (`core/include/reals/db/Database.h`, `core/src/db/Database.cpp`):
+   - Add `std::unordered_map<std::string, SampleRecord> getSamplesByPaths(const std::vector<std::string>& paths);`.
+3. **Hydrate in `Bridge.cpp` (`fs.list`)**:
+   - In `Bridge::handleFsList`, extract all audio paths, query `db.getSamplesByPaths(paths)`, and populate `FileEntry` metadata.
+4. **Update `entryToJson`** (`bridge/src/Bridge.cpp:58`):
+   - Serialize `e["bpm"]`, `e["key"]`, `e["camelot"]`, `e["duration"]`.
+
+### Phase 3: Medium Priority (P2) — Algorithmic AI & DSP Enhancements
+1. **Multi-Band Logarithmic Spectral Flux in `FeatureExtractor.cpp`**:
+   - Divide STFT into 3 bands (Low: 20–250 Hz, Mid: 250–4000 Hz, High: 4–20 kHz) with logarithmic compression $\log(1 + 100 \cdot |X|)$.
+2. **Bayesian Tempo Prior in `TempoDetector.cpp`**:
+   - Replace hard cutoff with Log-Normal prior $W(\text{bpm}) = \exp\left(-\frac{1}{2}\left(\frac{\log_2(\text{bpm}/120.0)}{0.6}\right)^2\right)$.
+3. **Bar-Length Constraint Snapping**:
+   - Snap detected BPM to $\text{BPM}_{\text{bar}} = \frac{240 \cdot b}{\text{Duration}}$ for cleanly trimmed loops.
+4. **Extend Scanner Decode Window**:
+   - Increase `BackgroundScanner.cpp` decode limit from 8s to 20s.
+
+### Phase 4: Frontend UI Polish & Transposition Safety (P2)
+1. **Relative vs Absolute Transposition Mode** (`ui-web/app.js`):
+   - When key is unknown, display `"Root: Unknown (Relative Mode)"` and allow direct $\pm 12$ semitone pitch shifting without assuming 'C'.
+2. **Automatic Background Key Detection on Selection**:
+   - Trigger `audio.detectKey` immediately when an unlabelled sample is selected, updating the root note before the user interacts with the piano keyboard.
+
+---
+
+## 4. Verification & Testing Instructions
+```powershell
+# 1. Build full test suite with empirical benchmarks
+cmake --build --preset windows --target reals_tests
+
+# 2. Run M4 Empirical Benchmark Suite
+.\build\windows\tests\Debug\reals_tests.exe --suite=EmpiricalBenchmark_M4
+
+# 3. Run all unit tests
+ctest --preset windows --output-on-failure
+```

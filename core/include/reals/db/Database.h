@@ -6,6 +6,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -60,6 +61,7 @@ public:
     int64_t upsertSample(const SampleRecord& rec);
     [[nodiscard]] std::optional<SampleRecord> getSampleById(int64_t id);
     [[nodiscard]] std::optional<SampleRecord> getSampleByPath(const std::string& path);
+    [[nodiscard]] std::unordered_map<std::string, SampleRecord> getSamplesByPaths(const std::vector<std::string>& paths);
     [[nodiscard]] std::optional<SampleRecord> getSampleByHash(const std::string& hash);
     bool deleteSample(int64_t id);
     bool deleteSampleByPath(const std::string& path);

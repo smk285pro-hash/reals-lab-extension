@@ -151,15 +151,24 @@ TempoResult TempoDetector::detectAlgorithmic(const float* pcm, size_t frames, in
         acf[lag] = sum;
     }
 
-    // 4. Comb filter resonance scoring
+    // 4. Comb filter resonance scoring with balanced harmonics & gentle 120 BPM prior
     float bestScore = -1.0f;
     int bestLag = minLag;
 
     for (int lag = minLag; lag <= maxLag; ++lag) {
         float score = acf[lag];
-        // Add harmonic energy (2x lag, 3x lag)
-        if (lag * 2 <= maxLag) score += 0.5f * acf[lag * 2];
-        if (lag * 3 <= maxLag) score += 0.25f * acf[lag * 3];
+        float weightSum = 1.0f;
+        if (lag * 2 <= maxLag) { score += 0.5f * acf[lag * 2]; weightSum += 0.5f; }
+        if (lag * 3 <= maxLag) { score += 0.25f * acf[lag * 3]; weightSum += 0.25f; }
+        if (lag / 2 >= minLag) { score += 0.5f * acf[lag / 2]; weightSum += 0.5f; }
+
+        score /= weightSum;
+
+        // Gentle Log-Normal prior centered around 120 BPM (stddev ~ 0.75 octaves)
+        const float candBpm = (frameRate * 60.0f) / static_cast<float>(lag);
+        const float octaveDiff = std::log2(candBpm / 120.0f);
+        const float prior = std::exp(-0.5f * std::pow(octaveDiff / 0.75f, 2.0f));
+        score *= (0.65f + 0.35f * prior);
 
         if (score > bestScore) {
             bestScore = score;

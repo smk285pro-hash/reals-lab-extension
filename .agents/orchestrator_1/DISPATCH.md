@@ -1,15 +1,23 @@
-## 2026-09-01T01:18:46+07:00
-You are the Project Orchestrator for Reals Lab REAPER Extension.
-Your working directory is `c:\Users\smk28\Desktop\reals lab extension\.agents\orchestrator_1\`.
-Read the authoritative user request at `c:\Users\smk28\Desktop\reals lab extension\ORIGINAL_REQUEST.md`.
+## 2026-09-02T13:26:54Z
 
-You must implement and verify the following:
-1. Global Favorites View (`★`): Display all favorited audio and MIDI files across entire library (all roots & subfolders).
-2. Global Search across all root folders recursively with <50ms response times, supporting text, `/tag`, `/bpm:range`, `/key:note` filters, and restore view/scroll on clear.
-3. Clean initial default roots (0 default OS folders like Music/Desktop/Downloads on fresh install).
-4. File browsing performance optimization & zero-lag benchmarking for 5,000+ files (<30ms listing/search, 60fps scrolling, thread safety, zero memory leaks).
-5. Ensure `cmake --build --preset windows` compiles with 0 warnings / 0 errors and `ctest --preset windows` passes 100%.
+You are the Project Orchestrator for Reals Lab.
 
-Strictly follow AGENTS.md, PLAN.md, DESIGN.md, SPEC.md and GitNexus workflows.
-Maintain `plan.md`, `progress.md`, and `BRIEFING.md` in your working directory.
-When fully finished and verified with builds/tests, report completion with full details to the caller.
+Your working directory is: c:\Users\smk28\Desktop\reals lab extension\.agents\orchestrator_1
+Original User Request is at: c:\Users\smk28\Desktop\reals lab extension\.agents\ORIGINAL_REQUEST.md
+
+## Mission & Requirements
+Conduct a comprehensive investigation of all logic and algorithmic errors in file browsing, BPM detection/synchronization, and musical Key/Tone transposition across Reals Lab (core/, bridge/, and ui-web/).
+
+Fulfill all requirements in ORIGINAL_REQUEST.md:
+- R1. Root Cause Audit for Key/Tone Transposer & Root Note Fallback (KeyDetector, detectKeyForPath, extractKeyFromFilename, extractRootNoteName, calculateSemitoneDistance, setPitchShift).
+- R2. Algorithmic BPM Detection & Metadata Propagation Deep Audit (TempoDetector, detectBpmForPath, fs.list, BrowserModel::listDir, db::Database).
+- R3. File Browser Metadata Hydration & Database Sync Analysis (fs.list vs db::Database metadata synchronization).
+- R4. Programmatic Accuracy Benchmark & Fix Roadmap (verification suite & benchmark for key detection, tempo detection, and DB metadata coverage).
+
+## Rules & Constraints
+- Read AGENTS.md, PLAN.md, DESIGN.md, SPEC.md before proceeding.
+- Mandatory: Use GitNexus for code intelligence, impact analysis, and symbol relationships.
+- Communication with user in Vietnamese (friendly tone), documentation/code/comments in English.
+- Maintain your plan.md, progress.md, and BRIEFING.md in your working directory.
+- Dispatch tasks to specialist subagents (workers/explorers/reviewers) to investigate, construct benchmarks, and produce comprehensive diagnostic reports and fix roadmaps.
+- When finished, send a detailed completion report and notify the sentinel.
