@@ -156,8 +156,8 @@ void processPendingSyncPlayrates() {
         std::chrono::steady_clock::now().time_since_epoch()).count();
 
     for (auto it = g_pendingPlayrates.begin(); it != g_pendingPlayrates.end(); ) {
-        // Keep pending playrates valid for 60 seconds during drag operations
-        if (now - it->queuedTime > 60000) {
+        // Expire after 4 seconds to prevent stale drag jobs from lingering
+        if (now - it->queuedTime > 4000) {
             it = g_pendingPlayrates.erase(it);
             continue;
         }
@@ -172,9 +172,6 @@ void processPendingSyncPlayrates() {
             if (!it->originalPath.empty() && PCM_Source_CreateFromFileEx && GetSetMediaItemTakeInfo) {
                 PCM_source* newSrc = PCM_Source_CreateFromFileEx(it->originalPath.c_str(), false);
                 if (newSrc) {
-                    // Fetch the old (pre-baked) source and destroy it after the
-                    // swap — replacing P_SOURCE without deleting the previous
-                    // source leaks a PCM_source on every drag.
                     PCM_source* oldSrc = static_cast<PCM_source*>(
                         GetSetMediaItemTakeInfo(take, "P_SOURCE", nullptr));
                     GetSetMediaItemTakeInfo(take, "P_SOURCE", newSrc);
@@ -187,7 +184,6 @@ void processPendingSyncPlayrates() {
                     char msg[256];
                     std::snprintf(msg, sizeof(msg), "Mechanism C: Swapped source, playrate %.4f", it->playrate);
                     LOG_INFO(kTag, msg);
-                    // D_LENGTH is inherited from the perfect ghost item, no need to adjust
                     return true;
                 }
             }
@@ -226,12 +222,6 @@ void processPendingSyncPlayrates() {
             return true;
         };
 
-        auto getBasename = [](const std::string& p) -> std::string {
-            const size_t pos = p.find_last_of("/\\");
-            return (pos != std::string::npos) ? p.substr(pos + 1) : p;
-        };
-        const std::string targetBase = getBasename(normTarget);
-
         // 1. Check selected media items (newly dropped or inserted item is selected by REAPER)
         if (CountSelectedMediaItems && GetSelectedMediaItem && GetActiveTake) {
             int selCount = CountSelectedMediaItems(0);
@@ -252,14 +242,10 @@ void processPendingSyncPlayrates() {
                         rawSrcPath = src->GetFileName();
                         std::string srcPath = reals::platform::normalizePath(rawSrcPath);
                         for (char& c : srcPath) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
-                        if (srcPath == normTarget || srcPath.find(normTarget) != std::string::npos ||
-                            normTarget.find(srcPath) != std::string::npos ||
-                            (!targetBase.empty() && getBasename(srcPath) == targetBase)) {
+                        if (srcPath == normTarget || (!it->originalPath.empty() && srcPath == it->originalPath)) {
                             isMatch = true;
                         }
                     }
-                } else {
-                    isMatch = true;
                 }
 
                 if (isMatch) {
@@ -270,47 +256,16 @@ void processPendingSyncPlayrates() {
             }
         }
 
-        // 2. Also search all tracks & items in project if not in selected items
-        if (!matchedAny && CountTracks && GetTrack && CountTrackMediaItems && GetTrackMediaItem && GetActiveTake && GetMediaItemTake_Source) {
-            int numTracks = CountTracks(0);
-            for (int t = 0; t < numTracks && !matchedAny; ++t) {
-                MediaTrack* trk = GetTrack(0, t);
-                if (!trk) continue;
-                int numItems = CountTrackMediaItems(trk);
-                for (int m = 0; m < numItems && !matchedAny; ++m) {
-                    MediaItem* item = GetTrackMediaItem(trk, m);
-                    if (!item) continue;
-                    MediaItem_Take* take = GetActiveTake(item);
-                    if (!take) continue;
-                    PCM_source* src = GetMediaItemTake_Source(take);
-                    while (src && src->GetSource()) {
-                        src = src->GetSource();
-                    }
-                    if (!src || !src->GetFileName()) continue;
-
-                    std::string rawSrcPath = src->GetFileName();
-                    std::string srcPath = reals::platform::normalizePath(rawSrcPath);
-                    for (char& c : srcPath) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
-                    if (srcPath == normTarget || srcPath.find(normTarget) != std::string::npos ||
-                        normTarget.find(srcPath) != std::string::npos ||
-                        (!targetBase.empty() && getBasename(srcPath) == targetBase)) {
-                        double curRate = GetMediaItemTakeInfo_Value ? GetMediaItemTakeInfo_Value(take, "D_PLAYRATE") : 1.0;
-                        if (std::abs(curRate - it->playrate) > 0.001 || (srcPath.find("drag_") != std::string::npos || srcPath.find("drag_export") != std::string::npos)) {
-                            if (applyToTake(item, take, rawSrcPath)) {
-                                matchedAny = true;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         if (matchedAny) {
             if (UpdateArrange) UpdateArrange();
             it = g_pendingPlayrates.erase(it);
         } else {
             it->tries++;
-            ++it;
+            if (it->tries > 20) {
+                it = g_pendingPlayrates.erase(it);
+            } else {
+                ++it;
+            }
         }
     }
 }
@@ -1365,6 +1320,19 @@ int commandHookV1(const int command, const int /*val*/, const int /*valhw*/, con
     return 0;
 }
 
+static int realsTranslateAccel(MSG* /*msg*/, accelerator_register_t* /*ctx*/) {
+    if (!g_hwnd || !IsWindow(g_hwnd)) return 0;
+    HWND focus = GetFocus();
+    if (focus && (focus == g_hwnd || IsChild(g_hwnd, focus))) {
+        // When Reals Lab or its child (WebView2) has keyboard focus, return -1
+        // to tell REAPER to pass keystrokes directly to our window instead of
+        // triggering DAW transport play/stop or REAPER global actions.
+        return -1;
+    }
+    return 0;
+}
+static accelerator_register_t g_accelReg = { realsTranslateAccel, true, nullptr };
+
 } // namespace
 
 extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE hInstance,
@@ -1378,6 +1346,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
     if (!rec) {
         // Full teardown: unregister everything registered at load, release
         // bridge (joins lab workers) and webview (removes event handlers).
+        plugin_register("-accelerator", &g_accelReg);
         plugin_register("-timer", reinterpret_cast<void*>(timerHook));
         plugin_register("-hookcommand2", reinterpret_cast<void*>(commandHook));
         plugin_register("-hookcommand", reinterpret_cast<void*>(commandHookV1));
@@ -1478,6 +1447,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
             return -1;
         }
         plugin_register("hookcommand", reinterpret_cast<void*>(commandHookV1));
+        plugin_register("accelerator", &g_accelReg);
 
         char msg[64];
         std::snprintf(msg, sizeof(msg), "loaded, command id %d", g_cmdId);

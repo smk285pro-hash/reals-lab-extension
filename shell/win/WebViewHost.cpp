@@ -96,6 +96,7 @@ struct WebViewHost::Impl {
     ComPtr<ICoreWebView2> web;
     EventRegistrationToken messageToken{};
     EventRegistrationToken navToken{};
+    EventRegistrationToken accelToken{};
     bool messageHandlerAdded = false;
     DWORD navStartTick = 0;
     std::function<void(const std::string&)> onMessage;
@@ -113,6 +114,10 @@ struct WebViewHost::Impl {
             }
         }
         if (controller) {
+            if (accelToken.value != 0) {
+                controller->remove_AcceleratorKeyPressed(accelToken);
+                accelToken.value = 0;
+            }
             controller->Close();
             controller.Reset();
         }
@@ -213,6 +218,25 @@ void WebViewHost::create(HWND hwnd, const std::wstring& userDataFolder,
                             ComPtr<ICoreWebView2Controller4> controller4;
                             if (SUCCEEDED(m_impl->controller.As(&controller4)) && controller4)
                                 controller4->put_AllowExternalDrop(FALSE);
+
+                            // Capture accelerator keys (Space, Enter, Backspace, Arrows, Esc)
+                            // so they stay inside the browser DOM and never bubble to REAPER transport
+                            m_impl->controller->add_AcceleratorKeyPressed(
+                                Callback<ICoreWebView2AcceleratorKeyPressedEventHandler>(
+                                    [](ICoreWebView2Controller*, ICoreWebView2AcceleratorKeyPressedEventArgs* args) -> HRESULT {
+                                        if (!args) return S_OK;
+                                        UINT key = 0;
+                                        args->get_VirtualKey(&key);
+                                        if (key == VK_SPACE || key == VK_RETURN || key == VK_BACK ||
+                                            key == VK_UP || key == VK_DOWN || key == VK_LEFT || key == VK_RIGHT ||
+                                            key == VK_ESCAPE || key == VK_TAB) {
+                                            args->put_Handled(TRUE);
+                                        }
+                                        return S_OK;
+                                    }
+                                ).Get(),
+                                &m_impl->accelToken
+                            );
 
                             // Lock DevTools, Zoom Controls, Browser Accelerators in Release (allow in Debug)
                             ComPtr<ICoreWebView2Settings> settings;
