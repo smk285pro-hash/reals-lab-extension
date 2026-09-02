@@ -1,24 +1,17 @@
-## 2026-08-28T15:41:11Z
-You are explorer_survey_2, an exploration agent for Reals Lab.
+## 2026-09-02T15:40:16Z
+You are Explorer 2 for the Survey Phase of Reals Lab.
+Your working directory is: c:\Users\smk28\Desktop\reals lab extension\.agents\explorer_survey_2
+Original Request path: c:\Users\smk28\Desktop\reals lab extension\ORIGINAL_REQUEST.md
 
-Your working directory is: `c:\Users\smk28\Desktop\reals lab extension\.agents\explorer_survey_2`
-The authoritative user request is at: `c:\Users\smk28\Desktop\reals lab extension\.agents\ORIGINAL_REQUEST.md`
-Project root: `c:\Users\smk28\Desktop\reals lab extension`
+Please read ORIGINAL_REQUEST.md before starting work.
 
-Your mission:
-Investigate Playhead Phase Synchronization (R1/A1) and audio stream latency/artefacts.
-
-Key areas to explore:
-1. `core/src/audio/Engine.cpp` & `core/include/reals/audio/Engine.h` (`playFile`, `startFraction`, decoder seek, miniaudio ring buffer).
-2. `core/src/audio/SoundTouchProcessor.cpp` & `core/include/reals/audio/SoundTouchProcessor.h` (DSP pipeline initialization, `setTimeRatio`, `setPitchSemitones`, clearing/flushing SoundTouch buffer to avoid initial drift or clicks/pops).
-3. `bridge/src/Bridge.cpp` (`audio.play` RPC handling, transport retrieval from `IHostActions`, phase calculation formula).
-4. `extension/src/reaper_plugin.cpp` (`ExtHostActions::hostTransport`, REAPER SDK `GetPlayPosition`, `TimeMap2_timeToBeats`).
-5. Verify the normalized phase formula:
-   ```cpp
-   double rawBeats = (durationSeconds * sampleBpm) / 60.0;
-   double loopBeats = std::max(1.0, std::round(rawBeats));
-   double beatInLoop = std::fmod(transport.fullBeats, loopBeats);
-   if (beatInLoop < 0.0) beatInLoop += loopBeats;
-   double startFraction = std::clamp(beatInLoop / loopBeats, 0.0, 0.999);
-   ```
-6. Check decoder seek accuracy, sub-15ms start latency, and zero click/pop guarantees.
+Your objective: Investigate R2 (Key Transposer & BPM Lock Invariant Verification).
+1. Audit state management: verify state.isUserTargetKeyLocked strictly preserving state.userTargetNote across sample selection, audio.state / audio.syncState events, and background metadata hydration.
+2. Audit semitone calculation in audio.play and browser.beginDrag: verify exact semitone shift relative to sample's root note and user's locked note.
+3. Audit SQLite metadata hydration in fs.list via Database::getSamplesByPaths().
+4. Use GitNexus MCP tools (context, query, cypher, impact) to trace state synchronization, event handling, and database queries.
+5. Produce a comprehensive report in c:\Users\smk28\Desktop\reals lab extension\.agents\explorer_survey_2\handoff.md detailing:
+   - Exact code locations (files, line numbers, symbols)
+   - Verified facts vs potential bugs/gaps
+   - Clear recommendations for remediation or verification
+Report back when finished.

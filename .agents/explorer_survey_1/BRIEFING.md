@@ -1,43 +1,45 @@
-# BRIEFING — 2026-08-28T15:45:00Z
+# BRIEFING — 2026-09-02T15:45:00Z
 
 ## Mission
-Investigate DAW Drag & Drop Alignment (R2/A2) and Double-DSP / Double-Stretch problem in Reals Lab extension/standalone codebase.
+Investigate R1: Audio DSP Quality & Hardware Hook Signal Integrity (ma_decoder, SoundTouch DSP, REAPER Audio_RegHardwareHook).
 
 ## 🔒 My Identity
 - Archetype: explorer
-- Roles: explorer, investigator, synthesizer
+- Roles: investigation, synthesis
 - Working directory: c:\Users\smk28\Desktop\reals lab extension\.agents\explorer_survey_1
-- Original parent: e2690a71-413f-48b0-a2f2-f597fee3d763
-- Milestone: DAW Drag & Drop & Sync Playrate Investigation
+- Original parent: 1e419e13-ffa6-4185-987c-dd3d06140151
+- Milestone: survey_phase_r1
 
 ## 🔒 Key Constraints
 - Read-only investigation — do NOT implement
-- Must use GitNexus MCP tools (impact, query, context, detect_changes)
-- Produce comprehensive analysis.md and handoff.md following 5-component structure
+- Must use GitNexus MCP tools for code intelligence and symbol context
+- Report findings with exact file paths, line numbers, and logic chains
+- Follow AGENTS.md rules and 5-Component Handoff format
 
 ## Current Parent
-- Conversation ID: e2690a71-413f-48b0-a2f2-f597fee3d763
-- Updated: 2026-08-28T15:45:00Z
+- Conversation ID: 1e419e13-ffa6-4185-987c-dd3d06140151
+- Updated: 2026-09-02T15:45:00Z
 
 ## Investigation State
 - **Explored paths**:
-  - `extension/src/reaper_plugin.cpp` (`processPendingSyncPlayrates`, `ExtHostActions::beginDrag`, `timerHook`, `applyToTake`)
-  - `bridge/src/Bridge.cpp` (`browser.beginDrag`, `reaper.insert`, `queueSyncPlayrate`)
-  - `shell/win/OleDrag.cpp` (`beginFileDrag`, `FileDataObject`, `DoDragDrop`, `CF_HDROP`)
-  - `core/src/audio/DragExporter.cpp` & `core/include/reals/audio/DragExporter.h` (`exportTempWav`, `SoundTouchProcessor`, caching, cleanup)
-  - `ui-web/app.js` (`armOleDrag`, `browser.beginDrag` trigger)
-  - `tests/suites/TestSuite_BridgeUI.cpp` & `tests/suites/TestSuite_EmpiricalChallenger_R2.cpp`
+  - `core/include/reals/audio/Engine.h`, `core/src/audio/Engine.cpp`
+  - `core/include/reals/audio/SoundTouchProcessor.h`, `core/src/audio/SoundTouchProcessor.cpp`
+  - `core/src/audio/DragExporter.cpp`
+  - `extension/src/reaper_plugin.cpp`
+  - `libs/soundtouch/AAFilter.cpp`, `RateTransposer.cpp`, `TDStretch.cpp`, `InterpolateShannon.cpp`
+  - `tests/suites/TestSuite_AudioDSP.cpp`, `TestSuite_SoundTouchCore.cpp`, `TestSuite_EmpiricalChallenger_R1.cpp`
 - **Key findings**:
-  - Full evidence chain established for the Double-DSP defect: `DragExporter` pre-stretches into `drag_xxx.wav`, and then `processPendingSyncPlayrates` stretches again via REAPER `D_PLAYRATE`.
-  - Concrete recommendations and architecture designed for Mechanism A (Native original path) and Mechanism B (Baked export).
-- **Unexplored areas**: None within the scope of R2/A2 and Double-DSP.
+  - R1.1: `ma_decoder_config` explicitly uses `ma_format_f32`, uniform stereo (`channels = 2`), and `lpfOrder = 4` (4th-order Butterworth anti-aliasing filter) in `Engine.cpp:442-448`.
+  - R1.2: `SoundTouchProcessor` applies `SETTING_USE_AA_FILTER = 1`, `SETTING_USE_QUICKSEEK = 0`, 32-tap AA filter for `<30ms` low-latency preview, and 64-tap Sinc AA filter with standard WSOLA windows (82/28/12ms) in Studio Master mode.
+  - R1.3: REAPER extension registers `Audio_RegHardwareHook`, invokes `Engine::init(false)` to bypass miniaudio OS device creation, and mixes preview samples post-fader directly into REAPER's 64-bit `ReaSample*` master ASIO buffer.
+  - Actionable recommendation: Change `DragExporter` to use Studio Master mode (`lowLatency = false`) for offline file export.
+- **Unexplored areas**: None for R1 scope.
 
 ## Key Decisions Made
-- Recommending Mechanism A as the primary native extension mechanism for 0ms drag start, Élastique 3 quality, exact grid alignment, and permanent project file linking.
+- Completed full audit and empirical code tracing for R1 items 1, 2, and 3.
+- Produced comprehensive 5-component report in `handoff.md`.
 
 ## Artifact Index
-- `.agents/explorer_survey_1/DISPATCH.md` — User / parent dispatch instructions
-- `.agents/explorer_survey_1/BRIEFING.md` — Persistent briefing
-- `.agents/explorer_survey_1/progress.md` — Liveness progress log
-- `.agents/explorer_survey_1/analysis.md` — Detailed technical findings
-- `.agents/explorer_survey_1/handoff.md` — 5-component handoff report
+- `handoff.md` — Comprehensive 5-component report on R1 Audio DSP Quality & Hardware Hook Signal Integrity.
+- `DISPATCH.md` — Record of initial prompt dispatch.
+- `progress.md` — Progress tracker and heartbeat log.

@@ -1,14 +1,13 @@
-# Progress Log — explorer_survey_1
+# Progress — Explorer Survey 1
 
-- **Last visited**: 2026-08-28T15:45:00Z
-- **Status**: Completed full investigation and synthesized findings.
-- **Tasks**:
-  1. [x] Query GitNexus for drag, playrate, sync, hook symbols
-  2. [x] Inspect `extension/src/reaper_plugin.cpp` (`processPendingSyncPlayrates`, hook registration, etc.)
-  3. [x] Inspect `bridge/src/Bridge.cpp` (`browser.beginDrag`, path resolution, export)
-  4. [x] Inspect `shell/win/OleDrag.cpp` (Windows OLE `CF_HDROP`, `DoDragDrop`)
-  5. [x] Inspect `core/audio/DragExporter.cpp` and `core/include/reals/audio/DragExporter.h`
-  6. [x] Trace full drag-and-drop call chain and data flow
-  7. [x] Identify root cause of Double-DSP / Double-Stretch
-  8. [x] Detail Mechanism A vs Mechanism B and give concrete design/implementation recommendations
-  9. [x] Synthesize findings into `analysis.md` and `handoff.md`
+Last visited: 2026-09-02T22:45:00+07:00
+Status: COMPLETED
+
+## Tasks
+- [x] Initialize metadata (DISPATCH.md, BRIEFING.md, progress.md)
+- [x] Investigate GitNexus context & symbols for Audio Engine
+- [x] Audit Item 1: `ma_decoder` initialization (resampling, lpfOrder=4, uniform stereo float32 buffering)
+- [x] Audit Item 2: SoundTouch DSP processing (SETTING_USE_AA_FILTER=1, 64-tap Sinc filter, SETTING_USE_QUICKSEEK=0, sequence windows)
+- [x] Audit Item 3: REAPER `Audio_RegHardwareHook` direct 64-bit ASIO master output mixing (`reals::audio::Engine::instance().init(false)`) vs WASAPI loopback
+- [x] Compile comprehensive handoff report (`handoff.md`)
+- [x] Send completion message to parent

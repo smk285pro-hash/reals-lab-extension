@@ -1,66 +1,59 @@
-# BRIEFING — 2026-09-01T02:15:30+07:00
+# BRIEFING — 2026-09-02T16:14:00Z
 
 ## Mission
-Review Core C++, Bridge & Backend implementation (BrowserModel, Bridge, QueryParser, Path) for Global Favorites, Global Search, Clean Roots, and Concurrency/Memory Safety.
+Review R1 (Audio DSP & Hardware Hook) and R2 (Key Transposer & State Sync) implementation by Worker 1.
 
 ## 🔒 My Identity
-- Archetype: reviewer_and_adversarial_critic
+- Archetype: reviewer-critic
 - Roles: reviewer, critic
-- Working directory: c:\Users\smk28\Desktop\reals lab extension\.agents\reviewer_1\
-- Original parent: 9a06e46c-3ec5-426b-83b8-d0e041f58ad5
-- Milestone: Review of M1-M4 (Core C++, Bridge & Backend)
+- Working directory: c:\Users\smk28\Desktop\reals lab extension\.agents\reviewer_1
+- Original parent: 1e419e13-ffa6-4185-987c-dd3d06140151
+- Milestone: Review R1 & R2
 - Instance: 1 of 1
 
 ## 🔒 Key Constraints
 - Review-only — do NOT modify implementation code
-- Mandatory use of GitNexus for code intelligence and impact analysis
-- Report findings with strict integrity checks and adversarial stress testing
-- 5-Component Handoff Protocol for handoff.md
+- Check integrity violations (hardcoded test results, facade implementations, shortcuts, fake verifications)
+- Check C++20 lock-free atomics, zero-allocation in audio threads, anti-aliasing, state preservation
+- Zero-warning build, project test suite verification
+- Must use GitNexus MCP tools where applicable
 
 ## Current Parent
-- Conversation ID: 9a06e46c-3ec5-426b-83b8-d0e041f58ad5
-- Updated: 2026-09-01T02:15:30+07:00
+- Conversation ID: 1e419e13-ffa6-4185-987c-dd3d06140151
+- Updated: 2026-09-02T16:14:00Z
 
 ## Review Scope
 - **Files reviewed**:
-  - `core/src/browser/BrowserModel.cpp` & `core/include/reals/browser/BrowserModel.h`
-  - `bridge/src/Bridge.cpp` & `bridge/include/reals/bridge/Bridge.h`
-  - `core/src/search/QueryParser.cpp` & `core/include/reals/search/QueryParser.h`
-  - `core/src/platform/Path.cpp` & `core/include/reals/platform/Path.h`
-- **Interface contracts**: `PROJECT.md`, `SPEC.md`, `ORIGINAL_REQUEST.md`
-- **Review criteria**:
-  1. R3 Clean Default Roots (0 default roots on fresh install, safe store persistence with atomic write/rename)
-  2. R1 Global Favorites (`BrowserModel::getFavoriteEntries()`, `browser.getFavoriteEntries` RPC, automatic pruning, rename/delete sync)
-  3. R2 Global Search (`Bridge::runSearch` across all roots when base is empty, `/tag`, `/bpm:range`, `/key:note`, generation-based cancellation)
-  4. R4 Concurrency & Memory Safety (Mutex protection, lock-free audio thread safety, background worker lifecycle)
-
-## Key Decisions Made
-- Confirmed zero hardcoded roots on fresh install (R3).
-- Confirmed atomic write-rename store persistence with crash resilience (R3).
-- Verified `BrowserModel::getFavoriteEntries()` prunes non-existent files and preserves sort order (R1).
-- Verified RPC `browser.getFavoriteEntries` and its aliases return unified FileEntry array (R1).
-- Verified `Bridge::runSearch` handles multi-root traversal when base is empty with generation-based cancellation (R2).
-- Verified `QueryParser` handles all slash tokens (`/tag`, `/bpm:`, `/key:`, `/camelot:`, `/genre:`, `/mood:`, `/fav`) (R2).
-- Verified mutex locks, worker thread lifetime management, and lock-free audio safety (R4).
-- Verified 323/323 unit, benchmark, and adversarial stress tests pass 100%.
-- Verified zero integrity violations, dummy facades, or shortcuts.
-
-## Artifact Index
-- `.agents/reviewer_1/DISPATCH.md` — Dispatch log
-- `.agents/reviewer_1/progress.md` — Liveness & progress heartbeat
-- `.agents/reviewer_1/BRIEFING.md` — Working memory
-- `.agents/reviewer_1/handoff.md` — Final review report
+  - `core/src/audio/Engine.cpp`
+  - `core/src/audio/SoundTouchProcessor.cpp`
+  - `core/src/audio/DragExporter.cpp`
+  - `extension/src/reaper_plugin.cpp`
+  - `ui-web/app.js`
+  - `bridge/src/Bridge.cpp`
+  - `core/src/db/Database.cpp`
+- **Interface contracts**: PROJECT.md, SPEC.md, PLAN.md, ORIGINAL_REQUEST.md
+- **Review criteria**: correctness, robustness, thread-safety, zero-allocation audio callbacks, anti-aliasing, state sync
 
 ## Review Checklist
-- **Items reviewed**: BrowserModel, Bridge, QueryParser, Path, TestSuites
+- **Items reviewed**: R1.1, R1.2, R1.3, R2.1, R2.2, R2.3, R3.1, R3.2, R3.3
 - **Verdict**: APPROVE
-- **Unverified claims**: None (all verified via inspection and automated test execution)
+- **Unverified claims**: none
 
 ## Attack Surface
 - **Hypotheses tested**:
-  - Missing file dangling in favorites list -> pruned dynamically by `fs::exists`.
-  - Stale search generation collision -> discarded by `gen != searchGen.load()`.
-  - High concurrency 16-thread race on BrowserModel -> 0 deadlocks/races under `m_storeMutex`.
-  - Windows atomic file overwrite failure -> handled via fallback `fs::remove` and `fs::rename`.
-- **Vulnerabilities found**: None.
-- **Untested angles**: None.
+  - Aliasing in SoundTouch offline vs live preview: verified 64-tap Sinc filter in DragExporter.
+  - ASIO hardware hook vs WASAPI driver contention: verified `Engine::init(false)` inside REAPER.
+  - State clobbering in UI key lock during async metadata/audio events: verified strict `state.isUserTargetKeyLocked` invariant.
+  - Race conditions in thread scheduling: identified minor race in `Workflow_Scenario3_HeavyIndexingUnderSimultaneousPlayback` under `/O2` Release optimization.
+- **Vulnerabilities found**: Flaky test assertion in `TestSuite_EndToEndWorkflows.cpp:146` under Release mode.
+- **Untested angles**: Non-Windows platforms (slated for Phase 6 per SPEC.md).
+
+## Key Decisions Made
+- Confirmed zero integrity violations: authentic DSP logic, no mock facades or hardcoded values.
+- Confirmed MSVC zero-warning build in both Debug and Release configurations.
+- Issued verdict: APPROVE (with 1 minor non-blocking test race finding noted for orchestrator/worker).
+
+## Artifact Index
+- .agents/reviewer_1/DISPATCH.md — incoming dispatch log
+- .agents/reviewer_1/progress.md — heartbeat and progress
+- .agents/reviewer_1/handoff.md — final review & challenge report

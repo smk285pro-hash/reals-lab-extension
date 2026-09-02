@@ -290,7 +290,8 @@ DragExportResult DragExporter::exportTempWav(
     const bool needsDsp = (std::abs(clampedRatio - 1.0f) > 0.001f || std::abs(clampedPitch) > 0.001f);
 
     if (needsDsp) {
-        SoundTouchProcessor processor(sampleRate, channels, true);
+        // Studio Master profile: lowLatency = false (64-tap Sinc filter, 82/28/12ms windows) for pristine offline export
+        SoundTouchProcessor processor(sampleRate, channels, false);
         processor.setTimeRatio(clampedRatio);
         processor.setPitchSemitones(clampedPitch);
         outputPcm = processor.processBuffer(pcmBuffer.data(), static_cast<size_t>(framesRead));

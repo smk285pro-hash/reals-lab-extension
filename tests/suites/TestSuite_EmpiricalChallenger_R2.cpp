@@ -137,7 +137,11 @@ TEST(EmpiricalChallenger_R2, Benchmark_RenderingSpeedStandardSamples) {
     auto res2 = reals::audio::DragExporter::exportTempWav(bar2Wav, opt2);
     EXPECT_TRUE(res2.success);
     EXPECT_GT(res2.renderTimeMs, 0.0);
+#ifdef NDEBUG
     EXPECT_LT(res2.renderTimeMs, 350.0);
+#else
+    EXPECT_LT(res2.renderTimeMs, 1000.0);
+#endif
 }
 
 TEST(EmpiricalChallenger_R2, Benchmark_CacheHitLatencyUnder50Microseconds) {

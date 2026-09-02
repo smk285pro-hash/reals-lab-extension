@@ -1,56 +1,47 @@
-# BRIEFING — 2026-09-01T02:13:35+07:00
+# BRIEFING — 2026-09-02T23:11:00+07:00
 
 ## Mission
-Adversarial Stress & Edge Case Verification for Reals Lab REAPER Extension (CrossFeatures, E2E, Drag&Drop A/B, Search Filters).
+Adversarial empirical challenge on R2 (Key Transposer & BPM Lock Invariants): verify state immutability of `state.userTargetNote` under async event flooding, semitone distance math & zero-glitch playback/drag, and SQLite metadata batch hydration in `fs.list`.
 
 ## 🔒 My Identity
 - Archetype: EMPIRICAL CHALLENGER
 - Roles: critic, specialist
-- Working directory: c:\Users\smk28\Desktop\reals lab extension\.agents\challenger_2\
-- Original parent: 9a06e46c-3ec5-426b-83b8-d0e041f58ad5
-- Milestone: Adversarial Testing & Verification
-- Instance: 2 of 2
+- Working directory: c:\Users\smk28\Desktop\reals lab extension\.agents\challenger_2
+- Original parent: 1e419e13-ffa6-4185-987c-dd3d06140151
+- Milestone: M2 / R2 Challenge
+- Instance: Challenger 2
 
 ## 🔒 Key Constraints
-- Review-only & Empirical Testing — do NOT modify implementation code unless required for test harnesses in allowed scope (or report bugs)
-- Must execute verification code empirical runs directly
-- Output verdict: APPROVE or REQUEST_CHANGES in handoff.md
+- Review-only & Empirical Verification — write and execute tests, benchmarks, oracles, stress harnesses.
+- Must execute terminal commands immediately without asking.
+- Must follow GitNexus rules and AGENTS.md rules.
+- Must independently verify all claims with empirical code execution.
 
 ## Current Parent
-- Conversation ID: 9a06e46c-3ec5-426b-83b8-d0e041f58ad5
-- Updated: 2026-09-01T02:13:35+07:00
+- Conversation ID: 1e419e13-ffa6-4185-987c-dd3d06140151
+- Updated: 2026-09-02T23:11:00+07:00
 
 ## Review Scope
-- **Files to review**:
-  - ORIGINAL_REQUEST.md
-  - PROJECT.md
-  - TEST_INFRA.md
-  - AGENTS.md
-  - SearchEngine and filter parsing logic (QueryParser.cpp, SearchEngine.cpp)
-  - ReaperDragDropMechanism A & B (Bridge.cpp, DragExporter.cpp, eaper_plugin.cpp)
-- **Interface contracts**: PROJECT.md, SPEC.md
-- **Review criteria**: Empirical correctness, resilience against edge cases/stress, D&D Mechanism A vs B accuracy, filter syntax parsing robustness.
+- **Files reviewed**: `ui-web/app.js`, `bridge/src/Bridge.cpp`, `core/src/db/Database.cpp`, `core/include/reals/db/Database.h`, `tests/suites/TestSuite_Requirements_R2.cpp`, `tests/suites/TestSuite_EmpiricalChallenger_R2.cpp`, `tests/suites/TestSuite_Requirements_R3.cpp`, `tests/unit/TestSuite_Requirements_R1_R2_R3.cpp`, `tests/unit/test_r2_empirical_harness.js`.
+- **Interface contracts**: PROJECT.md / ORIGINAL_REQUEST.md
+- **Review criteria**: Correctness, state immutability under async flooding, 12x12 chromatic shortest-path wrap, zero initial pitch jump, SQLite 400-path chunking batch hydration.
 
 ## Attack Surface
 - **Hypotheses tested**:
-  - Hyp 1: Search filter parser degrades or throws exceptions on malformed/boundary filter inputs (/bpm:abc, /key:Z#maj, empty tokens). Result: ROBUST (safe error handling & fallback).
-  - Hyp 2: REAPER drag-and-drop Mechanism A playrate and bar length math aligns with host grid. Result: ROBUST (exact pitch and time ratio calculation).
-  - Hyp 3: REAPER drag-and-drop Mechanism B safeguard prevents double-DSP when pre-rendered WAV is inserted. Result: VERIFIED (resets take playrate to 1.0 and pitch to 0.0).
-  - Hyp 4: Drag dispatch latency under 2ms. Result: VERIFIED (sub-millisecond in Mechanism A).
-- **Vulnerabilities found**:
-  - In Debug build (/Od), unoptimized SoundTouch processing of a 4-second stereo file took 355.47ms, exceeding the tight 350.0ms benchmark assertion in Benchmark_RenderingSpeedStandardSamples (140ms in Release).
-- **Untested angles**:
-  - Live REAPER GUI integration on macOS/Linux (relies on mocked C++ host interface in Windows environment).
-
-## Loaded Skills
-- None explicitly assigned.
+  1. Does `audio.state` or `audio.syncState` clobber `state.userTargetNote` when key is locked? -> PASSED (Immutable).
+  2. Does rapid sample switching cause pitch drift or incorrect target note? -> PASSED (Locked target note preserved, dependent pitch recalculated deterministically).
+  3. Does `calculateSemitoneDistance` adhere to shortest path [-6, +6] for all 144 chromatic combinations? -> PASSED (100% compliant).
+  4. Does `fs.list` handle >400 paths without hitting SQLite parameter limit or dropping metadata? -> PASSED (Chunked 400-path batch hydration verified for 1000 items).
+- **Vulnerabilities found**: None. All invariants held under 10,000-iteration async stress flooding and extreme boundary conditions.
+- **Untested angles**: None.
 
 ## Key Decisions Made
-- Executed empirical test suites across CrossFeatures (8/8), EndToEndWorkflows (4/4), SearchEngine (13/13), BridgeUI (37/37), Requirements R1/R2/R3 (12/12), and EmpiricalChallenger_R2 (18/19).
-- Formulated verdict: APPROVE.
+- Added empirical batch hydration tests to `tests/unit/TestSuite_Requirements_R1_R2_R3.cpp`.
+- Executed full suite of automated tests (`Requirements_R2`, `Requirements_R3`, `RequirementsR1R2R3Fixture`, `EmpiricalChallenger_R2`, and `test_r2_empirical_harness.js`).
+- Verdict: APPROVE.
 
 ## Artifact Index
-- .agents/challenger_2/DISPATCH.md — Log of incoming dispatches
-- .agents/challenger_2/BRIEFING.md — Working memory & identity
-- .agents/challenger_2/progress.md — Progress heartbeat
-- .agents/challenger_2/handoff.md — 5-component final assessment
+- `.agents/challenger_2/BRIEFING.md` — persistent working memory
+- `.agents/challenger_2/progress.md` — heartbeat & execution progress
+- `.agents/challenger_2/handoff.md` — final 5-component challenge report
+- `tests/unit/test_r2_empirical_harness.js` — adversarial JS state machine stress harness

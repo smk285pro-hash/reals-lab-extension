@@ -342,4 +342,192 @@ TEST(Requirements_R2, GlobalSearch_EmptyQuerySafety) {
     EXPECT_TRUE(res.empty());
 }
 
+// ============================================================================
+// Requirement R2.3: SQLite Metadata Hydration in fs.list via getSamplesByPaths()
+// ============================================================================
+
+TEST_F(RequirementsR1R2R3Fixture, Database_GetSamplesByPaths_ChunkingAndBatchHydration) {
+    const std::string dbPath = platform::joinPath(m_testDir, "test_batch.db");
+    reals::db::Database db;
+    EXPECT_TRUE(db.open(dbPath));
+
+    // 1. Empty query returns empty map immediately
+    auto emptyRes = db.getSamplesByPaths({});
+    EXPECT_TRUE(emptyRes.empty());
+
+    // 2. Insert 1000 sample records (spanning across multiple 400-path chunks: 400 + 400 + 200)
+    constexpr size_t kSampleCount = 1000;
+    std::vector<std::string> allPaths;
+    allPaths.reserve(kSampleCount);
+
+    {
+        auto tx = db.makeTransaction();
+        for (size_t i = 0; i < kSampleCount; ++i) {
+            reals::db::SampleRecord rec;
+            rec.path = platform::normalizePath(platform::joinPath(m_testDir, "Sample_" + std::to_string(i) + ".wav"));
+            rec.filename = "Sample_" + std::to_string(i) + ".wav";
+            rec.filesize = 1024 + (i * 10);
+            rec.modifiedTime = 1700000000 + static_cast<int64_t>(i);
+            rec.hash = "hash_" + std::to_string(i);
+            rec.durationSec = 2.0 + (static_cast<double>(i) * 0.01);
+            rec.sampleRate = 44100;
+            rec.channels = 2;
+            rec.bitDepth = 16;
+            rec.bpm = 100.0 + (static_cast<double>(i % 60));
+            rec.keyRoot = (i % 2 == 0) ? "C#" : "Am";
+            rec.keyMode = (i % 2 == 0) ? "major" : "minor";
+            rec.camelot = (i % 2 == 0) ? "3B" : "8A";
+            rec.genre = "Trap";
+            rec.mood = "Dark";
+
+            allPaths.push_back(rec.path);
+            EXPECT_GT(db.upsertSample(rec), 0);
+        }
+        EXPECT_TRUE(tx.commit());
+    }
+
+    // 3. Batch query for all 1000 paths
+    auto batchRes = db.getSamplesByPaths(allPaths);
+    EXPECT_EQ(batchRes.size(), kSampleCount);
+
+    for (size_t i = 0; i < kSampleCount; ++i) {
+        const auto& p = allPaths[i];
+        auto it = batchRes.find(p);
+        ASSERT_TRUE(it != batchRes.end());
+        const auto& rec = it->second;
+        EXPECT_EQ(rec.path, p);
+        EXPECT_NEAR(rec.bpm, 100.0 + static_cast<double>(i % 60), 1e-4);
+        EXPECT_EQ(rec.keyRoot, (i % 2 == 0) ? "C#" : "Am");
+        EXPECT_EQ(rec.keyMode, (i % 2 == 0) ? "major" : "minor");
+        EXPECT_EQ(rec.camelot, (i % 2 == 0) ? "3B" : "8A");
+        EXPECT_NEAR(rec.durationSec, 2.0 + (static_cast<double>(i) * 0.01), 1e-4);
+    }
+
+    // 4. Mixed query: 500 valid paths + 500 non-existent paths
+    std::vector<std::string> mixedPaths;
+    mixedPaths.reserve(1000);
+    for (size_t i = 0; i < 500; ++i) {
+        mixedPaths.push_back(allPaths[i]);
+        mixedPaths.push_back("C:/NonExistentFolder/GhostSample_" + std::to_string(i) + ".wav");
+    }
+    auto mixedRes = db.getSamplesByPaths(mixedPaths);
+    EXPECT_EQ(mixedRes.size(), 500u);
+    for (size_t i = 0; i < 500; ++i) {
+        EXPECT_TRUE(mixedRes.find(allPaths[i]) != mixedRes.end());
+    }
+
+    // 5. UTF-8 Vietnamese and special character paths
+    const std::string unicodePath1 = platform::normalizePath(platform::joinPath(m_testDir, "ÂmThanh/TiếngTrống_128BPM.wav"));
+    const std::string unicodePath2 = platform::normalizePath(platform::joinPath(m_testDir, "Folder with spaces & 'quotes'/Synth_Am.wav"));
+    {
+        reals::db::SampleRecord r1;
+        r1.path = unicodePath1;
+        r1.filename = "TiếngTrống_128BPM.wav";
+        r1.bpm = 128.0;
+        r1.keyRoot = "F#";
+        r1.keyMode = "minor";
+        r1.camelot = "11A";
+        r1.durationSec = 3.5;
+        EXPECT_GT(db.upsertSample(r1), 0);
+
+        reals::db::SampleRecord r2;
+        r2.path = unicodePath2;
+        r2.filename = "Synth_Am.wav";
+        r2.bpm = 140.0;
+        r2.keyRoot = "A";
+        r2.keyMode = "minor";
+        r2.camelot = "8A";
+        r2.durationSec = 5.0;
+        EXPECT_GT(db.upsertSample(r2), 0);
+    }
+
+    auto unicodeRes = db.getSamplesByPaths({unicodePath1, unicodePath2});
+    EXPECT_EQ(unicodeRes.size(), 2u);
+    EXPECT_EQ(unicodeRes[unicodePath1].bpm, 128.0);
+    EXPECT_EQ(unicodeRes[unicodePath1].keyRoot, "F#");
+    EXPECT_EQ(unicodeRes[unicodePath2].bpm, 140.0);
+    EXPECT_EQ(unicodeRes[unicodePath2].keyRoot, "A");
+}
+
+TEST_F(RequirementsR1R2R3Fixture, BridgeRPC_FsList_MetadataBatchHydrationVerification) {
+    const std::string sample1 = createTestFile("BatchBrowse/Kick_Punchy.wav");
+    const std::string sample2 = createTestFile("BatchBrowse/Bass_Reese.wav");
+    const std::string sample3 = createTestFile("BatchBrowse/Pad_Atmospheric.flac");
+    const std::string textFile = createTestFile("BatchBrowse/readme.txt", "Sample pack info");
+    const std::string subDir = platform::joinPath(m_testDir, "BatchBrowse/SubPreset");
+    std::error_code ec;
+    fs::create_directories(platform::u8path(subDir), ec);
+
+    BridgeTestHarness harness;
+
+    // Seed database with analyzed metadata for sample1 and sample2
+    reals::db::Database db;
+    EXPECT_TRUE(db.open("")); // Opens library.db shared with bridge
+    {
+        reals::db::SampleRecord r1;
+        r1.path = sample1;
+        r1.filename = "Kick_Punchy.wav";
+        r1.bpm = 128.0;
+        r1.keyRoot = "C";
+        r1.keyMode = "major";
+        r1.camelot = "8B";
+        r1.durationSec = 1.85;
+        db.upsertSample(r1);
+
+        reals::db::SampleRecord r2;
+        r2.path = sample2;
+        r2.filename = "Bass_Reese.wav";
+        r2.bpm = 174.0;
+        r2.keyRoot = "F";
+        r2.keyMode = "minor";
+        r2.camelot = "4A";
+        r2.durationSec = 4.25;
+        db.upsertSample(r2);
+    }
+
+    const std::string folderPath = platform::normalizePath(platform::joinPath(m_testDir, "BatchBrowse"));
+    const auto res = harness.call("fs.list", {{"path", folderPath}});
+    EXPECT_TRUE(res.value("ok", false));
+    EXPECT_TRUE(res.contains("data"));
+    const auto files = res["data"];
+    EXPECT_TRUE(files.is_array());
+    EXPECT_EQ(files.size(), 3u);
+
+    bool verifiedKick = false;
+    bool verifiedBass = false;
+    bool verifiedPad = false;
+
+    for (const auto& f : files) {
+        const std::string p = f.value("path", "");
+        if (p == sample1) {
+            verifiedKick = true;
+            EXPECT_TRUE(f.value("isAudio", false));
+            EXPECT_FALSE(f.value("isDir", true));
+            EXPECT_NEAR(f.value("bpm", 0.0), 128.0, 1e-3);
+            EXPECT_EQ(f.value("key", ""), "C");
+            EXPECT_EQ(f.value("camelot", ""), "8B");
+            EXPECT_NEAR(f.value("duration", 0.0), 1.85, 1e-3);
+        } else if (p == sample2) {
+            verifiedBass = true;
+            EXPECT_TRUE(f.value("isAudio", false));
+            EXPECT_FALSE(f.value("isDir", true));
+            EXPECT_NEAR(f.value("bpm", 0.0), 174.0, 1e-3);
+            EXPECT_EQ(f.value("key", ""), "Fm"); // minor mode produces "m" suffix
+            EXPECT_EQ(f.value("camelot", ""), "4A");
+            EXPECT_NEAR(f.value("duration", 0.0), 4.25, 1e-3);
+        } else if (p == sample3) {
+            verifiedPad = true;
+            EXPECT_TRUE(f.value("isAudio", false));
+            EXPECT_FALSE(f.value("isDir", true));
+            // Unanalyzed sample has default 0 bpm and empty key
+            EXPECT_EQ(f.value("bpm", 0.0), 0.0);
+            EXPECT_EQ(f.value("key", ""), "");
+        }
+    }
+
+    EXPECT_TRUE(verifiedKick);
+    EXPECT_TRUE(verifiedBass);
+    EXPECT_TRUE(verifiedPad);
+}
+
 } // namespace reals::test

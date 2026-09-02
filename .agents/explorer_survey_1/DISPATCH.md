@@ -1,25 +1,17 @@
-## 2026-08-28T15:41:11Z
-You are explorer_survey_1, an exploration agent for Reals Lab.
+## 2026-09-02T15:40:16Z
+You are Explorer 1 for the Survey Phase of Reals Lab.
+Your working directory is: c:\Users\smk28\Desktop\reals lab extension\.agents\explorer_survey_1
+Original Request path: c:\Users\smk28\Desktop\reals lab extension\ORIGINAL_REQUEST.md
 
-Your working directory is: `c:\Users\smk28\Desktop\reals lab extension\.agents\explorer_survey_1`
-The authoritative user request is at: `c:\Users\smk28\Desktop\reals lab extension\.agents\ORIGINAL_REQUEST.md`
-Project root: `c:\Users\smk28\Desktop\reals lab extension`
+Please read ORIGINAL_REQUEST.md before starting work.
 
-Your mission:
-Investigate the DAW Drag & Drop Alignment (R2/A2) and the Double-DSP / Double-Stretch problem in the codebase.
-
-Key areas to explore:
-1. `extension/src/reaper_plugin.cpp` (especially `processPendingSyncPlayrates`, hook registration, take property updates `D_PLAYRATE`, `B_PPITCH`, `D_PITCH`, `D_LENGTH`, `GetSelectedMediaItem`, etc.).
-2. `bridge/src/Bridge.cpp` (`browser.beginDrag` RPC handler, how path is resolved, temp wav export vs original path).
-3. `shell/win/OleDrag.cpp` (Windows OLE `CF_HDROP`, `CF_UNICODETEXT`, `DoDragDrop`, zero-lag drag start).
-4. `core/audio/DragExporter.cpp` & `core/include/reals/audio/DragExporter.h`.
-5. Identify the exact root cause of Double Time-Stretch / Double Pitch-Shift when dragging into REAPER.
-6. Provide concrete design and implementation recommendations for:
-   - **Mechanism A (Native CF_HDROP = original path)**: Drag original file directly to REAPER timeline, `processPendingSyncPlayrates` handles non-destructive playrate, pitch, and length adjustments using REAPER native Élastique engine. Project references original file permanently, zero lag.
-   - **Mechanism B (Bake WAV Export)**: Drag pre-rendered `drag_xxx.wav` (for external samplers/DAWs), but if dropped into REAPER, ensure take preserves `D_PLAYRATE = 1.0` and `D_PITCH = 0.0` to prevent double-processing.
-
-Rules:
-- MUST use GitNexus MCP tools (impact, query, context, detect_changes) as required by project rules.
-- DO NOT edit source code files.
-- Write your detailed technical findings to `c:\Users\smk28\Desktop\reals lab extension\.agents\explorer_survey_1\analysis.md` and `handoff.md`.
-- When finished, send a message back with your findings summary and handoff path.
+Your objective: Investigate R1 (Audio DSP Quality & Hardware Hook Signal Integrity).
+1. Audit ma_decoder initialization: verify if 4th-order Butterworth anti-aliasing low-pass filter (lpfOrder = 4) and uniform stereo float32 buffering are used across mono/stereo files.
+2. Audit SoundTouch DSP processing: verify SETTING_USE_AA_FILTER = 1, 64-tap Sinc filter, SETTING_USE_QUICKSEEK = 0, standard sequence windows (zero aliasing, zero transient skipping, zero phase distortion).
+3. Audit REAPER Audio_RegHardwareHook direct 64-bit ASIO master output mixing (reals::audio::Engine::instance().init(false)) vs WASAPI loopback.
+4. Use GitNexus MCP tools (context, query, cypher, impact) to trace the audio engine symbols, call graphs, and execution flows.
+5. Produce a comprehensive report in c:\Users\smk28\Desktop\reals lab extension\.agents\explorer_survey_1\handoff.md detailing:
+   - Exact code locations (files, line numbers, symbols)
+   - Verified facts vs potential bugs/gaps
+   - Clear recommendations for remediation or verification
+Report back when finished.
