@@ -83,6 +83,7 @@
 #include "reals/audio/Engine.h"
 #include "reals/bridge/Bridge.h"
 #include "reals/config/Config.h"
+#include "reals/embedded/EmbeddedAssets.h"
 #include "reals/i18n/I18n.h"
 #include "reals/platform/Path.h"
 #include "reals/util/Log.h"
@@ -726,10 +727,16 @@ private:
 ExtHostActions g_actions;
 
 // ---------------------------------------------------------------------------
-// ui-web folder resolution: DLL folder first, installed copy second, dev tree third.
+// ui-web folder resolution: Dev tree -> Portable folder -> Embedded Auto-Extraction
 // ---------------------------------------------------------------------------
 std::wstring resolveUiWebDir() {
-    // 1. Portable: check ui-web next to the DLL (e.g. %APPDATA%\REAPER\UserPlugins\ui-web)
+    // 1. Dev tree (compile-time path on developer machine)
+    const std::wstring dev(REALS_UI_WEB_DIR_W);
+    if (!dev.empty() &&
+        GetFileAttributesW((dev + L"\\index.html").c_str()) != INVALID_FILE_ATTRIBUTES)
+        return dev;
+
+    // 2. Portable: check ui-web next to the DLL (if manually provided)
     if (g_hInstance) {
         wchar_t dllPath[MAX_PATH];
         if (GetModuleFileNameW(static_cast<HMODULE>(g_hInstance), dllPath, MAX_PATH) > 0) {
@@ -743,18 +750,12 @@ std::wstring resolveUiWebDir() {
             }
         }
     }
-    // 2. Installed copy under %APPDATA%\RealsLab\ui-web
-    const std::wstring installed = toWide(reals::platform::joinPath(reals::platform::dataDir(), "ui-web"));
-    if (GetFileAttributesW((installed + L"\\index.html").c_str()) != INVALID_FILE_ATTRIBUTES)
-        return installed;
 
-    // 3. Dev tree (compile-time path on developer machine)
-    const std::wstring dev(REALS_UI_WEB_DIR_W);
-    if (!dev.empty() &&
-        GetFileAttributesW((dev + L"\\index.html").c_str()) != INVALID_FILE_ATTRIBUTES)
-        return dev;
+    // 3. Embedded Assets: Auto-extract to %APPDATA%\RealsLab\ui-web on customer machine
+    const std::string appDataUi = reals::platform::joinPath(reals::platform::dataDir(), "ui-web");
+    reals::embedded::ensureUiWebExtracted(appDataUi);
 
-    return installed;
+    return toWide(appDataUi);
 }
 
 // ---------------------------------------------------------------------------
