@@ -883,7 +883,7 @@ function handleEvent(event, data) {
         state.syncBpm = data.syncBpm;
         $('#btnSyncBpm')?.classList.toggle('on', state.syncBpm);
       }
-      if (typeof data.semitones === 'number') {
+      if (typeof data.semitones === 'number' && !state.isUserTargetKeyLocked) {
         state.pitchSemitones = data.semitones;
         updateTransposerPopUI();
       }
@@ -893,7 +893,7 @@ function handleEvent(event, data) {
   if (event === 'audio.state') {
     state.playing = !!data.playing;
     state.duration = data.duration || state.duration;
-    if (typeof data.pitchSemitones === 'number') {
+    if (typeof data.pitchSemitones === 'number' && !state.isUserTargetKeyLocked) {
       state.pitchSemitones = data.pitchSemitones;
       updateTransposerPopUI();
     }
@@ -1356,15 +1356,22 @@ function updateTransposerPopUI() {
     : (state.originalRootNote || 'C');
   const root = extractRootNoteName(canonicalKey);
   state.originalRootNote = root;
-  const semitones = state.pitchSemitones || 0;
   
-  // 2. If semitones is 0, target is strictly the root note.
-  // If semitones != 0, calculate target note directly from root + semitones.
   let target = root;
-  if (semitones !== 0) {
-    const rootIdx = NOTE_NAMES.indexOf(root);
-    if (rootIdx >= 0) {
-      target = NOTE_NAMES[((rootIdx + semitones) % 12 + 12) % 12];
+  let semitones = 0;
+
+  // 2. If the user locked a fixed target note (e.g. Tone A), target is ALWAYS that locked note!
+  if (state.isUserTargetKeyLocked && state.userTargetNote) {
+    target = state.userTargetNote;
+    semitones = calculateSemitoneDistance(root, state.userTargetNote);
+    state.pitchSemitones = semitones;
+  } else {
+    semitones = state.pitchSemitones || 0;
+    if (semitones !== 0) {
+      const rootIdx = NOTE_NAMES.indexOf(root);
+      if (rootIdx >= 0) {
+        target = NOTE_NAMES[((rootIdx + semitones) % 12 + 12) % 12];
+      }
     }
   }
   state.selectedTargetNote = target;
@@ -2092,11 +2099,16 @@ function armOleDrag(row, fileOrGetter) {
       state._suppressClick = true;
       setTimeout(() => { state._suppressClick = false; }, 300);
       if (hasWebView) {
+        let currentPitch = state.pitchSemitones || 0;
+        if (state.isUserTargetKeyLocked && state.userTargetNote) {
+          const fileRoot = extractRootNoteName(f.key || extractKeyFromFilename(f.name || f.path) || (state.selected === f.path ? state.originalRootNote : 'C'));
+          currentPitch = calculateSemitoneDistance(fileRoot, state.userTargetNote);
+        }
         bridge('browser.beginDrag', {
           path: f.path,
           syncBpm: !!state.syncBpm,
           sampleBpm: f.bpm || (state.selected === f.path ? state.sampleBpm : 0) || 0,
-          pitchSemitones: state.pitchSemitones || 0
+          pitchSemitones: currentPitch
         }).catch(() => {});
       }
     };
@@ -3161,12 +3173,37 @@ async function playFile(path) {
       return;
     }
     const fileObj = (state.files || []).find((x) => x.path === path);
+    const filename = path.split(/[\\/]/).pop() || '';
+    const bpmMatch = filename.match(/(\d+)\s*bpm/i);
+    const filenameBpm = bpmMatch ? parseFloat(bpmMatch[1]) : 0;
+    const filenameKey = extractKeyFromFilename(filename) || '';
+
+    const initialBpm = (fileObj && fileObj.bpm > 0) ? fileObj.bpm : filenameBpm;
+    const initialKey = (fileObj && fileObj.key) ? fileObj.key : (filenameKey || 'C');
+
+    state.sampleBpm = initialBpm || 0;
+    state.sampleKey = initialKey;
+
+    const rootNote = extractRootNoteName(initialKey);
+    state.originalRootNote = rootNote;
+    let initialPitchShift = 0;
+    if (state.isUserTargetKeyLocked && state.userTargetNote) {
+      state.selectedTargetNote = state.userTargetNote;
+      initialPitchShift = calculateSemitoneDistance(rootNote, state.userTargetNote);
+    } else {
+      state.selectedTargetNote = rootNote;
+      initialPitchShift = state.pitchSemitones || 0;
+    }
+    state.pitchSemitones = initialPitchShift;
+    updateTransposerPopUI();
+
     const sampleBpm = (fileObj && fileObj.bpm) || (state.selected === path ? state.sampleBpm : 0) || 0;
     const d = await bridge('audio.play', {
       path,
       loop: state.loop,
       syncBpm: !!state.syncBpm,
-      sampleBpm: sampleBpm
+      sampleBpm: sampleBpm,
+      pitchSemitones: initialPitchShift
     });
     if (mySeq !== _playFileSeq) return;
     if (!d || d.ok === false) {
@@ -3187,7 +3224,6 @@ async function playFile(path) {
       bp.classList.add('playing');
     }
 
-    const filename = path.split(/[\\/]/).pop() || '';
     const info = $('#trackInfo');
     if (info) info.textContent = `♪ ${filename} | ${d.sampleRate || 44100}Hz ${d.channels || 2}ch`;
 
@@ -3200,31 +3236,6 @@ async function playFile(path) {
 
     // BPM & Key extraction: check hydrated file entry, then filename regex, then background DB/DSP meta
     try {
-      const fEntry = (state.files || []).find((x) => x.path === path);
-      const bpmMatch = filename.match(/(\d+)\s*bpm/i);
-      const filenameBpm = bpmMatch ? parseFloat(bpmMatch[1]) : 0;
-      const filenameKey = extractKeyFromFilename(filename) || '';
-
-      const initialBpm = (fEntry && fEntry.bpm > 0) ? fEntry.bpm : filenameBpm;
-      const initialKey = (fEntry && fEntry.key) ? fEntry.key : (filenameKey || 'C');
-
-      state.sampleBpm = initialBpm || 0;
-      state.sampleKey = initialKey;
-
-      const rootNote = extractRootNoteName(initialKey);
-      state.originalRootNote = rootNote;
-      if (state.isUserTargetKeyLocked && state.userTargetNote) {
-        state.selectedTargetNote = state.userTargetNote;
-        state.pitchSemitones = calculateSemitoneDistance(rootNote, state.userTargetNote);
-      } else {
-        state.selectedTargetNote = rootNote;
-        state.pitchSemitones = 0;
-      }
-      updateTransposerPopUI();
-      if (state.pitchSemitones !== 0) {
-        bridge('audio.setPitchShift', { semitones: state.pitchSemitones }).catch(()=>{});
-      }
-
       // Try to get real metadata from DB / detection
       bridge('audio.getSampleMeta', { path }).then((meta) => {
         if (mySeq !== _playFileSeq) return;
