@@ -1231,8 +1231,9 @@ function playMidiEvents(notes, totalDur) {
 }
 
 function extractRootNoteName(keyStr) {
-  if (!keyStr) return 'C';
-  const m = keyStr.match(/^([A-G][#b]?)/i);
+  if (!keyStr || keyStr === 'ORIGINAL' || keyStr === 'UNKNOWN') return 'C';
+  const s = String(keyStr).trim();
+  const m = s.match(/(?:^|[\s_\-\(\[])([A-Ga-g][#b]?)(?:m|maj|min|minor|major)?(?:[\s_\-\)\]]|$)/i) || s.match(/^([A-Ga-g][#b]?)/i);
   if (!m) return 'C';
   let r = m[1].toUpperCase();
   if (r === 'DB') r = 'C#';
@@ -1351,10 +1352,15 @@ function normalizeKeyForDisplay(key) {
 }
 
 function updateTransposerPopUI() {
-  const root = extractRootNoteName(state.originalRootNote || 'C');
+  // 1. Determine canonical key and root note in lockstep
+  const canonicalKey = (state.sampleKey && state.sampleKey !== 'ORIGINAL' && state.sampleKey !== 'UNKNOWN')
+    ? state.sampleKey
+    : (state.originalRootNote || 'C');
+  const root = extractRootNoteName(canonicalKey);
+  state.originalRootNote = root;
   const semitones = state.pitchSemitones || 0;
   
-  // If semitones is 0, target is strictly the root note.
+  // 2. If semitones is 0, target is strictly the root note.
   // If semitones != 0, calculate target note directly from root + semitones.
   let target = root;
   if (semitones !== 0) {
@@ -1365,12 +1371,8 @@ function updateTransposerPopUI() {
   }
   state.selectedTargetNote = target;
 
-  // Display the full key (with mode) — but normalize the case so minor
-  // keys render as "Am" / "F#m" instead of "AM" / "F#M". Falls back to the
-  // bare root note when no key is detected (e.g. "Kick_Punchy_01.wav").
-  const displayRoot = (state.sampleKey && state.sampleKey !== 'ORIGINAL')
-    ? normalizeKeyForDisplay(state.sampleKey)
-    : root;
+  // 3. Display string
+  const displayRoot = normalizeKeyForDisplay(canonicalKey);
 
   const rootBadge = $('#pianoRootBadge');
   if (rootBadge) {
