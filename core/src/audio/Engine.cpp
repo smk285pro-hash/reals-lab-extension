@@ -439,12 +439,13 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
     const int targetSr = (m_impl->targetSampleRate.load(std::memory_order_relaxed) > 0)
         ? m_impl->targetSampleRate.load(std::memory_order_relaxed)
         : m_impl->track.sampleRate;
-    const int channels = (m_impl->track.channels > 0) ? m_impl->track.channels : 2;
+    const int channels = 2; // Always decode & buffer as stereo float32 to prevent mono/stereo downsample artifacts
 
     ma_decoder_config decConfig = ma_decoder_config_init(
         ma_format_f32,
         static_cast<ma_uint32>(channels),
         static_cast<ma_uint32>(targetSr));
+    decConfig.resampling.linear.lpfOrder = 4; // 4th-order Butterworth anti-aliasing filter for pristine resampling
 
 #ifdef _WIN32
     const std::wstring wpath = toWide(path);
@@ -458,7 +459,7 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
         LOG_ERROR(kTag, "playFile: ma_decoder_init_file failed with res=" + std::to_string(decRes));
         return false;
     }
-    LOG_INFO(kTag, "playFile: decoder initialized, buffering to RAM at targetSr=" + std::to_string(targetSr) + "...");
+    LOG_INFO(kTag, "playFile: decoder initialized, buffering to RAM at targetSr=" + std::to_string(targetSr) + " (stereo)...");
 
     std::vector<float> tempPcm;
     const size_t estimatedFrames = static_cast<size_t>(m_impl->track.durationSeconds * targetSr);
@@ -539,27 +540,6 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
         : 0;
 
     m_impl->dspSource.cursorFrames.store(startFrame, std::memory_order_relaxed);
-
-    const bool isBypass = (std::abs(m_impl->timeRatio - 1.0f) < 0.001f && std::abs(m_impl->pitchSemitones) < 0.01f);
-    if (!isBypass) {
-        const int lat = m_impl->dspSource.processor.latencyFrames();
-        if (lat > 0 && !m_impl->dspSource.pcmData.empty()) {
-            const size_t ch = static_cast<size_t>(channels);
-            const size_t totalAvailable = (m_impl->dspSource.pcmData.size() / ch);
-            const size_t cur = static_cast<size_t>(startFrame);
-            const size_t availFrames = (totalAvailable > cur) ? (totalAvailable - cur) : 0;
-            const size_t primeCount = std::min<size_t>(static_cast<size_t>(lat), availFrames);
-            if (primeCount > 0) {
-                m_impl->dspSource.processor.putSamples(
-                    &m_impl->dspSource.pcmData[cur * ch],
-                    primeCount);
-                m_impl->dspSource.cursorFrames.fetch_add(primeCount, std::memory_order_relaxed);
-            }
-            LOG_INFO(kTag, "playFile: SoundTouch pre-roll primed " + std::to_string(primeCount) +
-                           " frames (lat=" + std::to_string(lat) + " avail=" +
-                           std::to_string(m_impl->dspSource.processor.numSamplesAvailable()) + ")");
-        }
-    }
 
     ma_data_source_config baseConfig = ma_data_source_config_init();
     baseConfig.vtable = &g_dspDataSourceVtable;
