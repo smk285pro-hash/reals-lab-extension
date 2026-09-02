@@ -510,8 +510,18 @@ function mockBridge(cmd, args = {}) {
         const p = args.path || '';
         const m = p.match(/(\d{2,3})\s*bpm/i);
         const bpm = m ? parseFloat(m[1]) : 0;
+        // Preserve the key's case so minor mode (e.g. "Am", "F#m") stays
+        // distinguishable from major ("A", "F#"). Previously `.toUpperCase()`
+        // turned "Am" into "AM", which then rendered as "Root: AM" in the
+        // piano transposer badge instead of "Root: Am".
         const km = p.match(/_([A-G][#b]?(?:m|maj|min|minor|major)?)(?:_|\.|$)/i);
-        const key = km ? km[1].toUpperCase() : '';
+        let key = '';
+        if (km) {
+          // Capitalize only the note letter, keep the mode suffix lowercase.
+          key = km[1].charAt(0).toUpperCase() + km[1].slice(1).toLowerCase();
+          // Normalize long-form modes to short "m" for minor.
+          key = key.replace(/(maj|min|minor|major)$/, (s) => (s.startsWith('min') || s === 'm' ? 'm' : s));
+        }
         resolve({ ok: true, bpm, key, genre: '', mood: '', path: p });
       } else if (cmd === 'audio.setOriginalKey' || cmd === 'audio.resetPitch') {
         resolve({ ok: true, pitchSemitones: 0 });
@@ -1326,11 +1336,43 @@ function extractKeyFromFilename(filename) {
   return null;
 }
 
+// Pretty-print a sample key for display: "AM" -> "Am", "F#M" -> "F#m",
+// "DB" -> "C#", "EB" -> "D#", etc. Preserves an explicit minor "m" suffix
+// and normalizes flat spellings to their sharp equivalents (matching the
+// 12-note piano keyboard labels).
+function normalizeKeyForDisplay(key) {
+  if (!key || key === 'ORIGINAL' || key === 'UNKNOWN') return key;
+  const m = String(key).match(/^([A-Ga-g])([#bB]?)(.*)$/);
+  if (!m) return key;
+  let letter = m[1].toUpperCase();
+  // Accept both 'b' (lowercase) and 'B' (uppercase) as a flat accidental,
+  // since some sources return e.g. "Db" or "DB" for D-flat. A trailing 'B'
+  // can't be a mode word here (modes start with m/M/maj/min).
+  let accidental = m[2].toLowerCase();
+  let mode = m[3].toLowerCase();
+  const flatToSharp = { 'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#' };
+  const spelled = letter + accidental;
+  if (flatToSharp[spelled]) {
+    return flatToSharp[spelled] + (mode.includes('min') || mode === 'm' ? 'm' : '');
+  }
+  // Normalize mode: anything containing "min"/"m" -> "m"; "maj"/"major" -> "".
+  let modeSuffix = '';
+  if (mode.includes('min') || mode === 'm') modeSuffix = 'm';
+  else if (mode.includes('maj')) modeSuffix = '';
+  return letter + accidental + modeSuffix;
+}
+
 function updateTransposerPopUI() {
   const root = state.originalRootNote || 'C';
   const target = state.selectedTargetNote || root;
   const semitones = state.pitchSemitones || 0;
-  const displayRoot = state.sampleKey && state.sampleKey !== 'ORIGINAL' ? state.sampleKey : root;
+  // Display the full key (with mode) — but normalize the case so minor
+  // keys render as "Am" / "F#m" instead of "AM" / "F#M". Falls back to the
+  // bare root note when no key is detected (e.g. "Kick_Punchy_01.wav").
+  const displayRoot = (state.sampleKey && state.sampleKey !== 'ORIGINAL')
+    ? normalizeKeyForDisplay(state.sampleKey)
+    : root;
+  const displayTarget = (semitones === 0) ? displayRoot : target;
 
   const rootBadge = $('#pianoRootBadge');
   if (rootBadge) {
@@ -1366,7 +1408,10 @@ function updateTransposerPopUI() {
     if (semitones === 0) {
       keyLabel.textContent = `KEY: ${displayRoot}`;
     } else {
-      keyLabel.textContent = `KEY: ${target}`;
+      // After transposing, show the target root note. If the original sample
+      // had a minor mode, carry the "m" over so "Am -> C" shows as "Cm" not "C".
+      const modeMatch = displayRoot.match(/m$/);
+      keyLabel.textContent = `KEY: ${target}${modeMatch ? 'm' : ''}`;
     }
   }
 
