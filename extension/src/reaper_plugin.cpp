@@ -16,6 +16,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -132,18 +133,38 @@ struct PendingPlayrate {
     double pitchSemitones;
     uint64_t queuedTime;
     int tries;
+    std::unordered_set<MediaItem*> preExistingItems;
 };
 
 std::vector<PendingPlayrate> g_pendingPlayrates;
 std::mutex g_pendingMutex;
 
+static std::unordered_set<MediaItem*> captureProjectMediaItems() {
+    std::unordered_set<MediaItem*> items;
+    if (CountTracks && GetTrack && CountTrackMediaItems && GetTrackMediaItem) {
+        const int numTracks = CountTracks(0);
+        for (int t = 0; t < numTracks; ++t) {
+            MediaTrack* trk = GetTrack(0, t);
+            if (!trk) continue;
+            const int numItems = CountTrackMediaItems(trk);
+            for (int m = 0; m < numItems; ++m) {
+                MediaItem* itm = GetTrackMediaItem(trk, m);
+                if (itm) items.insert(itm);
+            }
+        }
+    }
+    return items;
+}
+
 void queuePendingPlayrate(const std::string& path, double rate, double pitch = 0.0, const std::string& originalPath = "") {
     const std::lock_guard lock(g_pendingMutex);
     uint64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
-    g_pendingPlayrates.push_back({path, originalPath, rate, pitch, now, 0});
+    auto preExisting = captureProjectMediaItems();
+    g_pendingPlayrates.push_back({path, originalPath, rate, pitch, now, 0, std::move(preExisting)});
     char msg[256];
-    std::snprintf(msg, sizeof(msg), "queuePendingPlayrate: path=%s rate=%.4f pitch=%.2f", path.c_str(), rate, pitch);
+    std::snprintf(msg, sizeof(msg), "queuePendingPlayrate: path=%s rate=%.4f pitch=%.2f preExisting=%zu",
+                  path.c_str(), rate, pitch, g_pendingPlayrates.back().preExistingItems.size());
     LOG_INFO(kTag, msg);
 }
 
@@ -228,6 +249,16 @@ void processPendingSyncPlayrates() {
             for (int i = 0; i < selCount; ++i) {
                 MediaItem* item = GetSelectedMediaItem(0, i);
                 if (!item) continue;
+
+                // -----------------------------------------------------------
+                // TIMELINE ISOLATION SAFEGUARD:
+                // If this MediaItem already existed BEFORE the current drag/insert operation,
+                // NEVER touch it! (QUY TẮC: Không chỉnh sửa các item cũ đã nằm trên timeline).
+                // -----------------------------------------------------------
+                if (it->preExistingItems.count(item) > 0) {
+                    continue;
+                }
+
                 MediaItem_Take* take = GetActiveTake(item);
                 if (!take) continue;
 

@@ -1806,21 +1806,27 @@ std::string Bridge::handle(const std::string& requestJson) {
                 // rendering synchronously on the WebView message thread adds
                 // drag latency and re-introduces the double-DSP problem the
                 // DragExporter safeguard (Mechanism B) exists to clean up.
-                float sampleBpm = args.value("sampleBpm", 0.0f);
-                if (sampleBpm <= 0.0f) {
-                    sampleBpm = m_impl->detectBpmForPath(p);
-                }
-                double projectBpm = m_actions->projectTempo();
-
-                if (syncOn || std::abs(pitchShift) > 0.001 || (sampleBpm > 30.0f && projectBpm > 30.0f)) {
-                    double playrate = 1.0;
+                // -------------------------------------------------------------------
+                // RULE: When Sync BPM is OFF, playrate MUST ALWAYS be 1.000000.
+                // Only stretch when Sync BPM is explicitly turned ON by the user.
+                // (QUY TẮC: Khi không bật Sync, Playrate khi kéo vào DAW luôn là 1.000000).
+                // -------------------------------------------------------------------
+                double playrate = 1.0;
+                if (syncOn) {
+                    float sampleBpm = args.value("sampleBpm", 0.0f);
+                    if (sampleBpm <= 0.0f) {
+                        sampleBpm = m_impl->detectBpmForPath(p);
+                    }
+                    double projectBpm = m_actions->projectTempo();
                     if (sampleBpm > 30.0f && projectBpm > 30.0) {
                         playrate = projectBpm / sampleBpm;
                     } else if (std::abs(syncRatio - 1.0f) > 0.001f) {
                         playrate = static_cast<double>(syncRatio);
                     }
                     playrate = std::clamp(playrate, 0.25, 4.0);
+                }
 
+                if ((syncOn && std::abs(playrate - 1.0) > 0.001) || std::abs(pitchShift) > 0.001) {
                     m_actions->queueSyncPlayrate(p, playrate, pitchShift);
                 }
                 m_actions->beginDrag(p);
