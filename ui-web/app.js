@@ -305,6 +305,9 @@ class ThemeManager {
 
     try {
       localStorage.setItem('reals_theme', themeName);
+      if (typeof bridge === 'function' && typeof hasWebView !== 'undefined' && hasWebView) {
+        bridge('config.set', { key: 'theme', value: themeName });
+      }
     } catch (e) {
       // ignore
     }
@@ -1533,7 +1536,13 @@ async function initSettings() {
     const cfg = await bridge('config.getAll');
     if (cfg) {
       LANG = cfg.language || 'vi';
-      applyAccent(cfg.accent || 'orange');
+      const savedTheme = cfg.theme || localStorage.getItem('reals_theme') || 'dark-studio';
+      if (window.themeManager) {
+        window.themeManager.applyTheme(savedTheme, false);
+      }
+      if (savedTheme === 'dark-studio') {
+        applyAccent(cfg.accent || 'orange');
+      }
       applyNoise(cfg.noiseOverlay !== false);
       state.autoCollapseTree = cfg.autoCollapseTree !== false;
       applyDisplaySize(cfg.displaySize || 'medium');
