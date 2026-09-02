@@ -1797,7 +1797,10 @@ std::string Bridge::handle(const std::string& requestJson) {
                         syncOn = true;
                     syncRatio = m_impl->syncRatio;
                 }
-                double pitchShift = args.value("pitchSemitones", static_cast<double>(eng.getPitchSemitones()));
+                double pitchShift = static_cast<double>(eng.getPitchSemitones());
+                if (args.contains("pitchSemitones") && args["pitchSemitones"].is_number()) {
+                    pitchShift = args["pitchSemitones"].get<double>();
+                }
 
                 // Mechanism A (SPEC.md / PROJECT.md R2.1): drag the ORIGINAL
                 // file with zero lag and let REAPER apply the native take
@@ -1813,7 +1816,10 @@ std::string Bridge::handle(const std::string& requestJson) {
                 // -------------------------------------------------------------------
                 double playrate = 1.0;
                 if (syncOn) {
-                    float sampleBpm = args.value("sampleBpm", 0.0f);
+                    float sampleBpm = 0.0f;
+                    if (args.contains("sampleBpm") && args["sampleBpm"].is_number()) {
+                        sampleBpm = args["sampleBpm"].get<float>();
+                    }
                     if (sampleBpm <= 0.0f) {
                         sampleBpm = m_impl->detectBpmForPath(p);
                     }
@@ -1826,7 +1832,7 @@ std::string Bridge::handle(const std::string& requestJson) {
                     playrate = std::clamp(playrate, 0.25, 4.0);
                 }
 
-                if ((syncOn && std::abs(playrate - 1.0) > 0.001) || std::abs(pitchShift) > 0.001) {
+                if (syncOn || std::abs(pitchShift) > 0.001) {
                     m_actions->queueSyncPlayrate(p, playrate, pitchShift);
                 }
                 m_actions->beginDrag(p);

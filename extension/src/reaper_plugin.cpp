@@ -168,6 +168,12 @@ void queuePendingPlayrate(const std::string& path, double rate, double pitch = 0
     LOG_INFO(kTag, msg);
 }
 
+static std::string getFilenameOnly(const std::string& path) {
+    size_t pos = path.find_last_of("/\\");
+    if (pos != std::string::npos) return path.substr(pos + 1);
+    return path;
+}
+
 void processPendingSyncPlayrates() {
     std::lock_guard lock(g_pendingMutex);
     if (g_pendingPlayrates.empty())
@@ -177,8 +183,8 @@ void processPendingSyncPlayrates() {
         std::chrono::steady_clock::now().time_since_epoch()).count();
 
     for (auto it = g_pendingPlayrates.begin(); it != g_pendingPlayrates.end(); ) {
-        // Expire after 4 seconds to prevent stale drag jobs from lingering
-        if (now - it->queuedTime > 4000) {
+        // Allow up to 15 seconds for user to complete the drag-and-drop gesture into REAPER
+        if (now - it->queuedTime > 15000) {
             it = g_pendingPlayrates.erase(it);
             continue;
         }
@@ -186,6 +192,7 @@ void processPendingSyncPlayrates() {
         bool matchedAny = false;
         std::string normTarget = reals::platform::normalizePath(it->path);
         for (char& c : normTarget) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+        std::string targetBase = getFilenameOnly(normTarget);
 
         auto applyToTake = [&](MediaItem* item, MediaItem_Take* take, const std::string& rawPath = "") -> bool {
             if (!item || !take || !SetMediaItemTakeInfo_Value) return false;
@@ -203,7 +210,7 @@ void processPendingSyncPlayrates() {
                     SetMediaItemTakeInfo_Value(take, "B_PPITCH", 1);
                     SetMediaItemTakeInfo_Value(take, "D_PITCH", it->pitchSemitones);
                     char msg[256];
-                    std::snprintf(msg, sizeof(msg), "Mechanism C: Swapped source, playrate %.4f", it->playrate);
+                    std::snprintf(msg, sizeof(msg), "Mechanism C: Swapped source, playrate %.4f pitch %.2f", it->playrate, it->pitchSemitones);
                     LOG_INFO(kTag, msg);
                     return true;
                 }
@@ -243,44 +250,61 @@ void processPendingSyncPlayrates() {
             return true;
         };
 
+        auto checkAndApply = [&](MediaItem* item) -> bool {
+            if (!item) return false;
+            // -----------------------------------------------------------
+            // TIMELINE ISOLATION SAFEGUARD:
+            // If this MediaItem already existed BEFORE the current drag/insert operation,
+            // NEVER touch it! (QUY TẮC: Không chỉnh sửa các item cũ đã nằm trên timeline).
+            // -----------------------------------------------------------
+            if (it->preExistingItems.count(item) > 0) {
+                return false;
+            }
+
+            MediaItem_Take* take = GetActiveTake ? GetActiveTake(item) : nullptr;
+            if (!take) return false;
+
+            if (GetMediaItemTake_Source) {
+                PCM_source* src = GetMediaItemTake_Source(take);
+                while (src && src->GetSource()) {
+                    src = src->GetSource();
+                }
+                if (src && src->GetFileName()) {
+                    std::string rawSrcPath = src->GetFileName();
+                    std::string srcPath = reals::platform::normalizePath(rawSrcPath);
+                    for (char& c : srcPath) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+                    std::string srcBase = getFilenameOnly(srcPath);
+
+                    if (srcPath == normTarget || srcBase == targetBase ||
+                        (!it->originalPath.empty() && srcPath == it->originalPath)) {
+                        return applyToTake(item, take, rawSrcPath);
+                    }
+                }
+            }
+            return false;
+        };
+
         // 1. Check selected media items (newly dropped or inserted item is selected by REAPER)
-        if (CountSelectedMediaItems && GetSelectedMediaItem && GetActiveTake) {
+        if (CountSelectedMediaItems && GetSelectedMediaItem) {
             int selCount = CountSelectedMediaItems(0);
             for (int i = 0; i < selCount; ++i) {
                 MediaItem* item = GetSelectedMediaItem(0, i);
-                if (!item) continue;
-
-                // -----------------------------------------------------------
-                // TIMELINE ISOLATION SAFEGUARD:
-                // If this MediaItem already existed BEFORE the current drag/insert operation,
-                // NEVER touch it! (QUY TẮC: Không chỉnh sửa các item cũ đã nằm trên timeline).
-                // -----------------------------------------------------------
-                if (it->preExistingItems.count(item) > 0) {
-                    continue;
+                if (checkAndApply(item)) {
+                    matchedAny = true;
                 }
+            }
+        }
 
-                MediaItem_Take* take = GetActiveTake(item);
-                if (!take) continue;
-
-                bool isMatch = false;
-                std::string rawSrcPath;
-                if (GetMediaItemTake_Source) {
-                    PCM_source* src = GetMediaItemTake_Source(take);
-                    while (src && src->GetSource()) {
-                        src = src->GetSource();
-                    }
-                    if (src && src->GetFileName()) {
-                        rawSrcPath = src->GetFileName();
-                        std::string srcPath = reals::platform::normalizePath(rawSrcPath);
-                        for (char& c : srcPath) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
-                        if (srcPath == normTarget || (!it->originalPath.empty() && srcPath == it->originalPath)) {
-                            isMatch = true;
-                        }
-                    }
-                }
-
-                if (isMatch) {
-                    if (applyToTake(item, take, rawSrcPath.empty() ? it->path : rawSrcPath)) {
+        // 2. Also search all tracks & items in project (in case REAPER did not auto-select the dropped item)
+        if (!matchedAny && CountTracks && GetTrack && CountTrackMediaItems && GetTrackMediaItem) {
+            const int numTracks = CountTracks(0);
+            for (int t = 0; t < numTracks && !matchedAny; ++t) {
+                MediaTrack* trk = GetTrack(0, t);
+                if (!trk) continue;
+                const int numItems = CountTrackMediaItems(trk);
+                for (int m = 0; m < numItems && !matchedAny; ++m) {
+                    MediaItem* item = GetTrackMediaItem(trk, m);
+                    if (checkAndApply(item)) {
                         matchedAny = true;
                     }
                 }
@@ -291,12 +315,7 @@ void processPendingSyncPlayrates() {
             if (UpdateArrange) UpdateArrange();
             it = g_pendingPlayrates.erase(it);
         } else {
-            it->tries++;
-            if (it->tries > 20) {
-                it = g_pendingPlayrates.erase(it);
-            } else {
-                ++it;
-            }
+            ++it;
         }
     }
 }
