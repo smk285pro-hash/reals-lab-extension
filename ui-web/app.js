@@ -885,16 +885,6 @@ function handleEvent(event, data) {
       }
       if (typeof data.semitones === 'number') {
         state.pitchSemitones = data.semitones;
-        // Recompute selectedTargetNote from the root + reported semitones so
-        // the piano keyboard highlight stays in sync with the badge/semitone
-        // label. Previously the event only updated the text labels, leaving
-        // state.selectedTargetNote pointing at a stale target — producing
-        // the "Root: D# / 0 semitones / blue highlight on F" mismatch.
-        const root = state.originalRootNote || 'C';
-        const rootIdx = NOTE_NAMES.indexOf(root);
-        if (rootIdx >= 0) {
-          state.selectedTargetNote = NOTE_NAMES[(rootIdx + data.semitones + 120) % 12];
-        }
         updateTransposerPopUI();
       }
     }
@@ -905,13 +895,6 @@ function handleEvent(event, data) {
     state.duration = data.duration || state.duration;
     if (typeof data.pitchSemitones === 'number') {
       state.pitchSemitones = data.pitchSemitones;
-      // Same fix as audio.syncState: keep selectedTargetNote consistent with
-      // the reported semitones so the piano highlight matches the badge.
-      const root = state.originalRootNote || 'C';
-      const rootIdx = NOTE_NAMES.indexOf(root);
-      if (rootIdx >= 0) {
-        state.selectedTargetNote = NOTE_NAMES[(rootIdx + data.pitchSemitones + 120) % 12];
-      }
       updateTransposerPopUI();
     }
     const bp = $('#btnPlay');
@@ -1368,23 +1351,34 @@ function normalizeKeyForDisplay(key) {
 }
 
 function updateTransposerPopUI() {
-  const root = state.originalRootNote || 'C';
-  const target = state.selectedTargetNote || root;
+  const root = extractRootNoteName(state.originalRootNote || 'C');
   const semitones = state.pitchSemitones || 0;
+  
+  // If semitones is 0, target is strictly the root note.
+  // If semitones != 0, calculate target note directly from root + semitones.
+  let target = root;
+  if (semitones !== 0) {
+    const rootIdx = NOTE_NAMES.indexOf(root);
+    if (rootIdx >= 0) {
+      target = NOTE_NAMES[((rootIdx + semitones) % 12 + 12) % 12];
+    }
+  }
+  state.selectedTargetNote = target;
+
   // Display the full key (with mode) — but normalize the case so minor
   // keys render as "Am" / "F#m" instead of "AM" / "F#M". Falls back to the
   // bare root note when no key is detected (e.g. "Kick_Punchy_01.wav").
   const displayRoot = (state.sampleKey && state.sampleKey !== 'ORIGINAL')
     ? normalizeKeyForDisplay(state.sampleKey)
     : root;
-  const displayTarget = (semitones === 0) ? displayRoot : target;
 
   const rootBadge = $('#pianoRootBadge');
   if (rootBadge) {
     if (root === target || semitones === 0) {
       rootBadge.textContent = `Root: ${displayRoot}`;
     } else {
-      rootBadge.textContent = `Root: ${displayRoot} ➔ ${target}`;
+      const modeMatch = displayRoot.match(/m$/);
+      rootBadge.textContent = `Root: ${displayRoot} ➔ ${target}${modeMatch ? 'm' : ''}`;
     }
   }
 
@@ -1413,8 +1407,6 @@ function updateTransposerPopUI() {
     if (semitones === 0) {
       keyLabel.textContent = `KEY: ${displayRoot}`;
     } else {
-      // After transposing, show the target root note. If the original sample
-      // had a minor mode, carry the "m" over so "Am -> C" shows as "Cm" not "C".
       const modeMatch = displayRoot.match(/m$/);
       keyLabel.textContent = `KEY: ${target}${modeMatch ? 'm' : ''}`;
     }
