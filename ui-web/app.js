@@ -885,20 +885,17 @@ function handleEvent(event, data) {
       }
       if (typeof data.semitones === 'number') {
         state.pitchSemitones = data.semitones;
-        const badge = $('#pitchShiftBadge');
-        if (badge) {
-          badge.textContent = semitonesToDisplay(data.semitones);
-          badge.classList.toggle('active', data.semitones !== 0);
+        // Recompute selectedTargetNote from the root + reported semitones so
+        // the piano keyboard highlight stays in sync with the badge/semitone
+        // label. Previously the event only updated the text labels, leaving
+        // state.selectedTargetNote pointing at a stale target — producing
+        // the "Root: D# / 0 semitones / blue highlight on F" mismatch.
+        const root = state.originalRootNote || 'C';
+        const rootIdx = NOTE_NAMES.indexOf(root);
+        if (rootIdx >= 0) {
+          state.selectedTargetNote = NOTE_NAMES[(rootIdx + data.semitones + 120) % 12];
         }
-        $('#btnKeyTransposer')?.classList.toggle('shifted', data.semitones !== 0);
-        const semitoneLabel = $('#pianoSemitoneLabel');
-        if (semitoneLabel) {
-          semitoneLabel.textContent = (data.semitones > 0 ? '+' : '') + data.semitones + ' ' + tr('player.semitones');
-        }
-        const keyLabel = $('#playerKeyLabel');
-        if (keyLabel) {
-          keyLabel.textContent = calculateTransposedKey(state.sampleKey, data.semitones);
-        }
+        updateTransposerPopUI();
       }
     }
     return;
@@ -908,6 +905,14 @@ function handleEvent(event, data) {
     state.duration = data.duration || state.duration;
     if (typeof data.pitchSemitones === 'number') {
       state.pitchSemitones = data.pitchSemitones;
+      // Same fix as audio.syncState: keep selectedTargetNote consistent with
+      // the reported semitones so the piano highlight matches the badge.
+      const root = state.originalRootNote || 'C';
+      const rootIdx = NOTE_NAMES.indexOf(root);
+      if (rootIdx >= 0) {
+        state.selectedTargetNote = NOTE_NAMES[(rootIdx + data.pitchSemitones + 120) % 12];
+      }
+      updateTransposerPopUI();
     }
     const bp = $('#btnPlay');
     if (bp) {
