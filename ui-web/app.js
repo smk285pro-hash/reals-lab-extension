@@ -883,6 +883,7 @@ function handleEvent(event, data) {
         state.syncBpm = data.syncBpm;
         $('#btnSyncBpm')?.classList.toggle('on', state.syncBpm);
       }
+      // CRIT-KEY-LOCK: Do NOT clobber userTargetNote or pitch when key is locked
       if (typeof data.semitones === 'number' && !state.isUserTargetKeyLocked) {
         state.pitchSemitones = data.semitones;
         updateTransposerPopUI();
@@ -893,6 +894,9 @@ function handleEvent(event, data) {
   if (event === 'audio.state') {
     state.playing = !!data.playing;
     state.duration = data.duration || state.duration;
+    // CRIT-KEY-LOCK: C++ audio engine emits periodic audio.state. When the user has locked
+    // a target key (e.g. Note A), asynchronous state events MUST NEVER overwrite the user's
+    // active pitch shift, otherwise sample transitions will randomly jump back/forth in pitch.
     if (typeof data.pitchSemitones === 'number' && !state.isUserTargetKeyLocked) {
       state.pitchSemitones = data.pitchSemitones;
       updateTransposerPopUI();
@@ -1361,6 +1365,8 @@ function updateTransposerPopUI() {
   let semitones = 0;
 
   // 2. If the user locked a fixed target note (e.g. Tone A), target is ALWAYS that locked note!
+  // CRIT-KEY-LOCK: Do NOT recalculate target from pitchSemitones when key is locked.
+  // When locked, target is immutable (userTargetNote) and pitchSemitones is the dependent variable.
   if (state.isUserTargetKeyLocked && state.userTargetNote) {
     target = state.userTargetNote;
     semitones = calculateSemitoneDistance(root, state.userTargetNote);

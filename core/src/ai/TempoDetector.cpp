@@ -152,6 +152,9 @@ TempoResult TempoDetector::detectAlgorithmic(const float* pcm, size_t frames, in
     }
 
     // 4. Comb filter resonance scoring with balanced harmonics & gentle 120 BPM prior
+    // CRIT-TEMPO-OCTAVE: In earlier versions, short lags (120-240 BPM) received up to +75% harmonic boost
+    // while long lags (40-70 BPM) received +0%, causing systematic 2x octave doubling (e.g. 70 BPM -> 139.5 BPM).
+    // Normalizing by `weightSum` and including sub-harmonics (lag / 2) with a smooth 120-BPM prior resolves octave errors.
     float bestScore = -1.0f;
     int bestLag = minLag;
 

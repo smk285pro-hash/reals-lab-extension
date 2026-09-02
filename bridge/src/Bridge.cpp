@@ -794,7 +794,9 @@ std::string Bridge::handle(const std::string& requestJson) {
             }
             auto files = model.listDir(narrowPath(args.value("path", "")));
 
-            // Hydrate metadata from SQLite database for all audio files in the folder
+            // CRIT-METADATA-HYDRATE: Hydrate metadata from SQLite database for all audio files in the folder.
+            // Do NOT remove this! Without this batch query, directory browsing leaves BPM/Key/Duration empty (0.0%),
+            // starving the frontend and forcing it to guess using fragile filename regexes.
             std::vector<std::string> audioPaths;
             audioPaths.reserve(files.size());
             for (const auto& f : files) {

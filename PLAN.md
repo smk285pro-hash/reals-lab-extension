@@ -386,14 +386,26 @@ Audit tìm thấy ~25 lỗi (9 nghiêm trọng), đã sửa hết, build zero-wa
     - Web Audio Synthesizer phát âm thanh đa âm thật trực tiếp qua loa với ADSR gain envelope, playhead 60fps, và Piano Roll Canvas vẽ đúng các khối nốt thật từ file MIDI.
   - **Real Key Detection & Target Key Lock Transposer**:
     - Tích hợp bộ giải mã nhạc lý thông minh 12 cung bậc (`C..B`), hệ Camelot (`1A..12B`), dấu thăng/giáng (`#`/`b`), Major/Minor.
-    - Nhận diện tức thì Root Note của sample (`originalRootNote`), highlight phím nốt gốc trên bàn phím Mini Piano Transposer và hiển thị huy hiệu `Root: [Tone gốc]`.
-    - Chế độ **Khóa Tone Đích (Target Key Lock)**: Khi người dùng chọn một nốt đích (vd `F`), khi duyệt qua các sample khác (vd `D`, `E`, `C#`), hệ thống tự động giữ nguyên tone đích `F`, tự tính độ lệch semitone tương ứng, áp dụng DSP SoundTouch realtime pitch shift sang `F`, đồng thời đánh dấu nốt gốc bằng chấm hổ phách `•` (`.root-marker`) trên phím đàn.
-  - **Studio DAW Flat UI & Modern Vector SVGs**:
-    - Loại bỏ toàn bộ viền gắt trên thanh công cụ (`#btnToggleTree`, `#search`, `#sort`, `#favOnly`, `#tagFilter`, `#btnRefresh`) chuyển sang phong cách phẳng Borderless Studio Dark Theme.
-    - Thay thế toàn bộ emoji hệ thống (📁, 🔍, 🔊) bằng bộ icon vector SVG sắc nét, tối giản chuẩn DAW chuyên nghiệp.
+- **[P1.25] Khắc phục Toàn diện Khóa Tone (Target Key Lock), Metadata Hydration (`fs.list`), và Cân bằng Tempo Comb Filter (2026-09-02)**:
+  - **1. Bảo vệ Tuyệt đối Khóa Tone Đích (Target Key Lock)**:
+    - **Lỗi gốc**: Khi người dùng chọn khóa cố định 1 Tone (vd Tone `A`), khi chuyển sample hoặc ngay trên sample đó, sự kiện `audio.state` gửi từ audio thread C++ mang giá trị pitch cũ lên JS, đè `state.pitchSemitones` và làm hàm `updateTransposerPopUI` tính ngược lại làm nhảy mất nốt `A` thành nốt khác (C#, F...). Đồng thời `audio.play` không gửi kèm pitch ngay từ đầu làm trễ pitch 100ms.
+    - **Khắc phục**: Khi `isUserTargetKeyLocked` bật, `state.userTargetNote` là bất biến (Immutable); chặn `audio.state`/`audio.syncState` ghi đè tone; tính và truyền `pitchSemitones` ngay trong payload khởi tạo `audio.play` và `browser.beginDrag`.
+  - **2. Batch Metadata Hydration khi Duyệt File (`fs.list`)**:
+    - **Lỗi gốc**: `fs.list` chỉ quét file từ ổ cứng mà không truy vấn SQLite DB, làm danh sách file thiếu 100% BPM, Key, Camelot, ép UI phải đoán mò qua tên file.
+    - **Khắc phục**: Mở rộng struct `FileEntry`, bổ sung hàm batch query `Database::getSamplesByPaths()` nạp tức thì BPM, Key, Camelot, Duration cho toàn bộ thư mục trong <10ms; serialize đầy đủ qua `entryToJson`.
+  - **3. Cân bằng Lọc Comb & Phân giải Quãng tám (70 $\leftrightarrow$ 140 BPM)**:
+    - **Lỗi gốc**: Thuật toán Comb filter trong `TempoDetector.cpp` cộng thêm $+75\%$ năng lượng ở lag ngắn ($120-240$) nhưng $+0\%$ ở lag dài ($40-70$), gây thiên lệch nhân đôi BPM ($2\times$ octave doubling, vd $70 \rightarrow 139.5\text{ BPM}$).
+    - **Khắc phục**: Chuẩn hóa chia đều tổng trọng số điều hòa và áp dụng phân phối Log-Normal Prior 120 BPM, triệt tiêu lỗi nhảy quãng tám.
+  - **4. Bắt trọn Hợp âm Thứ (Minor `m`) & Tên có Dấu Cách**:
+    - **Lỗi gốc**: Regex C++ dùng non-capturing group làm mất đuôi `m` (`Am` $\rightarrow$ `A`); regex JS bỏ sót dấu cách (`"C minor"` $\rightarrow$ `"C"`).
+    - **Khắc phục**: Nâng cấp regex bắt trọn vẹn mode suffix và chuẩn hóa các nốt trùng âm (Enharmonics: `Cb`, `Fb`...).
 
 ## Ghi chú làm việc
 - Trả lời ngắn gọn, kiểu 2 thằng bạn trò chuyện.
 - Làm từng bước, bàn bạc kỹ trước khi code.
 - **Mỗi khi chốt được điều gì → ghi ngay vào file này** (kèm ngày).
+- **Quy tắc Bất biến cho Agent sau**:
+  1. KHÔNG BAO GIỜ để sự kiện `audio.state` ghi đè `state.pitchSemitones` hay `state.selectedTargetNote` khi `state.isUserTargetKeyLocked` đang bật.
+  2. Luôn truyền `pitchSemitones` trực tiếp trong payload `bridge('audio.play')` để audio engine phát đúng cao độ từ mili-giây đầu tiên.
+  3. `fs.list` trong `Bridge.cpp` PHẢI luôn chạy qua `db.getSamplesByPaths()` để hydrate metadata cho file audio trước khi trả JSON lên UI.
 
