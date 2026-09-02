@@ -1470,13 +1470,20 @@ std::string Bridge::handle(const std::string& requestJson) {
                     item["id"] = s.id;
                     item["path"] = s.path;
                     item["filename"] = s.filename;
+                    item["name"] = s.filename;
+                    item["filesize"] = s.filesize;
+                    item["size"] = s.filesize;
                     item["score"] = scored[i].first;
+                    item["similarity"] = std::clamp(static_cast<int>(std::round(scored[i].first * 100.0f)), 1, 100);
                     item["bpm"] = s.bpm;
                     item["key"] = s.keyRoot;
                     item["mode"] = s.keyMode;
+                    item["camelot"] = s.camelot;
                     item["genre"] = s.genre;
                     item["mood"] = s.mood;
                     item["duration"] = s.durationSec;
+                    item["isDir"] = false;
+                    item["isAudio"] = true;
                     arr.push_back(item);
                 }
             }
@@ -1505,7 +1512,9 @@ std::string Bridge::handle(const std::string& requestJson) {
                 item["id"] = r.sample.id;
                 item["path"] = r.sample.path;
                 item["filename"] = r.sample.filename;
+                item["name"] = r.sample.filename;
                 item["filesize"] = r.sample.filesize;
+                item["size"] = r.sample.filesize;
                 item["duration"] = r.sample.durationSec;
                 item["sampleRate"] = r.sample.sampleRate;
                 item["channels"] = r.sample.channels;
@@ -1518,6 +1527,8 @@ std::string Bridge::handle(const std::string& requestJson) {
                 item["score"] = r.combinedScore;
                 item["similarity"] = std::clamp(static_cast<int>(std::round(r.combinedScore * 100.0f)), 1, 100);
                 item["aiAnalyzed"] = r.sample.aiAnalyzed;
+                item["isDir"] = false;
+                item["isAudio"] = true;
                 arr.push_back(item);
             }
             res["ok"] = true;

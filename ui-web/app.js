@@ -2278,16 +2278,21 @@ function paintVisible() {
 }
 
 function fileRowEl(f, isSelected, compact) {
-  const row = el('div', 'file-row' + (isSelected ? ' sel' : '') + (f.isDir ? ' dir' : ''));
+  if (!f) return el('div');
+  const rawName = f.name || f.filename || (f.path ? f.path.split(/[\\/]/).pop() : '') || '';
+  if (!f.name) f.name = rawName;
+  if (!f.filename) f.filename = rawName;
+  const isDir = !!f.isDir;
+  const row = el('div', 'file-row' + (isSelected ? ' sel' : '') + (isDir ? ' dir' : ''));
   row._path = f.path;
   if (f.path) row.title = f.path;
 
   // Mini preview background (Waveform for audio, Piano roll for MIDI)
-  if (!f.isDir) {
+  if (!isDir) {
     const bg = el('div', 'mini-preview-bg');
     if (isMidiFile(f)) {
       bg.innerHTML = generateMiniMidiSvg(f);
-    } else if (f.isAudio) {
+    } else {
       bg.innerHTML = generateMiniWaveSvg(f);
     }
     row.appendChild(bg);
@@ -2306,24 +2311,30 @@ function fileRowEl(f, isSelected, compact) {
   } else if (!state.favSet || !state.favSet.has(f.path)) {
     row.appendChild(el('span', 'tagdot'));
   }
-  const label = f.isDir ? '▸ ' + f.name : f.name;
+  const label = isDir ? ('▸ ' + rawName) : rawName;
   const fnameSpan = el('span', 'fname');
   const textSpan = el('span', 'fname-text');
-  if (label.length > 14) {
+  if (label && label.length > 14) {
     const tailLen = Math.max(7, Math.min(14, Math.floor(label.length * 0.35)));
     textSpan.appendChild(el('span', 'fname-start', label.slice(0, label.length - tailLen)));
     textSpan.appendChild(el('span', 'fname-end', label.slice(label.length - tailLen)));
   } else {
-    textSpan.textContent = label;
+    textSpan.textContent = label || '';
   }
   fnameSpan.appendChild(textSpan);
   row.appendChild(fnameSpan);
-  if (!compact && !f.isDir) {
+  if (!compact && !isDir) {
     if (isMidiFile(f)) {
       row.appendChild(el('span', 'fmeta-badge midi', 'MIDI'));
     }
+    if (f.similarity !== undefined && f.similarity > 0) {
+      row.appendChild(el('span', 'fmeta-badge sim-badge', `${f.similarity}%`));
+    } else if (f.score !== undefined && f.score > 0) {
+      const matchPct = Math.round(f.score * 100);
+      row.appendChild(el('span', 'fmeta-badge sim-badge', `${matchPct}%`));
+    }
     if (f.duration && !state.probeCache[f.path]) state.probeCache[f.path] = f.duration;
-    const dur = state.probeCache[f.path];
+    const dur = state.probeCache[f.path] || f.duration;
     if (dur) row.appendChild(el('span', 'fdur', fmtDur(dur)));
     if (f.bpm && f.bpm > 0) {
       row.appendChild(el('span', 'fmeta-badge', Math.round(f.bpm) + ' BPM'));
@@ -2331,7 +2342,8 @@ function fileRowEl(f, isSelected, compact) {
     if (f.key) {
       row.appendChild(el('span', 'fmeta-badge', f.key));
     }
-    if (f.size !== undefined) row.appendChild(el('span', 'fsize', fmtSize(f.size)));
+    const sz = f.size !== undefined ? f.size : f.filesize;
+    if (sz !== undefined) row.appendChild(el('span', 'fsize', fmtSize(sz)));
   }
   row.onclick = (e) => {
     if (state._suppressClick) { e.preventDefault(); e.stopPropagation(); return; }
@@ -2470,14 +2482,22 @@ function runSearch(q) {
 
 function findSimilarSamples(f) {
   if (!f || !f.path) return;
+  const rawName = f.name || f.filename || (f.path ? f.path.split(/[\\/]/).pop() : '') || '';
   state.similarSource = f.path;
-  state.similarSourceName = f.name;
+  state.similarSourceName = rawName;
   state.searchQ = '';
   const searchInput = $('#search');
   if (searchInput) searchInput.value = '';
   paintLoadingFiles();
   bridge('browser.findSimilar', { path: f.path, limit: 30 }).then((data) => {
     const list = (data && data.results) ? data.results : [];
+    for (const item of list) {
+      const itemRaw = item.name || item.filename || (item.path ? item.path.split(/[\\/]/).pop() : '') || '';
+      item.name = itemRaw;
+      item.filename = itemRaw;
+      if (item.isDir === undefined) item.isDir = false;
+      if (item.isAudio === undefined) item.isAudio = !isMidiFile(item.path || itemRaw);
+    }
     state.rawFiles = list;
     paintFromRaw(false);
     probeVisibleAudio();
@@ -2749,6 +2769,7 @@ function wireBrowserEvents() {
 
   filesBox.onclick = (e) => {
     if (state._suppressClick) return;
+    if (e.target.closest('#similarBanner') || e.target.closest('.similar-banner')) return;
     const row = e.target.closest('.file-row');
     if (row && row._path) {
       const f = (state.files || []).find((x) => x.path === row._path);
@@ -2758,7 +2779,9 @@ function wireBrowserEvents() {
     const rect = filesBox.getBoundingClientRect();
     const clickY = (e.clientY - rect.top) + filesBox.scrollTop;
     const rowH = getRowH();
-    const idx = Math.floor(clickY / rowH);
+    const banner = $('#similarBanner');
+    const bannerH = (banner && !banner.classList.contains('hidden')) ? banner.offsetHeight : 0;
+    const idx = Math.floor((clickY - bannerH) / rowH);
     if (state.files && idx >= 0 && idx < state.files.length) {
       selectEntry(state.files[idx]);
     }
