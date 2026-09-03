@@ -12,12 +12,11 @@ struct SoundTouchProcessor::Impl {
     int channels = 2;
     float timeRatio = 1.0f;
     float pitchSemitones = 0.0f;
-    bool lowLatency = true;
+    bool lowLatency = false;
 
     void applyLowLatencySettings() {
         st.setSetting(SETTING_USE_AA_FILTER, 1);
-        st.setSetting(SETTING_USE_QUICKSEEK, 0); // Full precision correlation (no flutter)
-
+        st.setSetting(SETTING_USE_QUICKSEEK, 0);
         if (lowLatency) {
             // Low-latency profile: sequence = 20ms, seek window = 8ms, overlap = 6ms, aa = 32
             // Pipeline latency ~28ms at 44.1kHz (< 30ms requirement)
@@ -26,10 +25,13 @@ struct SoundTouchProcessor::Impl {
             st.setSetting(SETTING_OVERLAP_MS, 6);
             st.setSetting(SETTING_AA_FILTER_LENGTH, 32);
         } else {
-            // Studio Master profile: optimal for full acoustic clarity
-            st.setSetting(SETTING_SEQUENCE_MS, 82);
-            st.setSetting(SETTING_SEEKWINDOW_MS, 28);
-            st.setSetting(SETTING_OVERLAP_MS, 12);
+            // Studio Master profile: optimal for full acoustic clarity and punchy transient preservation.
+            // sequenceMs = 0 enables SoundTouch dynamic automatic sequence scaling with tempo.
+            // 18ms seek window provides accurate phase correlation across 45-65Hz fundamental.
+            // 8ms overlap ensures smooth raised-cosine crossfade without destructive cancellation.
+            st.setSetting(SETTING_SEQUENCE_MS, 0);
+            st.setSetting(SETTING_SEEKWINDOW_MS, 18);
+            st.setSetting(SETTING_OVERLAP_MS, 8);
             st.setSetting(SETTING_AA_FILTER_LENGTH, 64);
         }
     }
@@ -57,6 +59,14 @@ void SoundTouchProcessor::setSampleRate(const int sampleRate) {
     m_impl->sampleRate = sampleRate;
     m_impl->st.setSampleRate(static_cast<uint>(sampleRate));
     m_impl->applyLowLatencySettings();
+}
+
+void SoundTouchProcessor::setSampleRates(const int inSampleRate, const int /*outSampleRate*/) {
+    // SoundTouch operates at the INPUT (native) sample rate.
+    // The sample rate conversion factor is folded into the time ratio
+    // by Engine::dsp_on_read(), so SoundTouch only needs to know the
+    // native rate for correct WSOLA sequence/overlap window sizing.
+    setSampleRate(inSampleRate > 0 ? inSampleRate : 44100);
 }
 
 int SoundTouchProcessor::getSampleRate() const {

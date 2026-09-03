@@ -93,6 +93,9 @@ public:
     void setLoop(bool loop);
     [[nodiscard]] bool loop() const;
 
+    // Inject a custom time-stretch processor (e.g. REAPER's native élastique 3 Pro in extension shell)
+    void setTimeStretchProcessor(std::shared_ptr<class ITimeStretchProcessor> proc);
+
     // Level of the currently playing file (poll from the UI thread).
     [[nodiscard]] LevelState level() const;
 

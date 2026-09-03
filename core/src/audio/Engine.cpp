@@ -1,4 +1,5 @@
 #include "reals/audio/Engine.h"
+#include "reals/audio/ITimeStretchProcessor.h"
 #include "reals/audio/SoundTouchProcessor.h"
 #include "reals/ai/KeyDetector.h"
 #include "reals/ai/TempoDetector.h"
@@ -47,18 +48,26 @@ struct DspAudioSource {
     std::atomic<bool> pcmLoaded{false};
     std::vector<float> pcmData;
     bool useDevice = true;
-    SoundTouchProcessor processor{44100, 2, true};
+    SoundTouchProcessor defaultProcessor{44100, 2, false};
+    std::shared_ptr<ITimeStretchProcessor> customProcessor;
+
+    ITimeStretchProcessor& getProcessor() noexcept {
+        if (customProcessor) return *customProcessor;
+        return defaultProcessor;
+    }
     std::atomic<bool> loop{false};
-    std::atomic<int> sampleRate{44100};
+    std::atomic<int> sampleRate{44100};       // Output sample rate (device / host rate)
+    std::atomic<int> nativeSampleRate{44100};  // Source file's native sample rate (before any conversion)
     std::atomic<int> channels{2};
     std::atomic<float> timeRatio{1.0f};
     std::atomic<float> pitchSemitones{0.0f};
-    std::atomic<float> volume{0.9f};
+    std::atomic<float> volume{1.0f};
     std::atomic<int64_t> pendingSeekFrame{-1};
 
     // Last values actually applied to the SoundTouch processor on the audio thread only.
     float appliedTimeRatio = 1.0f;
     float appliedPitchSemitones = 0.0f;
+    bool dspActive = false;
     std::atomic<ma_uint64> cursorFrames{0};
     std::atomic<ma_uint64> totalFrames{0};
     std::atomic<ma_uint64> loopBoundaryFrames{0};
@@ -66,8 +75,21 @@ struct DspAudioSource {
     std::atomic<bool> isFirstRead{true};
     std::vector<float> readBuffer;
 
+    // Start Onset Micro-Fade Ramp (~3ms raised-cosine)
+    std::atomic<int> startFadeRemaining{0};
+    int startFadeTotal = 144;
+    int startFadeOffset = 0;
+
+    // Lock-free Seek Crossfade Buffer (~144 samples)
+    static constexpr size_t kCrossfadeMaxFrames = 256;
+    std::vector<float> seekOldBuffer;
+    int seekFadeRemaining = 0;
+    int seekFadeTotal = 144;
+    int seekFadeOffset = 0;
+
     DspAudioSource() {
         readBuffer.resize(4096 * 8, 0.0f);
+        seekOldBuffer.resize(kCrossfadeMaxFrames * 2, 0.0f);
     }
 
     ~DspAudioSource() {
@@ -84,11 +106,18 @@ struct DspAudioSource {
             ma_data_source_uninit(&base);
             baseInited = false;
         }
-        processor.clear();
+        getProcessor().clear();
+        dspActive = false;
+        appliedTimeRatio = 1.0f;
+        appliedPitchSemitones = 0.0f;
         cursorFrames.store(0, std::memory_order_relaxed);
         totalFrames.store(0, std::memory_order_relaxed);
         loopBoundaryFrames.store(0, std::memory_order_relaxed);
         pendingSeekFrame.store(-1, std::memory_order_relaxed);
+        startFadeRemaining.store(0, std::memory_order_relaxed);
+        startFadeOffset = 0;
+        seekFadeRemaining = 0;
+        seekFadeOffset = 0;
     }
 };
 
@@ -108,47 +137,112 @@ ma_result dsp_on_read(ma_data_source* pDataSource, void* pFramesOut, ma_uint64 f
         return MA_AT_END;
     }
 
+    const int channels = ds->channels.load(std::memory_order_relaxed) > 0 ? ds->channels.load(std::memory_order_relaxed) : 2;
+    constexpr float kRatioEps = 0.003f; // ~0.3% BPM tolerance (inaudible, bit-perfect bypass)
+    constexpr float kPitchEps = 0.02f;  // ~2 cents tolerance
+
+    const float desiredRatio = ds->timeRatio.load(std::memory_order_relaxed);
+    const float desiredPitch = ds->pitchSemitones.load(std::memory_order_relaxed);
+    const bool isNeutral = (std::abs(desiredRatio - 1.0f) < kRatioEps &&
+                            std::abs(desiredPitch) < kPitchEps);
+
+    // Apply parameter changes published by the UI thread through atomics (CRIT-03)
+    if (desiredRatio != ds->appliedTimeRatio) {
+        ds->getProcessor().setTimeRatio(desiredRatio);
+        ds->appliedTimeRatio = desiredRatio;
+    }
+    if (desiredPitch != ds->appliedPitchSemitones) {
+        ds->getProcessor().setPitchSemitones(desiredPitch);
+        ds->appliedPitchSemitones = desiredPitch;
+    }
+
+    const size_t totalAvailable = ds->pcmData.size() / static_cast<size_t>(channels);
+
+    // Dynamic transition from Bypass to DSP mode mid-stream
+    if (!ds->dspActive && !isNeutral) {
+        ds->dspActive = true;
+        ds->getProcessor().clear();
+        ds->getProcessor().setTimeRatio(desiredRatio);
+        ds->getProcessor().setPitchSemitones(desiredPitch);
+        const size_t preRollNeeded = static_cast<size_t>(std::max(ds->getProcessor().latencyFrames() * 2, 2048));
+        const size_t cur = static_cast<size_t>(ds->cursorFrames.load(std::memory_order_relaxed));
+        if (cur < totalAvailable) {
+            const size_t avail = totalAvailable - cur;
+            const size_t toFeed = std::min(preRollNeeded, avail);
+            if (toFeed > 0) {
+                ds->getProcessor().putSamples(&ds->pcmData[cur * static_cast<size_t>(channels)], toFeed);
+                ds->cursorFrames.fetch_add(toFeed, std::memory_order_relaxed);
+            }
+        }
+    }
+
     // Handle pending lock-free seek requests
     const int64_t seekFrame = ds->pendingSeekFrame.exchange(-1, std::memory_order_acq_rel);
     if (seekFrame >= 0) {
-        ds->processor.clear();
-        ds->cursorFrames.store(static_cast<ma_uint64>(seekFrame), std::memory_order_relaxed);
-    }
+        const int sr = ds->sampleRate.load(std::memory_order_relaxed) > 0 ? ds->sampleRate.load(std::memory_order_relaxed) : 44100;
+        const int fadeLen = std::clamp(static_cast<int>(sr * 0.003f), 64, static_cast<int>(DspAudioSource::kCrossfadeMaxFrames));
+        ds->seekFadeTotal = fadeLen;
+        ds->seekFadeRemaining = fadeLen;
+        ds->seekFadeOffset = 0;
 
-    // Apply parameter changes published by the UI thread through atomics (CRIT-03)
-    {
-        const float desiredRatio = ds->timeRatio.load(std::memory_order_relaxed);
-        const float desiredPitch = ds->pitchSemitones.load(std::memory_order_relaxed);
-        if (desiredRatio != ds->appliedTimeRatio) {
-            ds->processor.setTimeRatio(desiredRatio);
-            ds->appliedTimeRatio = desiredRatio;
+        if (isNeutral) {
+            ds->dspActive = false;
         }
-        if (desiredPitch != ds->appliedPitchSemitones) {
-            ds->processor.setPitchSemitones(desiredPitch);
-            ds->appliedPitchSemitones = desiredPitch;
+
+        const bool isBypass = !ds->dspActive;
+        if (isBypass) {
+            const ma_uint64 oldCursor = ds->cursorFrames.load(std::memory_order_relaxed);
+            for (int i = 0; i < fadeLen; ++i) {
+                const size_t f = oldCursor + static_cast<size_t>(i);
+                if (f < totalAvailable) {
+                    ds->seekOldBuffer[i * 2] = ds->pcmData[f * static_cast<size_t>(channels)];
+                    ds->seekOldBuffer[i * 2 + 1] = ds->pcmData[f * static_cast<size_t>(channels) + (channels > 1 ? 1 : 0)];
+                } else {
+                    ds->seekOldBuffer[i * 2] = 0.0f;
+                    ds->seekOldBuffer[i * 2 + 1] = 0.0f;
+                }
+            }
+        } else {
+            const size_t drained = ds->getProcessor().receiveSamples(ds->seekOldBuffer.data(), static_cast<size_t>(fadeLen));
+            if (drained < static_cast<size_t>(fadeLen)) {
+                const float lastL = drained > 0 ? ds->seekOldBuffer[(drained - 1) * 2] : 0.0f;
+                const float lastR = drained > 0 ? ds->seekOldBuffer[(drained - 1) * 2 + 1] : 0.0f;
+                for (size_t i = drained; i < static_cast<size_t>(fadeLen); ++i) {
+                    const float decay = 1.0f - static_cast<float>(i - drained + 1) / static_cast<float>(fadeLen - drained + 1);
+                    ds->seekOldBuffer[i * 2] = lastL * decay;
+                    ds->seekOldBuffer[i * 2 + 1] = lastR * decay;
+                }
+            }
+            ds->getProcessor().clear();
+        }
+
+        ds->cursorFrames.store(static_cast<ma_uint64>(seekFrame), std::memory_order_relaxed);
+
+        // Pre-roll / prime SoundTouch pipeline in DSP mode after seek
+        if (!isBypass) {
+            const size_t preRollNeeded = static_cast<size_t>(std::max(ds->getProcessor().latencyFrames() * 2, 2048));
+            const size_t curSeek = static_cast<size_t>(seekFrame);
+            if (curSeek < totalAvailable) {
+                const size_t avail = totalAvailable - curSeek;
+                const size_t toFeed = std::min(preRollNeeded, avail);
+                if (toFeed > 0) {
+                    ds->getProcessor().putSamples(&ds->pcmData[curSeek * static_cast<size_t>(channels)], toFeed);
+                    ds->cursorFrames.fetch_add(toFeed, std::memory_order_relaxed);
+                }
+            }
         }
     }
 
     float* out = reinterpret_cast<float*>(pFramesOut);
-    const int channels = ds->channels.load(std::memory_order_relaxed) > 0 ? ds->channels.load(std::memory_order_relaxed) : 2;
-    const bool isBypass = (std::abs(ds->timeRatio.load(std::memory_order_relaxed) - 1.0f) < 0.001f &&
-                           std::abs(ds->pitchSemitones.load(std::memory_order_relaxed)) < 0.01f);
 
     const ma_uint64 bound = ds->loopBoundaryFrames.load(std::memory_order_relaxed);
     const ma_uint64 totalF = ds->totalFrames.load(std::memory_order_relaxed);
     const ma_uint64 effectiveLoopFrames = (bound > 0 && bound <= totalF) ? bound : totalF;
 
-    if (ds->isFirstRead.exchange(false, std::memory_order_relaxed)) {
-        const auto now = std::chrono::steady_clock::now();
-        const auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(now - ds->playStartTime).count();
-        LOG_INFO("AUDIO_CALLBACK", "FIRST_READ: elapsedUs=" + std::to_string(elapsedUs) +
-                 " (" + std::to_string(elapsedUs / 1000.0) + "ms)" +
-                 " frameCount=" + std::to_string(frameCount) +
-                 " initialCursor=" + std::to_string(ds->cursorFrames.load(std::memory_order_relaxed)) +
-                 " loopBoundary=" + std::to_string(bound) +
-                 " totalFrames=" + std::to_string(totalF) +
-                 " timeRatio=" + std::to_string(ds->timeRatio.load(std::memory_order_relaxed)));
-    }
+    ds->isFirstRead.store(false, std::memory_order_relaxed);
+
+    ma_uint64 actualFramesProduced = 0;
+    const bool isBypass = !ds->dspActive;
 
     if (isBypass) {
         // Fast-path: Direct decoder reading with zero DSP overhead, zero latency, and bit-perfect quality
@@ -156,7 +250,6 @@ ma_result dsp_on_read(ma_data_source* pDataSource, void* pFramesOut, ma_uint64 f
         ma_uint64 guardIterations = frameCount + 2;
         while (framesReadTotal < frameCount) {
             if (guardIterations-- == 0) {
-                LOG_ERROR("AUDIO_CALLBACK", "BYPASS_READ: aborting stalled loop-wrap, no progress");
                 break;
             }
             const ma_uint64 currentCursor = ds->cursorFrames.load(std::memory_order_relaxed);
@@ -181,7 +274,6 @@ ma_result dsp_on_read(ma_data_source* pDataSource, void* pFramesOut, ma_uint64 f
 
             if (res != MA_SUCCESS || framesRead == 0 || (effectiveLoopFrames > 0 && ds->cursorFrames.load(std::memory_order_relaxed) >= effectiveLoopFrames)) {
                 if (ds->loop.load(std::memory_order_relaxed)) {
-                    LOG_INFO("AUDIO_CALLBACK", "BYPASS_LOOP_WRAP: cursor=" + std::to_string(ds->cursorFrames.load(std::memory_order_relaxed)) + " -> 0");
                     ds->cursorFrames.store(0, std::memory_order_relaxed);
                     if (framesRead == 0 && framesReadTotal == 0 && framesToRead == 0) {
                         break;
@@ -195,75 +287,108 @@ ma_result dsp_on_read(ma_data_source* pDataSource, void* pFramesOut, ma_uint64 f
         if (framesReadTotal < frameCount) {
             std::memset(out + framesReadTotal * channels, 0, (frameCount - framesReadTotal) * static_cast<size_t>(channels) * sizeof(float));
         }
-
-        if (pFramesRead) *pFramesRead = framesReadTotal;
-        return (framesReadTotal > 0 || ds->loop.load(std::memory_order_relaxed)) ? MA_SUCCESS : MA_AT_END;
-    }
-
-    // DSP mode: Time-Stretch / Pitch-Shift path via SoundTouch
-    size_t totalReceived = 0;
-    size_t dspGuardIterations = frameCount + 2;
-    while (totalReceived < frameCount) {
-        if (dspGuardIterations-- == 0) {
-            LOG_ERROR("AUDIO_CALLBACK", "DSP_READ: aborting stalled loop-wrap, no progress");
-            break;
-        }
-        const size_t needed = frameCount - totalReceived;
-        const size_t rec = ds->processor.receiveSamples(out + totalReceived * channels, needed);
-        totalReceived += rec;
-        if (totalReceived >= frameCount) break;
-
-        const ma_uint64 currentCursor = ds->cursorFrames.load(std::memory_order_relaxed);
-        constexpr ma_uint64 kChunkFrames = 1024;
-        ma_uint64 framesToRead = kChunkFrames;
-        if (ds->loop.load(std::memory_order_relaxed) && effectiveLoopFrames > 0 && currentCursor + framesToRead > effectiveLoopFrames) {
-            framesToRead = (currentCursor < effectiveLoopFrames) ? (effectiveLoopFrames - currentCursor) : 0;
-        }
-
-        ma_uint64 framesRead = 0;
-        ma_result res = MA_SUCCESS;
-        if (framesToRead > 0) {
-            const size_t avail = (ds->pcmData.size() / static_cast<size_t>(channels)) > currentCursor
-                ? (ds->pcmData.size() / static_cast<size_t>(channels)) - currentCursor : 0;
-            framesRead = (framesToRead < avail) ? framesToRead : avail;
-            if (framesRead > 0) {
-                std::memcpy(ds->readBuffer.data(), &ds->pcmData[currentCursor * static_cast<size_t>(channels)], framesRead * static_cast<size_t>(channels) * sizeof(float));
-                res = MA_SUCCESS;
-            } else { res = MA_AT_END; }
-        }
-
-        if (res == MA_SUCCESS && framesRead > 0) {
-            ds->processor.putSamples(ds->readBuffer.data(), static_cast<size_t>(framesRead));
-            ds->cursorFrames.fetch_add(framesRead, std::memory_order_relaxed);
-        } else {
-            if (ds->loop.load(std::memory_order_relaxed)) {
-                LOG_INFO("AUDIO_CALLBACK", "DSP_LOOP_WRAP: cursor=" + std::to_string(ds->cursorFrames.load(std::memory_order_relaxed)) + " -> 0");
-                ds->cursorFrames.store(0, std::memory_order_relaxed);
-                if (framesRead == 0 && framesToRead == 0) {
-                    ma_uint64 newRead = 0;
-                    const size_t avail = ds->pcmData.size() / static_cast<size_t>(channels);
-                    newRead = (kChunkFrames < avail) ? kChunkFrames : avail;
-                    if (newRead > 0) {
-                        std::memcpy(ds->readBuffer.data(), ds->pcmData.data(), newRead * static_cast<size_t>(channels) * sizeof(float));
-                        ds->processor.putSamples(ds->readBuffer.data(), static_cast<size_t>(newRead));
-                        ds->cursorFrames.store(newRead, std::memory_order_relaxed);
-                    }
-                }
-            } else {
-                ds->processor.flush();
-                const size_t drained = ds->processor.receiveSamples(out + totalReceived * channels, frameCount - totalReceived);
-                totalReceived += drained;
+        actualFramesProduced = framesReadTotal;
+    } else {
+        // DSP mode: Time-Stretch / Pitch-Shift path via SoundTouch
+        size_t totalReceived = 0;
+        size_t dspGuardIterations = frameCount + 2;
+        while (totalReceived < frameCount) {
+            if (dspGuardIterations-- == 0) {
                 break;
             }
+            const size_t needed = frameCount - totalReceived;
+            const size_t rec = ds->getProcessor().receiveSamples(out + totalReceived * channels, needed);
+            totalReceived += rec;
+            if (totalReceived >= frameCount) break;
+
+            const ma_uint64 currentCursor = ds->cursorFrames.load(std::memory_order_relaxed);
+            constexpr ma_uint64 kChunkFrames = 1024;
+            ma_uint64 framesToRead = kChunkFrames;
+            if (ds->loop.load(std::memory_order_relaxed) && effectiveLoopFrames > 0 && currentCursor + framesToRead > effectiveLoopFrames) {
+                framesToRead = (currentCursor < effectiveLoopFrames) ? (effectiveLoopFrames - currentCursor) : 0;
+            }
+
+            ma_uint64 framesRead = 0;
+            ma_result res = MA_SUCCESS;
+            if (framesToRead > 0) {
+                const size_t avail = (ds->pcmData.size() / static_cast<size_t>(channels)) > currentCursor
+                    ? (ds->pcmData.size() / static_cast<size_t>(channels)) - currentCursor : 0;
+                framesRead = (framesToRead < avail) ? framesToRead : avail;
+                if (framesRead > 0) {
+                    std::memcpy(ds->readBuffer.data(), &ds->pcmData[currentCursor * static_cast<size_t>(channels)], framesRead * static_cast<size_t>(channels) * sizeof(float));
+                    res = MA_SUCCESS;
+                } else { res = MA_AT_END; }
+            }
+
+            if (res == MA_SUCCESS && framesRead > 0) {
+                ds->getProcessor().putSamples(ds->readBuffer.data(), static_cast<size_t>(framesRead));
+                ds->cursorFrames.fetch_add(framesRead, std::memory_order_relaxed);
+            } else {
+                if (ds->loop.load(std::memory_order_relaxed)) {
+                    ds->cursorFrames.store(0, std::memory_order_relaxed);
+                    if (framesRead == 0 && framesToRead == 0) {
+                        ma_uint64 newRead = 0;
+                        const size_t avail = ds->pcmData.size() / static_cast<size_t>(channels);
+                        newRead = (kChunkFrames < avail) ? kChunkFrames : avail;
+                        if (newRead > 0) {
+                            std::memcpy(ds->readBuffer.data(), ds->pcmData.data(), newRead * static_cast<size_t>(channels) * sizeof(float));
+                            ds->getProcessor().putSamples(ds->readBuffer.data(), static_cast<size_t>(newRead));
+                            ds->cursorFrames.store(newRead, std::memory_order_relaxed);
+                        }
+                    }
+                } else {
+                    ds->getProcessor().flush();
+                    const size_t drained = ds->getProcessor().receiveSamples(out + totalReceived * channels, frameCount - totalReceived);
+                    totalReceived += drained;
+                    break;
+                }
+            }
         }
+
+        if (totalReceived < frameCount) {
+            std::memset(out + totalReceived * channels, 0, (frameCount - totalReceived) * static_cast<size_t>(channels) * sizeof(float));
+        }
+        actualFramesProduced = totalReceived;
     }
 
-    if (totalReceived < frameCount) {
-        std::memset(out + totalReceived * channels, 0, (frameCount - totalReceived) * static_cast<size_t>(channels) * sizeof(float));
+    // Apply seek crossfade if active
+    if (ds->seekFadeRemaining > 0 && actualFramesProduced > 0) {
+        const int toFade = std::min(ds->seekFadeRemaining, static_cast<int>(actualFramesProduced));
+        for (int i = 0; i < toFade; ++i) {
+            const int k = ds->seekFadeOffset + i;
+            if (k < ds->seekFadeTotal) {
+                const float w = 0.5f * (1.0f - std::cos(3.14159265358979323846f * static_cast<float>(k) / static_cast<float>(ds->seekFadeTotal)));
+                const float oldL = ds->seekOldBuffer[k * 2];
+                const float oldR = ds->seekOldBuffer[k * 2 + 1];
+                out[i * channels] = (1.0f - w) * oldL + w * out[i * channels];
+                if (channels > 1) {
+                    out[i * channels + 1] = (1.0f - w) * oldR + w * out[i * channels + 1];
+                }
+            }
+        }
+        ds->seekFadeRemaining -= toFade;
+        ds->seekFadeOffset += toFade;
     }
 
-    if (pFramesRead) *pFramesRead = totalReceived;
-    return (totalReceived > 0 || ds->loop.load(std::memory_order_relaxed)) ? MA_SUCCESS : MA_AT_END;
+    // Apply onset micro-fade ramp if active
+    const int startRem = ds->startFadeRemaining.load(std::memory_order_relaxed);
+    if (startRem > 0 && actualFramesProduced > 0) {
+        const int toFade = std::min(startRem, static_cast<int>(actualFramesProduced));
+        for (int i = 0; i < toFade; ++i) {
+            const int k = ds->startFadeOffset + i;
+            if (k < ds->startFadeTotal) {
+                const float w = 0.5f * (1.0f - std::cos(3.14159265358979323846f * static_cast<float>(k) / static_cast<float>(ds->startFadeTotal)));
+                for (int c = 0; c < channels; ++c) {
+                    out[i * channels + c] *= w;
+                }
+            }
+        }
+        ds->startFadeRemaining.store(startRem - toFade, std::memory_order_relaxed);
+        ds->startFadeOffset += toFade;
+    }
+
+    if (pFramesRead) *pFramesRead = actualFramesProduced;
+    return (actualFramesProduced > 0 || ds->loop.load(std::memory_order_relaxed)) ? MA_SUCCESS : MA_AT_END;
 }
 
 ma_result dsp_on_seek(ma_data_source* pDataSource, ma_uint64 frameIndex) {
@@ -277,8 +402,6 @@ ma_result dsp_on_seek(ma_data_source* pDataSource, ma_uint64 frameIndex) {
     if (target > avail) target = avail;
     
     ds->pendingSeekFrame.store(static_cast<int64_t>(target), std::memory_order_release);
-    ds->cursorFrames.store(target, std::memory_order_relaxed);
-    
     return MA_SUCCESS;
 }
 
@@ -331,7 +454,7 @@ struct Engine::Impl {
     DspAudioSource dspSource;
 
     bool loop = false;
-    float volume = 0.9f;
+    float volume = 1.0f;
     float timeRatio = 1.0f;
     float pitchSemitones = 0.0f;
 
@@ -363,9 +486,9 @@ Engine::~Engine() {
 bool Engine::init(bool useDevice) {
     if (!m_impl)
         m_impl = std::make_unique<Impl>();
+    m_impl->dspSource.useDevice = useDevice;
     if (m_impl->engineInited)
         return true;
-    m_impl->dspSource.useDevice = useDevice;
     if (!useDevice) {
         m_impl->engineInited = true;
         return true;
@@ -416,9 +539,11 @@ void Engine::stop() {
 bool Engine::playFile(const std::string& path, const bool loop, const double startFraction,
                       const PhaseAnchor& phaseAnchor, const uint64_t nominalLoopFrames) {
     LOG_INFO(kTag, "playFile: entering for path: " + path);
-    if (!init()) {
-        LOG_ERROR(kTag, "playFile: init() failed");
-        return false;
+    if (!m_impl || !m_impl->engineInited) {
+        if (!init(true)) {
+            LOG_ERROR(kTag, "playFile: init() failed");
+            return false;
+        }
     }
     stop();
 
@@ -439,13 +564,17 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
     const int targetSr = (m_impl->targetSampleRate.load(std::memory_order_relaxed) > 0)
         ? m_impl->targetSampleRate.load(std::memory_order_relaxed)
         : m_impl->track.sampleRate;
+    const int nativeSr = m_impl->track.sampleRate > 0 ? m_impl->track.sampleRate : targetSr;
     const int channels = 2; // Always decode & buffer as stereo float32 to prevent mono/stereo downsample artifacts
 
+    // Decode at NATIVE sample rate (0 = keep file's original rate).
+    // Resampling is handled by SoundTouch / élastique with high-quality
+    // WSOLA + sinc filtering instead of miniaudio's linear interpolation
+    // which caused audible high-frequency roll-off and aliasing.
     ma_decoder_config decConfig = ma_decoder_config_init(
         ma_format_f32,
         static_cast<ma_uint32>(channels),
-        static_cast<ma_uint32>(targetSr));
-    decConfig.resampling.linear.lpfOrder = 4; // 4th-order Butterworth anti-aliasing filter for pristine resampling
+        static_cast<ma_uint32>(nativeSr));
 
 #ifdef _WIN32
     const std::wstring wpath = toWide(path);
@@ -459,10 +588,10 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
         LOG_ERROR(kTag, "playFile: ma_decoder_init_file failed with res=" + std::to_string(decRes));
         return false;
     }
-    LOG_INFO(kTag, "playFile: decoder initialized, buffering to RAM at targetSr=" + std::to_string(targetSr) + " (stereo)...");
+    LOG_INFO(kTag, "playFile: decoder initialized, buffering to RAM at nativeSr=" + std::to_string(nativeSr) + " (stereo)...");
 
     std::vector<float> tempPcm;
-    const size_t estimatedFrames = static_cast<size_t>(m_impl->track.durationSeconds * targetSr);
+    const size_t estimatedFrames = static_cast<size_t>(m_impl->track.durationSeconds * nativeSr);
     tempPcm.reserve(estimatedFrames * static_cast<size_t>(channels));
 
     const ma_uint32 decodeChannels = static_cast<ma_uint32>(channels);
@@ -475,12 +604,67 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
         tempPcm.insert(tempPcm.end(), readBuf.data(), readBuf.data() + framesRead * decodeChannels);
     }
     ma_decoder_uninit(&localDec);
-    
+
+    // ---- High-quality offline resample (native → device rate) ----
+    // When the file's native sample rate differs from the host device rate,
+    // resample using SoundTouch's WSOLA + 64-tap sinc anti-aliasing filter
+    // instead of miniaudio's linear interpolation (which caused audible
+    // high-frequency roll-off and a "compressed" sound).
+    if (nativeSr != targetSr && nativeSr > 0 && targetSr > 0 && !tempPcm.empty()) {
+        LOG_INFO(kTag, "playFile: resampling " + std::to_string(nativeSr) + " → " + std::to_string(targetSr) + " Hz via SoundTouch sinc AA filter");
+        // SoundTouch tempo: output_frames = input_frames / tempo
+        // To produce more frames (e.g. 44100 → 48000): tempo < 1.0
+        // tempo = nativeSr / targetSr = 44100/48000 ≈ 0.919
+        const float resampleRatio = static_cast<float>(nativeSr) / static_cast<float>(targetSr);
+
+        SoundTouchProcessor resampler(nativeSr, channels, false);
+        resampler.setTimeRatio(resampleRatio);
+        resampler.setPitchSemitones(0.0f); // Pure rate conversion, no pitch change
+
+        const size_t totalNativeFrames = tempPcm.size() / static_cast<size_t>(channels);
+        // output_frames ≈ input_frames / tempo = input_frames * (targetSr / nativeSr)
+        const size_t estOutputFrames = static_cast<size_t>(
+            static_cast<double>(totalNativeFrames) * static_cast<double>(targetSr) / static_cast<double>(nativeSr)) + 4096;
+
+        std::vector<float> resampledPcm;
+        resampledPcm.reserve(estOutputFrames * static_cast<size_t>(channels));
+
+        constexpr size_t kFeedChunk = 2048;
+        std::vector<float> outChunk(kFeedChunk * 2 * static_cast<size_t>(channels)); // generous output buffer
+        size_t inputPos = 0;
+
+        while (inputPos < totalNativeFrames) {
+            const size_t remaining = totalNativeFrames - inputPos;
+            const size_t toFeed = std::min(kFeedChunk, remaining);
+            resampler.putSamples(&tempPcm[inputPos * static_cast<size_t>(channels)], toFeed);
+            inputPos += toFeed;
+
+            // Drain all available output
+            while (true) {
+                const size_t received = resampler.receiveSamples(outChunk.data(), kFeedChunk);
+                if (received == 0) break;
+                resampledPcm.insert(resampledPcm.end(), outChunk.data(), outChunk.data() + received * static_cast<size_t>(channels));
+            }
+        }
+
+        // Flush remaining samples from the processor pipeline
+        resampler.flush();
+        while (true) {
+            const size_t received = resampler.receiveSamples(outChunk.data(), kFeedChunk);
+            if (received == 0) break;
+            resampledPcm.insert(resampledPcm.end(), outChunk.data(), outChunk.data() + received * static_cast<size_t>(channels));
+        }
+
+        LOG_INFO(kTag, "playFile: resampled " + std::to_string(totalNativeFrames) + " → " + std::to_string(resampledPcm.size() / static_cast<size_t>(channels)) + " frames");
+        tempPcm = std::move(resampledPcm);
+    }
+
     m_impl->dspSource.pcmData = std::move(tempPcm);
     m_impl->dspSource.pcmLoaded.store(true, std::memory_order_release);
     m_impl->dspSource.loop.store(loop, std::memory_order_relaxed);
     m_impl->dspSource.channels.store(channels, std::memory_order_relaxed);
     m_impl->dspSource.sampleRate.store(targetSr, std::memory_order_relaxed);
+    m_impl->dspSource.nativeSampleRate.store(nativeSr, std::memory_order_relaxed);
     m_impl->dspSource.timeRatio.store(m_impl->timeRatio, std::memory_order_relaxed);
     m_impl->dspSource.pitchSemitones.store(m_impl->pitchSemitones, std::memory_order_relaxed);
     m_impl->dspSource.volume.store(m_impl->volume, std::memory_order_relaxed);
@@ -489,17 +673,16 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
     m_impl->dspSource.loopBoundaryFrames.store(nominalLoopFrames, std::memory_order_relaxed);
     m_impl->dspSource.pendingSeekFrame.store(-1, std::memory_order_relaxed);
 
-    // Update track metadata to reflect target sample rate and resampled frame count
     m_impl->track.sampleRate = targetSr;
     m_impl->track.totalFrames = static_cast<double>(decodedFrames);
     m_impl->track.channels = channels;
 
-    m_impl->dspSource.processor.setSampleRate(targetSr);
-    m_impl->dspSource.processor.setChannels(channels);
-    m_impl->dspSource.processor.setLowLatencyMode(true);
-    m_impl->dspSource.processor.setTimeRatio(m_impl->timeRatio);
-    m_impl->dspSource.processor.setPitchSemitones(m_impl->pitchSemitones);
-    m_impl->dspSource.processor.clear();
+    m_impl->dspSource.getProcessor().setSampleRate(targetSr);
+    m_impl->dspSource.getProcessor().setChannels(channels);
+    m_impl->dspSource.defaultProcessor.setLowLatencyMode(false);
+    m_impl->dspSource.getProcessor().setTimeRatio(m_impl->timeRatio);
+    m_impl->dspSource.getProcessor().setPitchSemitones(m_impl->pitchSemitones);
+    m_impl->dspSource.getProcessor().clear();
     // Keep the audio-thread "applied" trackers in sync with the initial
     // setup so dsp_on_read does not redundantly re-apply on block 1.
     m_impl->dspSource.appliedTimeRatio = m_impl->timeRatio;
@@ -540,6 +723,37 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
         : 0;
 
     m_impl->dspSource.cursorFrames.store(startFrame, std::memory_order_relaxed);
+
+    const int fadeFrames = std::clamp(static_cast<int>(targetSr * 0.003f), 64, 256);
+    m_impl->dspSource.startFadeTotal = fadeFrames;
+    m_impl->dspSource.startFadeRemaining.store(fadeFrames, std::memory_order_relaxed);
+    m_impl->dspSource.startFadeOffset = 0;
+    m_impl->dspSource.seekFadeRemaining = 0;
+    m_impl->dspSource.seekFadeOffset = 0;
+
+    // Pre-roll / prime SoundTouch pipeline on start if in DSP mode
+    constexpr float kRatioEps = 0.003f;
+    constexpr float kPitchEps = 0.02f;
+    const bool isInitialBypass = (std::abs(m_impl->timeRatio - 1.0f) < kRatioEps &&
+                                  std::abs(m_impl->pitchSemitones) < kPitchEps);
+    m_impl->dspSource.dspActive = !isInitialBypass;
+    m_impl->dspSource.appliedTimeRatio = m_impl->timeRatio;
+    m_impl->dspSource.appliedPitchSemitones = m_impl->pitchSemitones;
+    if (!isInitialBypass) {
+        m_impl->dspSource.getProcessor().setTimeRatio(m_impl->timeRatio);
+        m_impl->dspSource.getProcessor().setPitchSemitones(m_impl->pitchSemitones);
+        const size_t preRollNeeded = static_cast<size_t>(std::max(m_impl->dspSource.getProcessor().latencyFrames() * 2, 2048));
+        const size_t totalAvailable = m_impl->dspSource.pcmData.size() / static_cast<size_t>(channels);
+        const size_t startF = static_cast<size_t>(startFrame);
+        if (startF < totalAvailable) {
+            const size_t avail = totalAvailable - startF;
+            const size_t toFeed = std::min(preRollNeeded, avail);
+            if (toFeed > 0) {
+                m_impl->dspSource.getProcessor().putSamples(&m_impl->dspSource.pcmData[startF * static_cast<size_t>(channels)], toFeed);
+                m_impl->dspSource.cursorFrames.fetch_add(toFeed, std::memory_order_relaxed);
+            }
+        }
+    }
 
     ma_data_source_config baseConfig = ma_data_source_config_init();
     baseConfig.vtable = &g_dspDataSourceVtable;
@@ -780,7 +994,7 @@ double Engine::pipelineLatencySeconds() const {
     const std::lock_guard lock(m_impl->stateMutex);
     const int sr = m_impl->dspSource.sampleRate.load(std::memory_order_relaxed);
     if (m_impl->soundLoaded && sr > 0) {
-        const double frames = static_cast<double>(m_impl->dspSource.processor.latencyFrames());
+        const double frames = static_cast<double>(m_impl->dspSource.getProcessor().latencyFrames());
         if (frames > 0.0)
             return frames / static_cast<double>(sr);
     }
@@ -801,7 +1015,12 @@ double Engine::deviceBufferLatencySeconds() const {
 void Engine::setTimeRatio(const float ratio) {
     if (!m_impl) m_impl = std::make_unique<Impl>();
     const std::lock_guard lock(m_impl->stateMutex);
-    m_impl->timeRatio = std::clamp(ratio, 0.1f, 10.0f);
+    constexpr float kRatioEps = 0.003f;
+    float r = std::clamp(ratio, 0.1f, 10.0f);
+    if (std::abs(r - 1.0f) < kRatioEps) {
+        r = 1.0f; // Snap to exact 1.0f for bit-perfect bypass
+    }
+    m_impl->timeRatio = r;
     // Lock-free publication (CRIT-03): the audio thread applies the new ratio
     // to SoundTouch at the next block boundary — no dspMutex on this path, so
     // a UI tempo change can never block the realtime callback.
@@ -817,7 +1036,12 @@ float Engine::getTimeRatio() const {
 void Engine::setPitchSemitones(const float semitones) {
     if (!m_impl) m_impl = std::make_unique<Impl>();
     const std::lock_guard lock(m_impl->stateMutex);
-    m_impl->pitchSemitones = std::clamp(semitones, -12.0f, 12.0f);
+    constexpr float kPitchEps = 0.02f;
+    float s = std::clamp(semitones, -12.0f, 12.0f);
+    if (std::abs(s) < kPitchEps) {
+        s = 0.0f; // Snap to exact 0.0f for bit-perfect bypass
+    }
+    m_impl->pitchSemitones = s;
     // Lock-free publication (CRIT-03) — same rationale as setTimeRatio().
     m_impl->dspSource.pitchSemitones.store(m_impl->pitchSemitones, std::memory_order_relaxed);
 }
@@ -936,7 +1160,11 @@ double Engine::positionFraction() const {
     const double denom = (bound > 0 && bound <= totalF)
         ? static_cast<double>(bound)
         : static_cast<double>(totalF);
-    return denom > 0.0 ? (static_cast<double>(m_impl->dspSource.cursorFrames.load(std::memory_order_relaxed)) / denom) : 0.0;
+    const int64_t pending = m_impl->dspSource.pendingSeekFrame.load(std::memory_order_acquire);
+    const ma_uint64 cur = (pending >= 0)
+        ? static_cast<ma_uint64>(pending)
+        : m_impl->dspSource.cursorFrames.load(std::memory_order_relaxed);
+    return denom > 0.0 ? (static_cast<double>(cur) / denom) : 0.0;
 }
 
 void Engine::renderFrames(float* outL, float* outR, size_t frames) {
@@ -965,18 +1193,24 @@ void Engine::renderFrames(float* outL, float* outR, size_t frames) {
             std::memset(interleaved + framesRead * 2, 0, (chunk - framesRead) * 2 * sizeof(float));
         }
 
+        auto transparentLimit = [](float s) noexcept -> float {
+            const float absS = std::fabs(s);
+            if (absS <= 1.0f) return s; // 100% bit-exact uncompressed pass for all normal audio within 0 dBFS
+            return std::copysign(1.0f - 0.0001f / (1.0f + (absS - 1.0f)), s);
+        };
+
         if (outL && outR) {
             for (size_t i = 0; i < chunk; ++i) {
-                outL[frameOffset + i] = interleaved[i * 2] * vol;
-                outR[frameOffset + i] = interleaved[i * 2 + 1] * vol;
+                outL[frameOffset + i] = transparentLimit(interleaved[i * 2] * vol);
+                outR[frameOffset + i] = transparentLimit(interleaved[i * 2 + 1] * vol);
             }
         } else if (outL) {
             for (size_t i = 0; i < chunk; ++i) {
-                outL[frameOffset + i] = 0.5f * (interleaved[i * 2] + interleaved[i * 2 + 1]) * vol;
+                outL[frameOffset + i] = transparentLimit(0.5f * (interleaved[i * 2] + interleaved[i * 2 + 1]) * vol);
             }
         } else if (outR) {
             for (size_t i = 0; i < chunk; ++i) {
-                outR[frameOffset + i] = 0.5f * (interleaved[i * 2] + interleaved[i * 2 + 1]) * vol;
+                outR[frameOffset + i] = transparentLimit(0.5f * (interleaved[i * 2] + interleaved[i * 2 + 1]) * vol);
             }
         }
 
@@ -984,4 +1218,11 @@ void Engine::renderFrames(float* outL, float* outR, size_t frames) {
         framesRemaining -= chunk;
     }
 }
+
+void Engine::setTimeStretchProcessor(std::shared_ptr<ITimeStretchProcessor> proc) {
+    if (!m_impl) m_impl = std::make_unique<Impl>();
+    std::lock_guard lock(m_impl->stateMutex);
+    m_impl->dspSource.customProcessor = std::move(proc);
+}
+
 } // namespace reals::audio

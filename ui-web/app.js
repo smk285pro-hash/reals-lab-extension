@@ -729,6 +729,7 @@ const ACCENTS = {
 const state = {
   roots: [], currentDir: null, selected: null, playingPath: null,
   envelope: [], duration: 0, position: 0, peak: 0, playing: false,
+  timeRatio: 1,
   loop: false, sort: 0, expanded: new Set(), tab: 'browser',
   tagCache: {}, favSet: new Set(),
   listSeq: 0, searchSeq: 0, treeSeq: 0,
@@ -894,6 +895,11 @@ function handleEvent(event, data) {
   if (event === 'audio.state') {
     state.playing = !!data.playing;
     state.duration = data.duration || state.duration;
+    // Output playback rate (1.0 = raw speed). The playhead advances over the
+    // OUTPUT timeline: output duration = raw duration / timeRatio.
+    if (typeof data.timeRatio === 'number' && data.timeRatio > 0) {
+      state.timeRatio = data.timeRatio;
+    }
     // CRIT-KEY-LOCK: C++ audio engine emits periodic audio.state. When the user has locked
     // a target key (e.g. Note A), asynchronous state events MUST NEVER overwrite the user's
     // active pitch shift, otherwise sample transitions will randomly jump back/forth in pitch.
@@ -910,11 +916,15 @@ function handleEvent(event, data) {
       state.position = data.position || 0;
       state.peak = data.peak || 0;
       startPlayerAnimLoop();
+      drawWaveform();
     } else {
-      state.position = 0;
+      const keepPos = !!(state.syncBpm && typeof data.position === 'number');
+      if (keepPos) {
+        state.position = data.position;
+      }
       state.peak = 0;
       _meterSmoothedVal = 0;
-      refreshPlayState();
+      refreshPlayState(keepPos);
     }
   }
 }
@@ -1481,6 +1491,7 @@ async function resetOriginalKey() {
 
 async function toggleSyncBpm() {
   state.syncBpm = !state.syncBpm;
+  localStorage.setItem('reals_sync_bpm', state.syncBpm ? 'true' : 'false');
   const btn = $('#btnSyncBpm');
   if (btn) btn.classList.toggle('on', state.syncBpm);
 
@@ -1572,12 +1583,15 @@ async function initSettings() {
     $('#btnToggleTree')?.classList.remove('on');
   }
   const cachedVol = localStorage.getItem('reals_volume');
-  if (cachedVol !== null) {
+  if (cachedVol !== null && cachedVol !== '0.9') {
     state.volume = parseFloat(cachedVol);
-    const volEl = $('#volume');
-    if (volEl) volEl.value = state.volume;
-    bridge('audio.setVolume', { value: state.volume }).catch(() => {});
+  } else {
+    state.volume = 1.0;
+    localStorage.setItem('reals_volume', '1.0');
   }
+  const volEl = $('#volume');
+  if (volEl) volEl.value = state.volume;
+  bridge('audio.setVolume', { value: state.volume }).catch(() => {});
   const cachedLoop = localStorage.getItem('reals_loop');
   if (cachedLoop !== null) {
     state.loop = cachedLoop === 'true';
@@ -1588,6 +1602,10 @@ async function initSettings() {
   if (cachedSyncBpm !== null) {
     state.syncBpm = cachedSyncBpm === 'true';
     $('#btnSyncBpm')?.classList.toggle('on', state.syncBpm);
+    // Sync backend state on startup so m_impl->syncEnabled matches UI
+    if (state.syncBpm) {
+      bridge('audio.setSyncBpm', { enabled: true, bpm: 120.0, sampleBpm: 0, path: '' }).catch(() => {});
+    }
   }
   const cachedExp = localStorage.getItem('reals_expanded');
   if (cachedExp) {
@@ -2900,7 +2918,10 @@ function wireBrowserEvents() {
     }
   };
 
-  $('#btnPlay').onclick = () => {
+  $('#btnPlay').onclick = (e) => {
+    if (e && e.currentTarget && typeof e.currentTarget.blur === 'function') {
+      e.currentTarget.blur();
+    }
     if (state.playing) {
       stopMidiPlayback();
       bridge('audio.stop').then(refreshPlayState);
@@ -3094,6 +3115,11 @@ function onBrowserKey(e) {
     }
     e.preventDefault();
     e.stopPropagation();
+    if (state.playing) {
+      stopMidiPlayback();
+      state.playing = false;
+      refreshPlayState(true);
+    }
     bridge('reaper.playToggle').catch(() => {});
     return;
   }
@@ -3204,10 +3230,12 @@ async function playFile(path) {
     updateTransposerPopUI();
 
     const sampleBpm = (fileObj && fileObj.bpm) || (state.selected === path ? state.sampleBpm : 0) || 0;
+    const isSyncActive = $('#btnSyncBpm')?.classList.contains('on') || !!state.syncBpm;
+    state.syncBpm = isSyncActive;
     const d = await bridge('audio.play', {
       path,
       loop: state.loop,
-      syncBpm: !!state.syncBpm,
+      syncBpm: isSyncActive,
       sampleBpm: sampleBpm,
       pitchSemitones: initialPitchShift
     });
@@ -3221,7 +3249,13 @@ async function playFile(path) {
     state.selected = path;
     state.envelope = d.envelope || [];
     state.duration = d.duration || 0;
-    state.position = 0;
+    // Phase-synced entry starts mid-loop — jump the playhead straight to the
+    // audible position instead of animating from 0.
+    state.position = (d.phaseSynced && typeof d.startFraction === 'number')
+      ? Math.min(0.999, Math.max(0, d.startFraction)) : 0;
+    if (typeof d.timeRatio === 'number' && d.timeRatio > 0) {
+      state.timeRatio = d.timeRatio;
+    }
     state.playing = true;
     if (d.duration) state.probeCache[path] = d.duration;
     const bp = $('#btnPlay');
@@ -3331,12 +3365,16 @@ function startPlayerAnimLoop() {
     const dt = Math.min(0.08, (now - lastTime) / 1000);
     lastTime = now;
 
-    // Smoothly extrapolate position at 60 FPS
+    // Smoothly extrapolate position at 60 FPS.
+    // Position is a fraction of the OUTPUT timeline (what the listener hears),
+    // so the advance rate is 1/outputDuration = timeRatio/rawDuration. Using
+    // rawDuration here made the playhead lag behind DSP-stretched playback.
     if (state.duration > 0) {
+      const outDuration = state.duration / (state.timeRatio || 1);
       if (state.loop) {
-        state.position = (state.position + dt / state.duration) % 1.0;
+        state.position = (state.position + dt / outDuration) % 1.0;
       } else {
-        const nextPos = state.position + dt / state.duration;
+        const nextPos = state.position + dt / outDuration;
         if (nextPos >= 1.0) {
           state.position = 0;
           state.playing = false;
@@ -3387,9 +3425,12 @@ function startPlayerAnimLoop() {
   _playerRafId = requestAnimationFrame(step);
 }
 
-function refreshPlayState() {
+function refreshPlayState(keepPosition = false) {
   state.playing = false;
-  state.position = 0;
+  if (!keepPosition) {
+    state.position = 0;
+  }
+  state.timeRatio = 1;
   if (_playerRafId) {
     cancelAnimationFrame(_playerRafId);
     _playerRafId = null;
@@ -3402,7 +3443,8 @@ function refreshPlayState() {
   }
   const timeLbl = $('#timeLabel');
   if (timeLbl && state.duration > 0) {
-    timeLbl.textContent = `0.0 / ${state.duration.toFixed(1)}s`;
+    const curSec = (state.position * state.duration).toFixed(1);
+    timeLbl.textContent = `${curSec} / ${state.duration.toFixed(1)}s`;
   }
   drawMeterSmoothed(0);
   drawWaveform();
@@ -4238,7 +4280,29 @@ async function boot() {
 
   initLayoutSplitters();
 
-  window.addEventListener('keydown', onBrowserKey);
+  // Capture keydown at window level before any focused child element receives it
+  window.addEventListener('keydown', onBrowserKey, { capture: true });
+
+  // Capture keyup to prevent focused buttons from synthesizing click events on Space release
+  window.addEventListener('keyup', (e) => {
+    if (e.key === ' ' || e.code === 'Space') {
+      if (!typingInField()) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }
+  }, { capture: true });
+
+  // Prevent buttons from retaining focus after click/pointerdown so Spacebar
+  // never triggers a synthetic button click.
+  document.addEventListener('pointerdown', (e) => {
+    const btn = e.target.closest('button, [role="button"]');
+    if (btn) {
+      setTimeout(() => {
+        if (document.activeElement === btn) btn.blur();
+      }, 0);
+    }
+  });
 
   // Lock mouse wheel zoom (Ctrl + MouseWheel) and reset zoom to default
   window.addEventListener('wheel', (e) => {

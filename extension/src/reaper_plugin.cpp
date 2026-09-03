@@ -76,12 +76,16 @@
 #define REAPERAPI_WANT_SetMediaItemInfo_Value
 #define REAPERAPI_WANT_GetExtState
 #define REAPERAPI_WANT_SetExtState
+#define REAPERAPI_WANT_ReaperGetPitchShiftAPI
+#define REAPERAPI_WANT_EnumPitchShiftModes
+#define REAPERAPI_WANT_EnumPitchShiftSubModes
 #define REAPERAPI_IMPLEMENT
 #include <reaper_plugin_functions.h>
 
 #include <miniaudio.h>
 #include "reals/audio/DragExporter.h"
 #include "reals/audio/Engine.h"
+#include "reals/audio/ITimeStretchProcessor.h"
 #include "reals/bridge/Bridge.h"
 #include "reals/config/Config.h"
 #include "reals/embedded/EmbeddedAssets.h"
@@ -343,6 +347,10 @@ struct LiveAudioTransportState {
     std::atomic<int> playState{0};
     std::atomic<uint64_t> blockCounter{0};
     std::atomic<uint64_t> discontinuityCounter{0};
+    // Host audio block duration in seconds (len / srate). The transport snapshot
+    // read by the Bridge is this stale by the time a preview is audible, so the
+    // phase-snap advances by it.
+    std::atomic<double> blockLatencySeconds{0.0};
     double lastPos = -1.0;
 };
 
@@ -361,6 +369,586 @@ struct ReaperAudioHookState {
 };
 
 static ReaperAudioHookState g_audioHook;
+
+// ============================================================================
+// DspPreviewSource — Custom PCM_source wrapper with real-time élastique 3 Pro
+// ============================================================================
+// Wraps any underlying PCM_source and routes its audio through REAPER's native
+// IReaperPitchShift engine inside GetSamples(). REAPER's PlayPreviewEx treats
+// this as a standard PCM source, providing mastering-grade r8brain 64-bit
+// resampling, Monitoring FX chain routing, and hardware output mixing.
+class DspPreviewSource final : public PCM_source {
+public:
+    DspPreviewSource(PCM_source* underlyingSrc, double timeRatio, double pitchSemitones)
+        : m_src(underlyingSrc), m_timeRatio(timeRatio), m_pitchSemitones(pitchSemitones) {
+        if (m_src) {
+            m_srate = m_src->GetSampleRate();
+            m_srcChannels = m_src->GetNumChannels();
+            if (m_srate <= 0.0) m_srate = 44100.0;
+            if (m_srcChannels <= 0) m_srcChannels = 2;
+            // REAPER preview output is always stereo (block->nch == 2).
+            // The shifter must also be stereo so its output stride matches
+            // the interleaved stereo buffer that PlayPreviewEx provides.
+            // Mono source audio is demuxed to L+R before feeding the shifter.
+            m_nch = std::max(2, m_srcChannels);
+        }
+        initShifter();
+        LOG_INFO(kTag, "DspPreviewSource CTOR: srcChannels=" + std::to_string(m_srcChannels) +
+                       " nch(shifter)=" + std::to_string(m_nch) +
+                       " srate=" + std::to_string(m_srate) +
+                       " timeRatio=" + std::to_string(timeRatio) +
+                       " pitch=" + std::to_string(pitchSemitones) +
+                       " rawLen=" + std::to_string(m_src ? m_src->GetLength() : 0.0) +
+                       " reportedLen=" + std::to_string(GetLength()));
+    }
+
+    ~DspPreviewSource() override {
+        cleanup();
+        if (m_src) {
+            delete m_src;
+            m_src = nullptr;
+        }
+    }
+
+    DspPreviewSource(const DspPreviewSource&) = delete;
+    DspPreviewSource& operator=(const DspPreviewSource&) = delete;
+
+    PCM_source* Duplicate() override {
+        PCM_source* dupSrc = m_src ? m_src->Duplicate() : nullptr;
+        return new DspPreviewSource(dupSrc, m_timeRatio.load(std::memory_order_relaxed),
+                                    m_pitchSemitones.load(std::memory_order_relaxed));
+    }
+
+    bool IsAvailable() override { return m_src ? m_src->IsAvailable() : false; }
+    void SetAvailable(bool avail) override { if (m_src) m_src->SetAvailable(avail); }
+    const char* GetType() override { return "DSP_PREVIEW"; }
+    const char* GetFileName() override { return m_src ? m_src->GetFileName() : nullptr; }
+    bool SetFileName(const char* newfn) override { return m_src ? m_src->SetFileName(newfn) : false; }
+    PCM_source* GetSource() override { return m_src; }
+    int GetNumChannels() override { return m_nch; }
+    double GetSampleRate() override {
+        // Return the operating rate (project rate once captured, else source rate).
+        // REAPER PlayPreviewEx calls GetSamples() at project rate, so we must
+        // report the same rate back so REAPER's timeline math is consistent.
+        return m_operatingRate > 0.0 ? m_operatingRate : m_srate;
+    }
+    double GetLength() override {
+        if (!m_src) return 0.0;
+        const double rawLen = m_src->GetLength();
+        const double r = m_timeRatio.load(std::memory_order_relaxed);
+        const double fullOutLen = r > 0.01 ? (rawLen / r) : rawLen;
+        // Bar-grid looping: wrap at the nominal loop instead of the full file so a
+        // reverb tail / encoder padding does not push every cycle off the DAW grid.
+        if (m_loopActive.load(std::memory_order_relaxed)) {
+            const double loopBeats = m_loopBeats.load(std::memory_order_relaxed);
+            const double sBpm = m_loopSampleBpm.load(std::memory_order_relaxed);
+            if (loopBeats > 0.0 && sBpm > 0.0 && r > 0.01) {
+                const double nominalOutLen = (loopBeats * 60.0) / (sBpm * r);
+                if (nominalOutLen > 0.0)
+                    return std::min(fullOutLen, nominalOutLen);
+            }
+        }
+        return fullOutLen;
+    }
+    int GetBitsPerSample() override { return m_src ? m_src->GetBitsPerSample() : 16; }
+    int PropertiesWindow(HWND hwndParent) override { return m_src ? m_src->PropertiesWindow(hwndParent) : 0; }
+
+    void GetSamples(PCM_source_transfer_t* block) override {
+        if (!block || block->length <= 0 || !block->samples || !m_src) {
+            if (block) block->samples_out = 0;
+            return;
+        }
+
+        // Capture operating sample rate from REAPER's first GetSamples call.
+        // PlayPreviewEx calls us at PROJECT rate (e.g. 48000), which may differ
+        // from the source file rate (e.g. 44100). We must operate at project
+        // rate so output frames match REAPER's timeline expectations.
+        const double blockRate = block->samplerate > 0.0 ? block->samplerate : m_srate;
+        if (m_operatingRate <= 0.0 && blockRate > 0.0) {
+            m_operatingRate = blockRate;
+            if (m_shifter && std::abs(m_operatingRate - m_srate) > 1.0) {
+                m_shifter->set_srate(m_operatingRate);
+                LOG_INFO(kTag, "DspPreviewSource: re-configured shifter srate from " +
+                               std::to_string(m_srate) + " → " + std::to_string(m_operatingRate) +
+                               " (project rate)");
+            }
+        }
+
+        // Apply updated parameters if changed from UI thread
+        if (m_paramsDirty.exchange(false, std::memory_order_acq_rel)) {
+            applyParams();
+        }
+
+        const double currentRatio = m_timeRatio.load(std::memory_order_relaxed);
+        const double currentPitch = m_pitchSemitones.load(std::memory_order_relaxed);
+        const int requestedLength = block->length;
+        const int outChannels = block->nch > 0 ? block->nch : m_nch;
+
+        // ── Bit-perfect bypass: ratio ≈ 1.0 and pitch ≈ 0.0 ──
+        // Read directly from underlying source without élastique processing.
+        // Handles mono→stereo duplication when source is mono but output is stereo.
+        const bool isBypass = (std::abs(currentRatio - 1.0) <= 0.003 &&
+                               std::abs(currentPitch) <= 0.02);
+        if (isBypass) {
+            if (m_srcChannels == outChannels) {
+                // Channels match — direct passthrough, zero overhead
+                m_src->GetSamples(block);
+                m_rawTimePos = block->time_s + static_cast<double>(block->samples_out) / blockRate;
+                m_lastTimelinePos = block->time_s + static_cast<double>(block->samples_out) / blockRate;
+                return;
+            }
+            // Mono source → stereo output: read mono, duplicate to L+R
+            if (m_rawReadBuf.size() < static_cast<size_t>(requestedLength * m_srcChannels)) {
+                m_rawReadBuf.resize(static_cast<size_t>(requestedLength * m_srcChannels));
+            }
+            PCM_source_transfer_t monoTransfer{};
+            monoTransfer.time_s = block->time_s;
+            monoTransfer.samplerate = blockRate;
+            monoTransfer.nch = m_srcChannels;
+            monoTransfer.length = requestedLength;
+            monoTransfer.samples = m_rawReadBuf.data();
+            monoTransfer.samples_out = 0;
+            m_src->GetSamples(&monoTransfer);
+            const int got = monoTransfer.samples_out;
+            // Demux mono to stereo (duplicate each sample to L and R)
+            for (int i = 0; i < got; ++i) {
+                const ReaSample s = m_rawReadBuf[i];
+                block->samples[i * outChannels + 0] = s;
+                block->samples[i * outChannels + 1] = s;
+                for (int ch = 2; ch < outChannels; ++ch)
+                    block->samples[i * outChannels + ch] = 0.0;
+            }
+            block->samples_out = got;
+            m_rawTimePos = block->time_s + static_cast<double>(got) / blockRate;
+            m_lastTimelinePos = block->time_s + static_cast<double>(got) / blockRate;
+            return;
+        }
+
+        // ── DSP path: route through IReaperPitchShift (élastique 3 Pro) ──
+        if (!m_shifter) {
+            block->samples_out = 0;
+            return;
+        }
+
+        // Diagnostic: log first DSP GetSamples call
+        if (m_diagCounter < 3) {
+            LOG_INFO(kTag, "DspPreviewSource::GetSamples DSP #" + std::to_string(m_diagCounter) +
+                           ": block->time_s=" + std::to_string(block->time_s) +
+                           " block->length=" + std::to_string(requestedLength) +
+                           " block->nch=" + std::to_string(block->nch) +
+                           " block->samplerate=" + std::to_string(block->samplerate) +
+                           " outChannels=" + std::to_string(outChannels) +
+                           " ratio=" + std::to_string(currentRatio) +
+                           " pitch=" + std::to_string(currentPitch) +
+                           " m_rawTimePos=" + std::to_string(m_rawTimePos) +
+                           " m_nch=" + std::to_string(m_nch) +
+                           " m_srcChannels=" + std::to_string(m_srcChannels));
+            ++m_diagCounter;
+        }
+
+        // Detect seek / transport discontinuity
+        const double expectedTime = m_lastTimelinePos;
+        constexpr double kSeekThresholdSeconds = 0.02; // 20ms tolerance
+        if (m_lastTimelinePos < 0.0 || std::abs(block->time_s - expectedTime) > kSeekThresholdSeconds) {
+            // Seek detected: reset shifter and map timeline position to raw file position.
+            // GetLength() returns rawLen/ratio, so block->time_s is in output time space.
+            // Map back to raw source time: rawPos = outputPos * ratio.
+            m_shifter->Reset();
+            m_rawTimePos = block->time_s * currentRatio;
+            m_eofReached = false;
+        }
+
+        int totalFramesRendered = 0;
+
+        constexpr int kChunkFrames = 2048;
+        // Raw read buffer: sized for source channels (may be mono)
+        if (m_rawReadBuf.size() < static_cast<size_t>(kChunkFrames * m_srcChannels)) {
+            m_rawReadBuf.resize(static_cast<size_t>(kChunkFrames * m_srcChannels));
+        }
+        // Demux buffer for mono→stereo conversion before feeding shifter
+        const bool needsDemux = (m_srcChannels < m_nch);
+        std::vector<ReaSample>& demuxBuf = m_demuxBuf;
+        if (needsDemux && demuxBuf.size() < static_cast<size_t>(kChunkFrames * m_nch)) {
+            demuxBuf.resize(static_cast<size_t>(kChunkFrames * m_nch));
+        }
+
+        int maxIterations = (requestedLength / kChunkFrames + 4) * 4;
+        while (totalFramesRendered < requestedLength && maxIterations-- > 0) {
+            // Try to pull processed samples from the pitch shifter
+            const int remaining = requestedLength - totalFramesRendered;
+            ReaSample* outPtr = block->samples + (totalFramesRendered * outChannels);
+            const int got = m_shifter->GetSamples(remaining, outPtr);
+
+            if (got > 0) {
+                totalFramesRendered += got;
+                if (totalFramesRendered >= requestedLength) break;
+            }
+
+            if (m_eofReached) {
+                // If EOF was reached on underlying source, flush shifter
+                m_shifter->FlushSamples();
+                const int remainingFlush = requestedLength - totalFramesRendered;
+                ReaSample* flushPtr = block->samples + (totalFramesRendered * outChannels);
+                const int flushed = m_shifter->GetSamples(remainingFlush, flushPtr);
+                if (flushed > 0) {
+                    totalFramesRendered += flushed;
+                }
+                break;
+            }
+
+            // Feed more raw audio from underlying source into pitch shifter
+            PCM_source_transfer_t rawTransfer{};
+            rawTransfer.time_s = m_rawTimePos;
+            rawTransfer.samplerate = blockRate; // Read at project rate — PCM_source resamples internally
+            rawTransfer.nch = m_srcChannels;    // Read in source's native channel count
+            rawTransfer.length = kChunkFrames;
+            rawTransfer.samples = m_rawReadBuf.data();
+            rawTransfer.samples_out = 0;
+
+            m_src->GetSamples(&rawTransfer);
+
+            if (rawTransfer.samples_out > 0) {
+                m_rawTimePos += static_cast<double>(rawTransfer.samples_out) / blockRate;
+                ReaSample* inBuf = m_shifter->GetBuffer(rawTransfer.samples_out);
+                if (inBuf) {
+                    if (needsDemux) {
+                        // Mono → stereo: duplicate each mono sample to all shifter channels
+                        for (int i = 0; i < rawTransfer.samples_out; ++i) {
+                            const ReaSample s = m_rawReadBuf[i * m_srcChannels];
+                            for (int ch = 0; ch < m_nch; ++ch) {
+                                inBuf[i * m_nch + ch] = s;
+                            }
+                        }
+                    } else {
+                        // Channels match — direct copy
+                        std::memcpy(inBuf, m_rawReadBuf.data(),
+                                    static_cast<size_t>(rawTransfer.samples_out * m_nch) * sizeof(ReaSample));
+                    }
+                    m_shifter->BufferDone(rawTransfer.samples_out);
+                }
+            } else {
+                m_eofReached = true;
+            }
+        }
+
+        block->samples_out = totalFramesRendered;
+        m_lastTimelinePos = block->time_s + static_cast<double>(totalFramesRendered) / blockRate;
+    }
+
+    void GetPeakInfo(PCM_source_peaktransfer_t* block) override {
+        if (m_src) m_src->GetPeakInfo(block);
+    }
+    void SaveState(ProjectStateContext* ctx) override { if (m_src) m_src->SaveState(ctx); }
+    int LoadState(const char* firstline, ProjectStateContext* ctx) override {
+        return m_src ? m_src->LoadState(firstline, ctx) : -1;
+    }
+    void Peaks_Clear(bool deleteFile) override { if (m_src) m_src->Peaks_Clear(deleteFile); }
+    int PeaksBuild_Begin() override { return m_src ? m_src->PeaksBuild_Begin() : 0; }
+    int PeaksBuild_Run() override { return m_src ? m_src->PeaksBuild_Run() : 0; }
+    void PeaksBuild_Finish() override { if (m_src) m_src->PeaksBuild_Finish(); }
+
+    void setTimeRatio(double ratio) {
+        m_timeRatio.store(std::clamp(ratio, 0.25, 4.0), std::memory_order_relaxed);
+        m_paramsDirty.store(true, std::memory_order_release);
+        m_diagCounter = 0; // Reset diag to log after param change
+        LOG_INFO(kTag, "DspPreviewSource::setTimeRatio(" + std::to_string(ratio) +
+                       ") → clamped=" + std::to_string(m_timeRatio.load()) +
+                       " newGetLength=" + std::to_string(GetLength()));
+    }
+
+    void setPitchSemitones(double semitones) {
+        m_pitchSemitones.store(std::clamp(semitones, -12.0, 12.0), std::memory_order_relaxed);
+        m_paramsDirty.store(true, std::memory_order_release);
+    }
+
+    // Enable bar-grid looping: GetLength() then reports the nominal loop
+    // (loopBeats at the sample's native BPM, scaled by the live time ratio)
+    // so PlayPreviewEx wraps on the DAW bar instead of at the full file end.
+    void setLoopBoundary(bool active, double loopBeats, double sampleBpm) {
+        m_loopActive.store(active, std::memory_order_relaxed);
+        m_loopBeats.store(loopBeats, std::memory_order_relaxed);
+        m_loopSampleBpm.store(sampleBpm, std::memory_order_relaxed);
+        LOG_INFO(kTag, "DspPreviewSource::setLoopBoundary(active=" + std::to_string(active) +
+                       ", loopBeats=" + std::to_string(loopBeats) +
+                       ", sampleBpm=" + std::to_string(sampleBpm) +
+                       ") → GetLength=" + std::to_string(GetLength()));
+    }
+
+    // Flip bar-grid looping on/off using the previously stored loop metrics.
+    void setLoopActive(bool active) {
+        m_loopActive.store(active, std::memory_order_relaxed);
+    }
+
+    [[nodiscard]] double getTimeRatio() const { return m_timeRatio.load(std::memory_order_relaxed); }
+    [[nodiscard]] double getPitchSemitones() const { return m_pitchSemitones.load(std::memory_order_relaxed); }
+
+private:
+    void initShifter() {
+        if (ReaperGetPitchShiftAPI) {
+            m_shifter = ReaperGetPitchShiftAPI(REAPER_PITCHSHIFT_API_VER);
+            if (m_shifter) {
+                m_shifter->set_srate(m_srate);
+                m_shifter->set_nch(m_nch);
+                m_shifter->SetQualityParameter(-1); // Project Default (élastique 3 Pro)
+                applyParams();
+            }
+        }
+    }
+
+    void cleanup() {
+        if (m_shifter) {
+            delete m_shifter;
+            m_shifter = nullptr;
+        }
+    }
+
+    void applyParams() {
+        if (!m_shifter) return;
+        const double r = m_timeRatio.load(std::memory_order_relaxed);
+        const double p = m_pitchSemitones.load(std::memory_order_relaxed);
+        m_shifter->set_tempo(r);
+        const double shiftRatio = std::pow(2.0, p / 12.0);
+        m_shifter->set_shift(shiftRatio);
+    }
+
+    PCM_source* m_src = nullptr;
+    IReaperPitchShift* m_shifter = nullptr;
+    std::atomic<double> m_timeRatio{1.0};
+    std::atomic<double> m_pitchSemitones{0.0};
+    std::atomic<bool> m_paramsDirty{false};
+    std::atomic<bool> m_loopActive{false};
+    std::atomic<double> m_loopBeats{0.0};
+    std::atomic<double> m_loopSampleBpm{0.0};
+    double m_srate = 44100.0;
+    double m_operatingRate = 0.0;  // Project rate captured from first GetSamples() call
+    int m_srcChannels = 2;   // Original source channel count (may be 1 for mono)
+    int m_nch = 2;           // Shifter/output channel count (always >= 2)
+    double m_rawTimePos = 0.0;
+    double m_lastTimelinePos = -1.0;
+    bool m_eofReached = false;
+    std::vector<ReaSample> m_rawReadBuf;
+    std::vector<ReaSample> m_demuxBuf;  // Scratch buffer for mono→stereo demuxing
+    int m_diagCounter = 0;             // Diagnostic: limit log spam
+};
+
+struct ReaperHostPreviewState {
+    preview_register_t reg{};
+    DspPreviewSource* dspWrapper = nullptr;
+    std::string currentPath;
+    double durationSeconds = 0.0;
+    std::atomic<bool> isPlaying{false};
+    bool csInitialized = false;
+
+    void initCS() {
+        if (!csInitialized) {
+#ifdef _WIN32
+            InitializeCriticalSection(&reg.cs);
+#else
+            pthread_mutex_init(&reg.mutex, nullptr);
+#endif
+            csInitialized = true;
+        }
+    }
+
+    void stopAndClear() {
+        if (!csInitialized) return;
+#ifdef _WIN32
+        EnterCriticalSection(&reg.cs);
+#else
+        pthread_mutex_lock(&reg.mutex);
+#endif
+        if (isPlaying.load(std::memory_order_relaxed)) {
+            if (StopPreview) StopPreview(&reg);
+            isPlaying.store(false, std::memory_order_relaxed);
+        }
+        if (reg.src) {
+            delete reg.src;
+            reg.src = nullptr;
+        }
+        dspWrapper = nullptr;
+        currentPath.clear();
+        durationSeconds = 0.0;
+#ifdef _WIN32
+        LeaveCriticalSection(&reg.cs);
+#else
+        pthread_mutex_unlock(&reg.mutex);
+#endif
+    }
+
+    ~ReaperHostPreviewState() {
+        stopAndClear();
+        if (csInitialized) {
+#ifdef _WIN32
+            DeleteCriticalSection(&reg.cs);
+#else
+            pthread_mutex_destroy(&reg.mutex);
+#endif
+            csInitialized = false;
+        }
+    }
+};
+
+class ReaperPitchShiftProcessor final : public reals::audio::ITimeStretchProcessor {
+public:
+    ReaperPitchShiftProcessor() {
+        initShifter();
+    }
+
+    ~ReaperPitchShiftProcessor() override {
+        cleanup();
+    }
+
+    void setSampleRate(int sampleRate) override {
+        if (sampleRate <= 0) return;
+        m_sampleRate = sampleRate;
+        if (m_shifter) m_shifter->set_srate(static_cast<double>(sampleRate));
+        applyParams();
+    }
+
+    void setSampleRates(int inSampleRate, int outSampleRate) override {
+        if (inSampleRate > 0) m_inputSampleRate = inSampleRate;
+        if (outSampleRate > 0) m_sampleRate = outSampleRate;
+        if (m_shifter && m_sampleRate > 0) {
+            m_shifter->set_srate(static_cast<double>(m_sampleRate));
+        }
+        applyParams();
+    }
+
+    [[nodiscard]] int getSampleRate() const override {
+        return m_sampleRate;
+    }
+
+    void setChannels(int channels) override {
+        if (channels <= 0) return;
+        m_channels = channels;
+        if (m_shifter) m_shifter->set_nch(channels);
+    }
+
+    [[nodiscard]] int getChannels() const override {
+        return m_channels;
+    }
+
+    void setTimeRatio(float ratio) override {
+        m_timeRatio = ratio;
+        applyParams();
+    }
+
+    [[nodiscard]] float getTimeRatio() const override {
+        return m_timeRatio;
+    }
+
+    void setPitchSemitones(float semitones) override {
+        m_pitchSemitones = semitones;
+        applyParams();
+    }
+
+    void applyParams() {
+        if (!m_shifter) return;
+        m_shifter->set_tempo(static_cast<double>(m_timeRatio));
+        const double shiftRatio = std::pow(2.0, static_cast<double>(m_pitchSemitones) / 12.0);
+        m_shifter->set_shift(shiftRatio);
+    }
+
+    [[nodiscard]] float getPitchSemitones() const override {
+        return m_pitchSemitones;
+    }
+
+    void putSamples(const float* interleavedSamples, size_t numFrames) override {
+        if (!m_shifter || !interleavedSamples || numFrames == 0) return;
+
+        ReaSample* inBuf = m_shifter->GetBuffer(static_cast<int>(numFrames));
+        if (!inBuf) return;
+
+        const size_t totalSamples = numFrames * static_cast<size_t>(m_channels);
+        for (size_t i = 0; i < totalSamples; ++i) {
+            inBuf[i] = static_cast<ReaSample>(interleavedSamples[i]);
+        }
+        m_shifter->BufferDone(static_cast<int>(numFrames));
+    }
+
+    [[nodiscard]] size_t receiveSamples(float* outInterleavedSamples, size_t maxFrames) override {
+        if (!m_shifter || !outInterleavedSamples || maxFrames == 0) return 0;
+
+        const size_t neededReaSamples = maxFrames * static_cast<size_t>(m_channels);
+        if (m_tempReaBuffer.size() < neededReaSamples) {
+            m_tempReaBuffer.resize(neededReaSamples);
+        }
+
+        const int framesReceived = m_shifter->GetSamples(static_cast<int>(maxFrames), m_tempReaBuffer.data());
+        if (framesReceived <= 0) return 0;
+
+        const size_t totalSamples = static_cast<size_t>(framesReceived) * static_cast<size_t>(m_channels);
+        for (size_t i = 0; i < totalSamples; ++i) {
+            outInterleavedSamples[i] = static_cast<float>(m_tempReaBuffer[i]);
+        }
+        return static_cast<size_t>(framesReceived);
+    }
+
+    [[nodiscard]] size_t numSamplesAvailable() const override {
+        return 0;
+    }
+
+    void clear() override {
+        if (m_shifter) m_shifter->Reset();
+    }
+
+    void flush() override {
+        if (m_shifter) m_shifter->FlushSamples();
+    }
+
+    [[nodiscard]] int latencyFrames() const override {
+        return 2048;
+    }
+
+private:
+    void initShifter() {
+        if (ReaperGetPitchShiftAPI) {
+            m_shifter = ReaperGetPitchShiftAPI(REAPER_PITCHSHIFT_API_VER);
+            if (m_shifter) {
+                m_shifter->set_srate(static_cast<double>(m_sampleRate));
+                m_shifter->set_nch(m_channels);
+
+                int qualityParam = -1; // -1 = REAPER Project Default (Exact algorithm REAPER uses natively)
+                if (EnumPitchShiftModes) {
+                    for (int m = 0; ; ++m) {
+                        const char* modeName = nullptr;
+                        if (!EnumPitchShiftModes(m, &modeName)) break;
+                        if (!modeName) continue;
+                        const std::string sMode = modeName;
+                        if (EnumPitchShiftSubModes) {
+                            for (int s = 0; s < 6; ++s) {
+                                const char* subName = EnumPitchShiftSubModes(m, s);
+                                if (subName) {
+                                    LOG_INFO(kTag, "PitchShift mode " + std::to_string(m) + " (" + sMode + ") submode " + std::to_string(s) + ": " + subName);
+                                }
+                            }
+                        }
+                    }
+                }
+                m_shifter->SetQualityParameter(qualityParam);
+                applyParams();
+                LOG_INFO(kTag, "IReaperPitchShift initialized (qualityParam=" + std::to_string(qualityParam) + ", project default)");
+            }
+        }
+    }
+
+    void cleanup() {
+        if (m_shifter) {
+            delete m_shifter;
+            m_shifter = nullptr;
+        }
+    }
+
+    IReaperPitchShift* m_shifter = nullptr;
+    int m_inputSampleRate = 48000;
+    int m_sampleRate = 48000;
+    int m_channels = 2;
+    float m_timeRatio = 1.0f;
+    float m_pitchSemitones = 0.0f;
+    std::vector<ReaSample> m_tempReaBuffer;
+};
+
+static ReaperHostPreviewState g_hostPreview;
 
 static void ReaperOnAudioBuffer(bool isPost, int len, double srate, struct audio_hook_register_t* reg) {
     if (len <= 0 || !reg) return;
@@ -419,11 +1007,19 @@ static void ReaperOnAudioBuffer(bool isPost, int len, double srate, struct audio
         g_liveTransport.fullBeats.store(beats, std::memory_order_relaxed);
         g_liveTransport.beatPhase.store(phase, std::memory_order_relaxed);
         g_liveTransport.bpm.store(bpm, std::memory_order_relaxed);
+        if (srate > 0.0) {
+            g_liveTransport.blockLatencySeconds.store(static_cast<double>(len) / srate, std::memory_order_relaxed);
+        }
         g_liveTransport.blockCounter.fetch_add(1, std::memory_order_relaxed);
         return;
     }
 
     // Post-processing (isPost == true): REAPER has finished mixing all tracks.
+    // If native REAPER preview is actively playing via PlayPreviewEx, do NOT mix custom engine frames!
+    if (g_hostPreview.isPlaying.load(std::memory_order_relaxed)) {
+        return;
+    }
+
     // Mix preview audio on top of master hardware output buffer!
     ReaSample* outL = reg->GetBuffer(true, 0);
     ReaSample* outR = reg->GetBuffer(true, 1);
@@ -651,6 +1247,7 @@ public:
             t.playPosition = g_liveTransport.playPos.load(std::memory_order_relaxed);
             t.fullBeats = g_liveTransport.fullBeats.load(std::memory_order_relaxed);
             t.bpm = g_liveTransport.bpm.load(std::memory_order_relaxed);
+            t.blockLatencySeconds = g_liveTransport.blockLatencySeconds.load(std::memory_order_relaxed);
 
             if (t.playPosition <= 0.0) {
                 if (GetPlayPosition2Ex) {
@@ -713,6 +1310,191 @@ public:
                  " measure=" + std::to_string(t.measure) +
                  " sig=" + std::to_string(t.beatsPerMeasure) + "/" + std::to_string(t.denom));
         return t;
+    }
+
+    bool playHostPreview(const std::string& path, bool loop, double startPosSeconds, double volume, double playrate, double pitchSemitones, double sampleBpm = 120.0, double loopBeats = 16.0, uint64_t nominalLoopFrames = 0) override {
+        (void)nominalLoopFrames; // loop extent is derived from loopBeats + sampleBpm + live ratio
+        if (!PCM_Source_CreateFromFileEx || !PlayPreviewEx || !StopPreview) {
+            LOG_ERROR(kTag, "playHostPreview: REAPER preview APIs not available");
+            return false;
+        }
+
+        g_hostPreview.initCS();
+        g_hostPreview.stopAndClear();
+
+#ifdef _WIN32
+        EnterCriticalSection(&g_hostPreview.reg.cs);
+#else
+        pthread_mutex_lock(&g_hostPreview.reg.mutex);
+#endif
+        PCM_source* rawSrc = PCM_Source_CreateFromFileEx(path.c_str(), true);
+        if (!rawSrc) {
+#ifdef _WIN32
+            LeaveCriticalSection(&g_hostPreview.reg.cs);
+#else
+            pthread_mutex_unlock(&g_hostPreview.reg.mutex);
+#endif
+            LOG_ERROR(kTag, "playHostPreview: PCM_Source_CreateFromFileEx failed for " + path);
+            return false;
+        }
+
+        PCM_source* finalSrc = rawSrc;
+        // Always wrap with DspPreviewSource so real-time setTimeRatio/setPitchSemitones
+        // can be applied later when user toggles Sync BPM. The wrapper handles bit-perfect
+        // bypass internally when ratio ≈ 1.0 and pitch ≈ 0.0 — zero processing overhead.
+        auto* dsp = new DspPreviewSource(rawSrc, playrate, pitchSemitones);
+        finalSrc = dsp;
+        g_hostPreview.dspWrapper = dsp;
+        // Bar-grid looping: wrap at the nominal loop (loopBeats at sampleBpm) so a
+        // reverb tail / encoder padding does not drift the loop off the DAW grid.
+        // Store the metrics even when starting non-looping so a live loop toggle
+        // can activate the boundary without re-probing the file.
+        if (loopBeats > 0.0 && sampleBpm > 30.0) {
+            dsp->setLoopBoundary(loop, loopBeats, sampleBpm);
+        }
+        if (std::abs(playrate - 1.0) > 0.003 || std::abs(pitchSemitones) > 0.02) {
+            LOG_INFO(kTag, "playHostPreview: DspPreviewSource DSP active (élastique 3 Pro: playrate=" +
+                           std::to_string(playrate) + ", pitch=" + std::to_string(pitchSemitones) + ")");
+        } else {
+            LOG_INFO(kTag, "playHostPreview: DspPreviewSource bypass mode (ratio≈1.0, pitch≈0.0)");
+        }
+
+        g_hostPreview.reg.src = finalSrc;
+        g_hostPreview.durationSeconds = finalSrc->GetLength();
+        g_hostPreview.reg.curpos = std::max(0.0, startPosSeconds);
+        g_hostPreview.reg.loop = loop;
+        g_hostPreview.reg.volume = std::clamp(volume, 0.0, 2.0);
+        g_hostPreview.reg.m_out_chan = 0; // Standard REAPER preview output channel (Monitoring FX compliant)
+        g_hostPreview.reg.preview_track = nullptr;
+        g_hostPreview.currentPath = path;
+
+        const int res = PlayPreviewEx(&g_hostPreview.reg, 1, -1.0);
+        if (res != 0) {
+            g_hostPreview.isPlaying.store(true, std::memory_order_relaxed);
+        }
+#ifdef _WIN32
+        LeaveCriticalSection(&g_hostPreview.reg.cs);
+#else
+        pthread_mutex_unlock(&g_hostPreview.reg.mutex);
+#endif
+
+        LOG_INFO(kTag, "playHostPreview: started path=" + path + " dur=" + std::to_string(g_hostPreview.durationSeconds) + " res=" + std::to_string(res));
+        return res != 0;
+    }
+
+    void stopHostPreview() override {
+        g_hostPreview.stopAndClear();
+        LOG_INFO(kTag, "stopHostPreview: stopped");
+    }
+
+    bool isHostPreviewPlaying() const override {
+        return g_hostPreview.isPlaying.load(std::memory_order_relaxed);
+    }
+
+    double hostPreviewPositionFraction() const override {
+        if (!g_hostPreview.isPlaying.load(std::memory_order_relaxed) || g_hostPreview.durationSeconds <= 0.0) {
+            return 0.0;
+        }
+#ifdef _WIN32
+        EnterCriticalSection(&g_hostPreview.reg.cs);
+        const double pos = g_hostPreview.reg.curpos;
+        LeaveCriticalSection(&g_hostPreview.reg.cs);
+#else
+        pthread_mutex_lock(&g_hostPreview.reg.mutex);
+        const double pos = g_hostPreview.reg.curpos;
+        pthread_mutex_unlock(&g_hostPreview.reg.mutex);
+#endif
+        return std::clamp(pos / g_hostPreview.durationSeconds, 0.0, 1.0);
+    }
+
+    float hostPreviewPeak() const override {
+        if (!g_hostPreview.isPlaying.load(std::memory_order_relaxed)) return 0.0f;
+#ifdef _WIN32
+        EnterCriticalSection(&g_hostPreview.reg.cs);
+        const double p0 = std::abs(g_hostPreview.reg.peakvol[0]);
+        const double p1 = std::abs(g_hostPreview.reg.peakvol[1]);
+        LeaveCriticalSection(&g_hostPreview.reg.cs);
+#else
+        pthread_mutex_lock(&g_hostPreview.reg.mutex);
+        const double p0 = std::abs(g_hostPreview.reg.peakvol[0]);
+        const double p1 = std::abs(g_hostPreview.reg.peakvol[1]);
+        pthread_mutex_unlock(&g_hostPreview.reg.mutex);
+#endif
+        return static_cast<float>(std::max(p0, p1));
+    }
+
+    void setHostPreviewVolume(double vol) override {
+        if (!g_hostPreview.isPlaying.load(std::memory_order_relaxed)) return;
+#ifdef _WIN32
+        EnterCriticalSection(&g_hostPreview.reg.cs);
+        g_hostPreview.reg.volume = std::clamp(vol, 0.0, 2.0);
+        LeaveCriticalSection(&g_hostPreview.reg.cs);
+#else
+        pthread_mutex_lock(&g_hostPreview.reg.mutex);
+        g_hostPreview.reg.volume = std::clamp(vol, 0.0, 2.0);
+        pthread_mutex_unlock(&g_hostPreview.reg.mutex);
+#endif
+    }
+
+    void setHostPreviewPosition(double posSeconds) override {
+        if (!g_hostPreview.isPlaying.load(std::memory_order_relaxed)) return;
+#ifdef _WIN32
+        EnterCriticalSection(&g_hostPreview.reg.cs);
+        g_hostPreview.reg.curpos = std::max(0.0, posSeconds);
+        LeaveCriticalSection(&g_hostPreview.reg.cs);
+#else
+        pthread_mutex_lock(&g_hostPreview.reg.mutex);
+        g_hostPreview.reg.curpos = std::max(0.0, posSeconds);
+        pthread_mutex_unlock(&g_hostPreview.reg.mutex);
+#endif
+    }
+
+    void setHostPreviewPositionFraction(double frac) override {
+        if (!g_hostPreview.isPlaying.load(std::memory_order_relaxed) || g_hostPreview.durationSeconds <= 0.0) return;
+        const double pos = std::clamp(frac, 0.0, 1.0) * g_hostPreview.durationSeconds;
+        setHostPreviewPosition(pos);
+    }
+
+    void setHostPreviewLoop(bool loop) override {
+        if (!g_hostPreview.isPlaying.load(std::memory_order_relaxed)) return;
+        if (g_hostPreview.dspWrapper) {
+            g_hostPreview.dspWrapper->setLoopActive(loop);
+        }
+#ifdef _WIN32
+        EnterCriticalSection(&g_hostPreview.reg.cs);
+        g_hostPreview.reg.loop = loop;
+        LeaveCriticalSection(&g_hostPreview.reg.cs);
+#else
+        pthread_mutex_lock(&g_hostPreview.reg.mutex);
+        g_hostPreview.reg.loop = loop;
+        pthread_mutex_unlock(&g_hostPreview.reg.mutex);
+#endif
+    }
+
+    void setHostPreviewTimeRatio(double ratio) override {
+        if (g_hostPreview.dspWrapper) {
+            g_hostPreview.dspWrapper->setTimeRatio(ratio);
+        }
+    }
+
+    void setHostPreviewPitchSemitones(double semitones) override {
+        if (g_hostPreview.dspWrapper) {
+            g_hostPreview.dspWrapper->setPitchSemitones(semitones);
+        }
+    }
+
+    double hostPreviewTimeRatio() const override {
+        if (g_hostPreview.dspWrapper) {
+            return g_hostPreview.dspWrapper->getTimeRatio();
+        }
+        return 1.0;
+    }
+
+    double hostPreviewPitchSemitones() const override {
+        if (g_hostPreview.dspWrapper) {
+            return g_hostPreview.dspWrapper->getPitchSemitones();
+        }
+        return 0.0;
     }
 
     void toggleDock() override;
@@ -976,12 +1758,24 @@ void timerHook() {
 
         // Process pending playrate adjustments for recently inserted / dragged items
         processPendingSyncPlayrates();
+
+        // Check DAW transport cursor movement/seek to track phase-snap in real time
+        bool phaseSnapped = false;
+        if (g_bridge) {
+            phaseSnapped = g_bridge->updatePhaseSnapFromHostTransport();
+        }
+
         // Push audio playback state while playing. One extra frame is pushed when
         // playback stops (track ended / stop pressed) so the UI does not freeze
-        // showing a stale "playing" state.
+        // showing a stale "playing" state. Also push when phase-snap re-aligned so
+        // the UI waveform playhead tracks the DAW cursor immediately.
         static bool s_wasPlaying = false;
-        const bool playing = reals::audio::Engine::instance().isPlaying();
-        if (g_visible && (playing || s_wasPlaying))
+        // Push state while EITHER path is audible: the core Engine (fallback)
+        // or the native host preview. Engine::isPlaying() alone is always false
+        // on the PlayPreviewEx path, which starved the UI of position updates.
+        const bool playing = g_bridge ? g_bridge->isAudioActive()
+                                      : reals::audio::Engine::instance().isPlaying();
+        if (g_visible && (playing || s_wasPlaying || phaseSnapped))
             pushAudioState();
         s_wasPlaying = playing;
     } catch (const std::exception& e) {
@@ -1347,10 +2141,13 @@ int commandHook(KbdSectionInfo* /*sec*/, const int command, const int /*val*/, c
         return true;
     }
     if (isTransportCommand(command)) {
+        if (g_hostPreview.isPlaying.load(std::memory_order_relaxed)) {
+            g_hostPreview.stopAndClear();
+        }
         if (reals::audio::Engine::instance().isPlaying()) {
             reals::audio::Engine::instance().stop();
-            pushAudioState();
         }
+        pushAudioState();
     }
     return false;
 }
@@ -1362,10 +2159,13 @@ int commandHookV1(const int command, const int /*val*/, const int /*valhw*/, con
         return 1;
     }
     if (isTransportCommand(command)) {
+        if (g_hostPreview.isPlaying.load(std::memory_order_relaxed)) {
+            g_hostPreview.stopAndClear();
+        }
         if (reals::audio::Engine::instance().isPlaying()) {
             reals::audio::Engine::instance().stop();
-            pushAudioState();
         }
+        pushAudioState();
     }
     return 0;
 }
@@ -1430,6 +2230,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
             g_hIconSm = nullptr;
         }
         g_audioHook.cleanup();
+        reals::audio::Engine::instance().setTimeStretchProcessor(nullptr);
         OleUninitialize();
         if (g_comOwned)
             CoUninitialize();
@@ -1468,6 +2269,12 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
         } else {
             LOG_ERROR(kTag, "entry: Audio_RegHardwareHook API not available");
             reals::audio::Engine::instance().init(true);
+        }
+
+        if (ReaperGetPitchShiftAPI) {
+            auto reaperShifter = std::make_shared<ReaperPitchShiftProcessor>();
+            reals::audio::Engine::instance().setTimeStretchProcessor(reaperShifter);
+            LOG_INFO(kTag, "entry: Registered REAPER native élastique 3 Pro pitch shifter with audio Engine");
         }
 
         reals::config::Config::instance().load();

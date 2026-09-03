@@ -163,6 +163,23 @@ struct Bridge::Impl {
     std::string syncPath;
     float syncSampleBpm = 0.0f;
 
+    // Native REAPER preview state. On the PlayPreviewEx path the core Engine is
+    // stopped, so audio.setSyncBpm cannot rely on eng.currentTrack() to re-phase
+    // a running preview. These mirror what was handed to playHostPreview.
+    std::string previewPath;
+    double previewDurationSeconds = 0.0;
+    double previewLoopBeats = 0.0;
+    double previewSampleBpm = 0.0;
+    uint64_t previewNominalLoopFrames = 0;
+    double lastPhaseFraction = -1.0;
+
+    // Transport tracking for DAW seek / cursor movement detection
+    double lastTransportBeats = -1.0;
+    double lastTransportPos = -1.0;
+    int lastPlayState = -1;
+    std::chrono::steady_clock::time_point lastTransportCheckTime{};
+    bool transportInitialized = false;
+
     // Helper: detect BPM for a file (DB -> filename regex -> TempoDetector)
     float detectBpmForPath(const std::string& path) {
         if (path.empty()) return 0.0f;
@@ -638,24 +655,185 @@ std::vector<std::string> Bridge::drainEvents() {
     return out;
 }
 
+bool Bridge::isAudioActive() const {
+    if (reals::audio::Engine::instance().isPlaying())
+        return true;
+    return m_actions && m_actions->isHostPreviewPlaying();
+}
+
 std::string Bridge::audioStateJson() const {
     auto& eng = reals::audio::Engine::instance();
-    const reals::audio::LevelState lvl = eng.level();
+    const bool isHostPlaying = (m_actions && m_actions->isHostPreviewPlaying());
 
     nlohmann::json j;
     j["event"] = "audio.state";
     nlohmann::json d;
-    d["playing"] = eng.isPlaying();
-    d["position"] = eng.positionFraction();
-    d["peak"] = lvl.peak;
-    d["rms"] = lvl.rms;
-    d["aboveThreshold"] = (lvl.rms > 0.01f);
-    d["duration"] = eng.currentTrack().durationSeconds;
-    d["pitchSemitones"] = eng.getPitchSemitones();
-    d["timeRatio"] = eng.getTimeRatio();
-    d["syncBpm"] = (eng.getTimeRatio() != 1.0f);
+    if (isHostPlaying) {
+        d["playing"] = true;
+        d["position"] = m_actions->hostPreviewPositionFraction();
+        const float pk = m_actions->hostPreviewPeak();
+        d["peak"] = pk;
+        d["rms"] = pk * 0.707f;
+        d["aboveThreshold"] = (pk > 0.01f);
+        // Engine track is empty on this path (engine is stopped while the host
+        // preview owns playback) — report the mirrored preview duration instead
+        // so the UI never picks up a stale previous-track duration.
+        {
+            const std::lock_guard lock(m_impl->syncMutex);
+            d["duration"] = m_impl->previewDurationSeconds;
+        }
+        const double hostRatio = m_actions->hostPreviewTimeRatio();
+        const double hostPitch = m_actions->hostPreviewPitchSemitones();
+        d["pitchSemitones"] = static_cast<float>(hostPitch != 0.0 ? hostPitch : eng.getPitchSemitones());
+        d["timeRatio"] = static_cast<float>(hostRatio != 1.0 ? hostRatio : eng.getTimeRatio());
+        d["syncBpm"] = (d["timeRatio"] != 1.0f);
+    } else {
+        const reals::audio::LevelState lvl = eng.level();
+        d["playing"] = eng.isPlaying();
+        d["position"] = eng.positionFraction();
+        d["peak"] = lvl.peak;
+        d["rms"] = lvl.rms;
+        d["aboveThreshold"] = (lvl.rms > 0.01f);
+        d["duration"] = eng.currentTrack().durationSeconds;
+        d["pitchSemitones"] = eng.getPitchSemitones();
+        d["timeRatio"] = eng.getTimeRatio();
+        d["syncBpm"] = (eng.getTimeRatio() != 1.0f);
+        if (!eng.isPlaying()) {
+            const std::lock_guard lock(m_impl->syncMutex);
+            if (m_impl->previewDurationSeconds > 0.0) {
+                d["duration"] = m_impl->previewDurationSeconds;
+            }
+            if (m_impl->syncEnabled && m_impl->lastPhaseFraction >= 0.0) {
+                d["position"] = m_impl->lastPhaseFraction;
+                d["syncBpm"] = true;
+            }
+        }
+    }
     j["data"] = d;
     return j.dump();
+}
+
+bool Bridge::updatePhaseSnapFromHostTransport() {
+    if (!m_actions || !m_impl) return false;
+
+    bool syncOn = false;
+    double loopBeats = 16.0;
+    double sampleBpm = 120.0;
+    double durationSeconds = 0.0;
+    {
+        const std::lock_guard lock(m_impl->syncMutex);
+        syncOn = m_impl->syncEnabled;
+        loopBeats = m_impl->previewLoopBeats;
+        sampleBpm = m_impl->previewSampleBpm;
+        durationSeconds = m_impl->previewDurationSeconds;
+    }
+
+    if (!syncOn || durationSeconds < 1.0 || sampleBpm <= 30.0) {
+        return false;
+    }
+
+    const auto transport = m_actions->hostTransport();
+    if (transport.bpm <= 30.0) {
+        return false;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (!m_impl->transportInitialized) {
+        m_impl->lastTransportBeats = transport.fullBeats;
+        m_impl->lastTransportPos = transport.playPosition;
+        m_impl->lastPlayState = transport.playState;
+        m_impl->lastTransportCheckTime = now;
+        m_impl->transportInitialized = true;
+        return false;
+    }
+
+    const bool wasPlaying = (m_impl->lastPlayState & 1) != 0;
+    const bool isPlaying = transport.isPlaying();
+    bool cursorMoved = false;
+
+    if (isPlaying) {
+        if (!wasPlaying) {
+            cursorMoved = true;
+        } else {
+            double dt = std::chrono::duration<double>(now - m_impl->lastTransportCheckTime).count();
+            dt = std::clamp(dt, 0.0, 1.0);
+            double expectedBeatsDelta = dt * (transport.bpm / 60.0);
+            double actualBeatsDelta = transport.fullBeats - m_impl->lastTransportBeats;
+            double expectedPosDelta = dt;
+            double actualPosDelta = transport.playPosition - m_impl->lastTransportPos;
+
+            // Discontinuity detection:
+            // 1. Beats or seconds jumped backwards (seek back or loop wrap)
+            // 2. Beats or seconds jumped forward beyond playback tolerance
+            if (actualBeatsDelta < -0.05 || actualPosDelta < -0.05 ||
+                std::abs(actualBeatsDelta - expectedBeatsDelta) > 0.25 ||
+                std::abs(actualPosDelta - expectedPosDelta) > 0.15) {
+                cursorMoved = true;
+            }
+        }
+    } else {
+        if (wasPlaying) {
+            cursorMoved = true;
+        } else {
+            double posDelta = std::abs(transport.playPosition - m_impl->lastTransportPos);
+            double beatsDelta = std::abs(transport.fullBeats - m_impl->lastTransportBeats);
+            if (posDelta > 0.005 || beatsDelta > 0.01) {
+                cursorMoved = true;
+            }
+        }
+    }
+
+    m_impl->lastTransportBeats = transport.fullBeats;
+    m_impl->lastTransportPos = transport.playPosition;
+    m_impl->lastPlayState = transport.playState;
+    m_impl->lastTransportCheckTime = now;
+
+    if (!cursorMoved) {
+        return false;
+    }
+
+    if (loopBeats <= 0.0) loopBeats = 16.0;
+    double beatInLoop = std::fmod(transport.fullBeats, loopBeats);
+    if (beatInLoop < 0.0) beatInLoop += loopBeats;
+
+    if (isPlaying && transport.blockLatencySeconds > 0.0 && transport.bpm > 30.0) {
+        beatInLoop += transport.blockLatencySeconds * transport.bpm / 60.0;
+        beatInLoop = std::fmod(beatInLoop, loopBeats);
+        if (beatInLoop < 0.0) beatInLoop += loopBeats;
+    }
+
+    const double targetFrac = std::clamp(beatInLoop / loopBeats, 0.0, 0.999);
+
+    {
+        const std::lock_guard lock(m_impl->syncMutex);
+        m_impl->lastPhaseFraction = targetFrac;
+    }
+
+    const bool previewPlaying = m_actions->isHostPreviewPlaying();
+    const bool enginePlaying = reals::audio::Engine::instance().isPlaying();
+
+    if (previewPlaying) {
+        double projectBpm = transport.bpm > 30.0 ? transport.bpm : m_actions->projectTempo();
+        double seekReferenceSec = 0.0;
+        if (loopBeats > 0.0 && projectBpm > 30.0) {
+            seekReferenceSec = loopBeats * 60.0 / projectBpm;
+        } else {
+            seekReferenceSec = durationSeconds;
+        }
+        const double targetPosSec = targetFrac * (seekReferenceSec > 0.0 ? seekReferenceSec : 1.0);
+        m_actions->setHostPreviewPosition(targetPosSec);
+        m_actions->setHostPreviewPositionFraction(targetFrac);
+    }
+
+    if (enginePlaying) {
+        reals::audio::Engine::instance().seekFraction(targetFrac);
+    }
+
+    LOG_INFO("SYNC_DIAG", "updatePhaseSnapFromHostTransport: re-aligned to targetFrac=" +
+             std::to_string(targetFrac) + " fullBeats=" + std::to_string(transport.fullBeats) +
+             " isPlaying=" + std::to_string(isPlaying) + " previewPlaying=" + std::to_string(previewPlaying));
+
+    return true;
 }
 
 std::string Bridge::handle(const std::string& requestJson) {
@@ -935,23 +1113,28 @@ std::string Bridge::handle(const std::string& requestJson) {
                 res["error"] = "delete failed";
         } else if (cmd == "audio.play") {
             const std::string p = narrowPath(args.value("path", ""));
-            LOG_INFO("bridge", "handling audio.play for path: " + p);
+            LOG_INFO("bridge", "handling audio.play for path: " + p + " args=" + args.dump());
 
             bool syncOn = args.value("syncBpm", false);
             {
                 const std::lock_guard lock(m_impl->syncMutex);
-                if (m_impl->syncEnabled)
+                if (args.contains("syncBpm")) {
+                    m_impl->syncEnabled = syncOn;
+                } else if (m_impl->syncEnabled) {
                     syncOn = true;
+                }
+                LOG_INFO("SYNC_DIAG", "audio.play check: args.syncBpm=" + std::to_string(args.value("syncBpm", false)) +
+                                      " m_impl->syncEnabled=" + std::to_string(m_impl->syncEnabled));
             }
 
             const float pitchShift = static_cast<float>(args.value("pitchSemitones", static_cast<double>(eng.getPitchSemitones())));
             eng.setPitchSemitones(pitchShift);
             float sampleBpm = args.value("sampleBpm", 0.0f);
+            double projectBpm = 0.0;
             if (syncOn) {
                 if (sampleBpm <= 0.0f) {
                     sampleBpm = m_impl->detectBpmForPath(p);
                 }
-                double projectBpm = 0.0;
                 if (args.contains("bpm") && args.value("bpm", 0.0) > 30.0) {
                     projectBpm = args.value("bpm", 0.0);
                 } else if (m_actions) {
@@ -965,13 +1148,22 @@ std::string Bridge::handle(const std::string& requestJson) {
                 }
 
                 if (projectBpm > 30.0 && sampleBpm > 30.0) {
-                    const float ratio = std::clamp(static_cast<float>(projectBpm / sampleBpm), 0.25f, 4.0f);
+                    float ratio = std::clamp(static_cast<float>(projectBpm / sampleBpm), 0.25f, 4.0f);
+                    if (std::abs(projectBpm - sampleBpm) / projectBpm < 0.003) {
+                        ratio = 1.0f; // Bit-perfect bypass when tempo difference < 0.3%
+                    }
                     eng.setTimeRatio(ratio);
                     {
                         const std::lock_guard lock(m_impl->syncMutex);
                         m_impl->syncRatio = ratio;
                         m_impl->syncSampleBpm = sampleBpm;
                     }
+                    LOG_INFO("SYNC_DIAG", "[AUDIO_PLAY] path=" + p +
+                                          " projectBpm=" + std::to_string(projectBpm) +
+                                          " sampleBpm=" + std::to_string(sampleBpm) +
+                                          " ratio=" + std::to_string(ratio) +
+                                          " pitchSemitones=" + std::to_string(pitchShift) +
+                                          " mode=" + std::string(ratio == 1.0f && pitchShift == 0.0f ? "BIT_PERFECT_BYPASS" : "REAPER_ELASTIQUE_DSP"));
                 }
             } else {
                 eng.setTimeRatio(1.0f);
@@ -1068,8 +1260,97 @@ std::string Bridge::handle(const std::string& requestJson) {
                 };
             }
 
-            // Play directly via high-performance core::Engine with sample-accurate phaseAnchor
-            const bool ok = eng.playFile(p, args.value("loop", false), startFraction, phaseAnchor, nominalLoopFrames);
+            // Always prefer 100% Native REAPER PlayPreviewEx for mastering-grade r8brain resampling,
+            // élastique 3 Pro DSP, and Monitoring FX routing!
+            bool ok = false;
+            if (m_actions) {
+                eng.stop(); // Ensure custom core engine is idle so it does not mix redundantly
+
+                // --- Phase-snap for host preview path (PhaseAnchor only runs inside eng.playFile fallback) ---
+                // Snap to DAW beat position whether transport is playing OR stopped (cursor position).
+                // Require the same >= 1.0 s minimum as the bar-quantize block above: short
+                // one-shots leave loopBeats at its 4.0 default and must bypass phase sync.
+                if (syncOn && sampleBpm > 30.0f && loopBeats > 0.0 && info.durationSeconds >= 1.0) {
+                    const auto transport = m_actions->hostTransport();
+                    LOG_INFO("SYNC_DIAG",
+                             "HOST_PHASE_CHECK: syncOn=1 sampleBpm=" + std::to_string(sampleBpm) +
+                             " loopBeats=" + std::to_string(loopBeats) +
+                             " playState=" + std::to_string(transport.playState) +
+                             " isPlaying=" + std::to_string(transport.isPlaying()) +
+                             " bpm=" + std::to_string(transport.bpm) +
+                             " fullBeats=" + std::to_string(transport.fullBeats));
+                    if (transport.bpm > 30.0 && transport.fullBeats >= 0.0) {
+                        double beatInLoop = std::fmod(transport.fullBeats, loopBeats);
+                        if (beatInLoop < 0.0)
+                            beatInLoop += loopBeats;
+                        // The transport snapshot is captured before PlayPreviewEx opens the
+                        // source and primes its DSP, so it is at least one host audio block
+                        // stale by the time the preview is audible. Advance the phase by that
+                        // block so the preview lands on the playhead instead of behind it.
+                        if (transport.isPlaying() && transport.blockLatencySeconds > 0.0) {
+                            beatInLoop += transport.blockLatencySeconds * transport.bpm / 60.0;
+                            beatInLoop = std::fmod(beatInLoop, loopBeats);
+                        }
+                        startFraction = std::clamp(beatInLoop / loopBeats, 0.0, 0.999);
+                        phaseSynced = true;
+                        LOG_INFO("SYNC_DIAG",
+                                 "HOST_PHASE_SNAP: fullBeats=" + std::to_string(transport.fullBeats) +
+                                 " loopBeats=" + std::to_string(loopBeats) +
+                                 " beatInLoop=" + std::to_string(beatInLoop) +
+                                 " startFraction=" + std::to_string(startFraction));
+                    }
+                } else {
+                    LOG_INFO("SYNC_DIAG",
+                             "HOST_PHASE_SKIP: syncOn=" + std::to_string(syncOn) +
+                             " sampleBpm=" + std::to_string(sampleBpm) +
+                             " loopBeats=" + std::to_string(loopBeats));
+                }
+
+                // startFraction is a phase within the bar-quantized NOMINAL loop, so the
+                // seek reference must be the nominal loop duration, not the full file. A
+                // loop with a reverb tail has outputDuration > nominalLoopSec; multiplying
+                // by the full duration would offset the start by the tail (beats of drift).
+                const double timeRatio = static_cast<double>(eng.getTimeRatio());
+                const double outputDuration = (timeRatio > 0.01 && info.durationSeconds > 0.0)
+                    ? (info.durationSeconds / timeRatio)
+                    : info.durationSeconds;
+                double seekReferenceSec = outputDuration;
+                if (loopBeats > 0.0 && projectBpm > 30.0) {
+                    seekReferenceSec = loopBeats * 60.0 / projectBpm;
+                }
+                const double startPosSec = startFraction * (seekReferenceSec > 0.0 ? seekReferenceSec : 1.0);
+                LOG_INFO("SYNC_DIAG",
+                         "HOST_PLAY_POS: startFraction=" + std::to_string(startFraction) +
+                         " rawDurSec=" + std::to_string(info.durationSeconds) +
+                         " outputDurSec=" + std::to_string(outputDuration) +
+                         " seekRefSec=" + std::to_string(seekReferenceSec) +
+                         " ratio=" + std::to_string(timeRatio) +
+                         " startPosSec=" + std::to_string(startPosSec) +
+                         " phaseSynced=" + std::to_string(phaseSynced));
+                ok = m_actions->playHostPreview(p, args.value("loop", false), startPosSec,
+                                                eng.volume(), static_cast<double>(eng.getTimeRatio()),
+                                                static_cast<double>(eng.getPitchSemitones()),
+                                                sampleBpm, loopBeats, nominalLoopFrames);
+                if (ok) {
+                    LOG_INFO("bridge", "audio.play launched REAPER native preview (élastique/r8brain) for: " + p);
+                }
+            }
+
+            // Fallback for standalone app (no REAPER host) or if native preview failed
+            if (!ok) {
+                if (m_actions) m_actions->stopHostPreview();
+                ok = eng.playFile(p, args.value("loop", false), startFraction, phaseAnchor, nominalLoopFrames);
+                LOG_INFO("bridge", "audio.play launched custom DSP engine (standalone fallback) for: " + p);
+            }
+            if (ok) {
+                const std::lock_guard lock(m_impl->syncMutex);
+                m_impl->previewPath = p;
+                m_impl->previewDurationSeconds = info.durationSeconds > 0.0 ? info.durationSeconds : eng.currentTrack().durationSeconds;
+                m_impl->previewLoopBeats = loopBeats;
+                m_impl->previewSampleBpm = static_cast<double>(sampleBpm);
+                m_impl->previewNominalLoopFrames = nominalLoopFrames;
+                m_impl->lastPhaseFraction = startFraction;
+            }
             LOG_INFO("bridge", "audio.play ok=" + std::to_string(ok));
             model.addRecent(p);
             json d;
@@ -1080,6 +1361,9 @@ std::string Bridge::handle(const std::string& requestJson) {
             d["startFraction"] = startFraction;
             d["phaseSynced"] = phaseSynced;
             d["loopBeats"] = loopBeats;
+            // Output playback rate so the UI can advance its playhead at the
+            // real speed (output duration = raw duration / timeRatio).
+            d["timeRatio"] = eng.getTimeRatio();
 
             std::vector<float> cachedEnv;
             {
@@ -1101,10 +1385,14 @@ std::string Bridge::handle(const std::string& requestJson) {
             eng.stop();
             res["ok"] = true;
         } else if (cmd == "audio.setLoop") {
-            eng.setLoop(args.value("value", false));
+            const bool loop = args.value("value", false);
+            if (m_actions) m_actions->setHostPreviewLoop(loop);
+            eng.setLoop(loop);
             res["ok"] = true;
         } else if (cmd == "audio.setVolume") {
-            eng.setVolume(args.value("value", 0.9f));
+            const float vol = args.value("value", 1.0f);
+            if (m_actions) m_actions->setHostPreviewVolume(vol);
+            eng.setVolume(vol);
             res["ok"] = true;
         } else if (cmd == "audio.probe") {
             const std::string p = narrowPath(args.value("path", ""));
@@ -1184,10 +1472,13 @@ std::string Bridge::handle(const std::string& requestJson) {
                 res["error"] = "Cannot open file";
             }
         } else if (cmd == "audio.seek") {
-            eng.seekFraction(args.value("fraction", 0.0));
+            const double frac = args.value("fraction", 0.0);
+            if (m_actions) m_actions->setHostPreviewPositionFraction(frac);
+            eng.seekFraction(frac);
             res["ok"] = true;
         } else if (cmd == "audio.setPitchShift") {
             const float semitones = args.value("semitones", 0.0f);
+            if (m_actions) m_actions->setHostPreviewPitchSemitones(static_cast<double>(semitones));
             eng.setPitchSemitones(semitones);
             json d;
             d["pitchSemitones"] = eng.getPitchSemitones();
@@ -1196,13 +1487,16 @@ std::string Bridge::handle(const std::string& requestJson) {
 
             json ev;
             ev["event"] = "audio.syncState";
-            ev["data"] = {
-                {"syncBpm", eng.getTimeRatio() != 1.0f},
-                {"projectBpm", m_actions ? m_actions->projectTempo() : 0.0},
-                {"sampleBpm", 0.0f},
-                {"ratio", eng.getTimeRatio()},
-                {"semitones", eng.getPitchSemitones()}
-            };
+            {
+                const std::lock_guard lock(m_impl->syncMutex);
+                ev["data"] = {
+                    {"syncBpm", m_impl->syncEnabled},
+                    {"projectBpm", m_actions ? m_actions->projectTempo() : 0.0},
+                    {"sampleBpm", 0.0f},
+                    {"ratio", eng.getTimeRatio()},
+                    {"semitones", eng.getPitchSemitones()}
+                };
+            }
             m_impl->state->pushEvent(ev);
         } else if (cmd == "audio.setSyncBpm") {
             const bool enabled = args.value("enabled", false);
@@ -1234,6 +1528,9 @@ std::string Bridge::handle(const std::string& requestJson) {
             if (enabled) {
                 if (projectBpm > 0.0f && sampleBpm > 0.0f) {
                     ratio = projectBpm / sampleBpm;
+                    if (std::abs(projectBpm - sampleBpm) / projectBpm < 0.003) {
+                        ratio = 1.0f; // Bit-perfect bypass when tempo difference < 0.3%
+                    }
                 } else if (args.contains("ratio")) {
                     ratio = args.value("ratio", 1.0f);
                 } else {
@@ -1241,6 +1538,7 @@ std::string Bridge::handle(const std::string& requestJson) {
                     if (projectBpm > 0.0f) ratio = projectBpm / 120.0f;
                 }
             }
+            if (m_actions) m_actions->setHostPreviewTimeRatio(static_cast<double>(ratio));
             eng.setTimeRatio(ratio);
             {
                 const std::lock_guard lock(m_impl->syncMutex);
@@ -1249,13 +1547,28 @@ std::string Bridge::handle(const std::string& requestJson) {
                 m_impl->syncPath = syncPath;
                 m_impl->syncSampleBpm = sampleBpm;
             }
-            // Re-align phase if DAW is actively playing and engine is loaded
-            if (enabled && eng.isPlaying() && m_actions) {
+            // Re-align phase if the DAW is transporting and something is playing.
+            // On the native path the core Engine is stopped, so also accept a
+            // running host preview and source the duration from the stored
+            // preview state instead of eng.currentTrack().
+            const bool enginePlaying = eng.isPlaying();
+            const bool previewPlaying = m_actions && m_actions->isHostPreviewPlaying();
+            double rephaseDurationSeconds = 0.0;
+            int rephaseSampleRate = 0;
+            if (enginePlaying) {
+                const auto& trk = eng.currentTrack();
+                rephaseDurationSeconds = trk.durationSeconds;
+                rephaseSampleRate = trk.sampleRate;
+            }
+            if (rephaseDurationSeconds < 1.0 && previewPlaying) {
+                const std::lock_guard lock(m_impl->syncMutex);
+                rephaseDurationSeconds = m_impl->previewDurationSeconds;
+            }
+            if (enabled && m_actions && (enginePlaying || previewPlaying)) {
                 const auto transport = m_actions->hostTransport();
                 if (transport.isPlaying() && transport.bpm > 30.0 && sampleBpm > 30.0) {
-                    const auto& trk = eng.currentTrack();
-                    if (trk.durationSeconds >= 1.0) {
-                        const double rawBeats = (trk.durationSeconds * sampleBpm) / 60.0;
+                    if (rephaseDurationSeconds >= 1.0) {
+                        const double rawBeats = (rephaseDurationSeconds * sampleBpm) / 60.0;
                         const int timeSig = transport.beatsPerMeasure > 0 ? transport.beatsPerMeasure : 4;
                         static const double kStandardBars[] = { 0.25, 0.5, 1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0, 24.0, 32.0, 64.0 };
                         double resolvedBeats = 0.0;
@@ -1283,12 +1596,21 @@ std::string Bridge::handle(const std::string& requestJson) {
                         double beatInLoop = std::fmod(transport.fullBeats, resolvedBeats);
                         if (beatInLoop < 0.0) beatInLoop += resolvedBeats;
                         const double syncFrac = std::clamp(beatInLoop / resolvedBeats, 0.0, 0.999);
-                        const double nominalLoopSec = (resolvedBeats * 60.0) / sampleBpm;
-                        const int effectiveSr = (eng.targetSampleRate() > 0) ? eng.targetSampleRate() : trk.sampleRate;
-                        if (effectiveSr > 0) {
-                            eng.setLoopBoundaryFrames(static_cast<uint64_t>(nominalLoopSec * effectiveSr));
+                        if (enginePlaying) {
+                            const double nominalLoopSec = (resolvedBeats * 60.0) / sampleBpm;
+                            const int effectiveSr = (eng.targetSampleRate() > 0) ? eng.targetSampleRate() : rephaseSampleRate;
+                            if (effectiveSr > 0) {
+                                eng.setLoopBoundaryFrames(static_cast<uint64_t>(nominalLoopSec * effectiveSr));
+                            }
+                            eng.seekFraction(syncFrac);
                         }
-                        eng.seekFraction(syncFrac);
+                        // Seek the REAPER native preview to the same bar phase.
+                        if (previewPlaying) {
+                            m_actions->setHostPreviewPositionFraction(syncFrac);
+                            const std::lock_guard lock(m_impl->syncMutex);
+                            m_impl->previewLoopBeats = resolvedBeats;
+                            m_impl->lastPhaseFraction = syncFrac;
+                        }
                     }
                 }
             }
@@ -1311,6 +1633,7 @@ std::string Bridge::handle(const std::string& requestJson) {
             };
             m_impl->state->pushEvent(ev);
         } else if (cmd == "audio.setOriginalKey" || cmd == "audio.resetPitch") {
+            if (m_actions) m_actions->setHostPreviewPitchSemitones(0.0);
             eng.setOriginalKey();
             json d;
             d["pitchSemitones"] = 0.0f;
@@ -1319,13 +1642,16 @@ std::string Bridge::handle(const std::string& requestJson) {
 
             json ev;
             ev["event"] = "audio.syncState";
-            ev["data"] = {
-                {"syncBpm", eng.getTimeRatio() != 1.0f},
-                {"projectBpm", m_actions ? m_actions->projectTempo() : 0.0},
-                {"sampleBpm", 0.0f},
-                {"ratio", eng.getTimeRatio()},
-                {"semitones", 0.0f}
-            };
+            {
+                const std::lock_guard lock(m_impl->syncMutex);
+                ev["data"] = {
+                    {"syncBpm", m_impl->syncEnabled},
+                    {"projectBpm", m_actions ? m_actions->projectTempo() : 0.0},
+                    {"sampleBpm", 0.0f},
+                    {"ratio", eng.getTimeRatio()},
+                    {"semitones", 0.0f}
+                };
+            }
             m_impl->state->pushEvent(ev);
         } else if (cmd == "audio.detectBpm") {
             const std::string p = narrowPath(args.value("path", ""));
@@ -1821,8 +2147,10 @@ std::string Bridge::handle(const std::string& requestJson) {
             res["data"] = d;
         } else if (cmd == "reaper.playToggle") {
             eng.stop();
-            if (m_actions)
+            if (m_actions) {
+                m_actions->stopHostPreview();
                 m_actions->togglePlay();
+            }
             res["ok"] = true;
         } else if (cmd == "browser.beginDrag") {
             const std::string p = narrowPath(args.value("path", ""));

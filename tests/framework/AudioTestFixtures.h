@@ -178,7 +178,9 @@ public:
         const std::string& filePath, const std::vector<float>& pcm, int channels, int sampleRate, bool float32 = false) {
         auto mem = encodeWavMemory(pcm, channels, sampleRate, float32);
         auto p = platform::u8path(filePath);
-        fs::create_directories(p.parent_path());
+        if (p.has_parent_path() && !p.parent_path().empty()) {
+            fs::create_directories(p.parent_path());
+        }
         std::ofstream ofs(p, std::ios::binary);
         if (!ofs) return false;
         ofs.write(reinterpret_cast<const char*>(mem.data()), mem.size());
@@ -188,7 +190,9 @@ public:
     // Generate corrupted WAV file on disk for Tier 2 boundary testing
     static bool writeCorruptedWavFile(const std::string& filePath, WavCorruptionType type) {
         auto p = platform::u8path(filePath);
-        fs::create_directories(p.parent_path());
+        if (p.has_parent_path() && !p.parent_path().empty()) {
+            fs::create_directories(p.parent_path());
+        }
         std::ofstream ofs(p, std::ios::binary);
         if (!ofs) return false;
 

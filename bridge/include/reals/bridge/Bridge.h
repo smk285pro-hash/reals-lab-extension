@@ -76,6 +76,14 @@ struct IHostActions {
     virtual double hostPreviewPositionFraction() const { return 0.0; }
     virtual float hostPreviewPeak() const { return 0.0f; }
     virtual float hostPreviewRms() const { return 0.0f; }
+    virtual void setHostPreviewVolume(double vol) { (void)vol; }
+    virtual void setHostPreviewPosition(double posSeconds) { (void)posSeconds; }
+    virtual void setHostPreviewPositionFraction(double frac) { (void)frac; }
+    virtual void setHostPreviewLoop(bool loop) { (void)loop; }
+    virtual void setHostPreviewTimeRatio(double ratio) { (void)ratio; }
+    virtual void setHostPreviewPitchSemitones(double semitones) { (void)semitones; }
+    virtual double hostPreviewTimeRatio() const { return 1.0; }
+    virtual double hostPreviewPitchSemitones() const { return 0.0; }
 };
 
 class Bridge {
@@ -89,11 +97,22 @@ public:
     // Handle one request; returns the JSON response (empty for none).
     std::string handle(const std::string& requestJson);
 
+    // True while either playback path produces audio: the core Engine
+    // (standalone fallback) or the native host preview (REAPER PlayPreviewEx).
+    // Shells use this to decide whether to poll/push audio.state — checking
+    // Engine::isPlaying() alone misses the native preview path.
+    [[nodiscard]] bool isAudioActive() const;
+
     // Serialized snapshot of the audio state (posted periodically by the shell).
     std::string audioStateJson() const;
 
     // Drain events queued by background lab jobs (called from the UI thread).
     std::vector<std::string> drainEvents();
+
+    // Check if the DAW host transport cursor has moved/seeked or looped,
+    // and if so, re-align the phase of the active preview (audio + waveform).
+    // Returns true if a phase re-alignment was triggered.
+    bool updatePhaseSnapFromHostTransport();
 
 private:
     IHostActions* m_actions;
