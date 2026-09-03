@@ -654,6 +654,31 @@ Audit tìm thấy ~25 lỗi (9 nghiêm trọng), đã sửa hết, build zero-wa
     - `NativePhaseSnap`: 10/10 PASS (100%).
     - Zero MSVC C++20 compiler warnings.
 
+- **[P1.21] Tối Ưu Hóa & Gia Cố Toàn Diện Engine TempoDetector DSP (2026-09-04)**:
+  - **Vấn đề rà soát**:
+    1. ACF thô chưa chuẩn hóa theo độ dài mẫu (`numDiffFrames`), dễ bị thiên lệch năng lượng theo độ dài.
+    2. `detect()` và `detectCnn()` bị double-compute: CNN chạy full `detectAlgorithmic()` chỉ để lấy onsets; khi CNN fail thì `detectAlgorithmic()` bị gọi lần 2.
+    3. Luồng CNN bỏ qua hoàn toàn bộ lọc One-shot (Kick, Snare ngắn bị ép gán BPM).
+    4. Hàm `std::log1p` bị gọi 2 lần cho mỗi bin ở mỗi bước thời gian; mảng phổ phân mảnh trên heap.
+    5. Timestamp Onset bị lệch 1 hop (~5.8ms) do dùng frame $t$ thay vì $t+1$.
+    6. Peak-picking đếm Onset dùng `>=` cả 2 bên làm phình số lượng ở vùng bằng phẳng (plateau).
+    7. Tỷ số Confidence so sánh điểm Comb Filter đã nhân Prior với ACF thô chưa qua lọc.
+  - **Khắc phục triệt để**:
+    1. **Biased Sample Autocorrelation**: Chuẩn hóa năng lượng ACF theo tổng số frame $N$ (`sum * invFrames`), đảm bảo tính chuẩn tắc của ma trận tương quan và bất biến theo độ dài file.
+    2. **Tách Biệt Helper `extractBeatOnsetsFromAudio()`**: Trích xuất Onset timestamps $O(T)$ siêu nhẹ dùng chung cho CNN, triệt tiêu 100% việc chạy lặp lại ACF $O(T \times L \times K)$.
+    3. **One-shot Early Gating**: Đặt `isQuickOneShot()` ngay đầu hàm `detect()`, chặn cả CNN lẫn Algorithmic không cho gán BPM bậy cho One-shot ngắn.
+    4. **Flat 1D Spectrogram & Single-Pass `log1p`**: Cấp phát bộ nhớ tuyến tính `logSpec(numFrames * kMaxBin)` và `diff(numDiffFrames * numDiffBins)`, tính log duy nhất 1 lần, cải thiện cache locality và tốc độ tính toán.
+    5. **Giới Hạn Cửa Sổ Phân Tích (Max 60s)**: Tự động trích xuất đoạn 60s ở giữa bài cho các track dài, loại trừ intro tĩnh lặng và giảm tải CPU.
+    6. **Sửa Lệch 1 Frame Onset**: Tính `timeSec = (t + 1) * hopSeconds`.
+    7. **Strict One-Sided Peak-Picking**: `onset1D[t] > onset1D[t - 1] && onset1D[t] >= onset1D[t + 1]`.
+    8. **Confidence Prominence Metric Đồng Chuẩn**: So sánh `bestScore` với giá trị trung bình của chính mảng `combScores[minLag..maxLag]`.
+    9. **Normalize Peak PCM**: Đảm bảo phản ứng log-spectral flux bất biến với âm lượng đầu vào.
+  - **Kiểm thử**:
+    - `EmpiricalBenchmark_M4`: 30/33 (90.9%) PASS với sai số $\le 0.2$ BPM, 0 lỗi halving.
+    - `KeyDetectorSuite`: 8/8 PASS (100%).
+    - `KeyTempoAccuracy`: 6/6 PASS (100%).
+    - Build MSVC C++20 zero-warning.
+
 ## Ghi chú làm việc
 - Trả lời ngắn gọn, kiểu 2 thằng bạn trò chuyện.
 - Làm từng bước, bàn bạc kỹ trước khi code.
