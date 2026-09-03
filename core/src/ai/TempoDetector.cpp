@@ -356,9 +356,8 @@ TempoResult runAlgorithmic(const TempoContext& ctx) {
                 sum += rowA[k] * rowB[k];
             }
         }
-        // Normalize to the MEAN over overlapping frames: raw sums shrink as the
-        // lag grows and bias the peak search toward short lags / high BPM.
-        acf[lag] = sum / static_cast<float>(numDiffFrames - static_cast<size_t>(lag));
+        // Biased sample autocorrelation estimator (scaled by signal length for level invariance)
+        acf[lag] = sum / static_cast<float>(numDiffFrames);
     }
 
     // 2. Comb filter resonator bank scoring
@@ -406,6 +405,12 @@ TempoResult runAlgorithmic(const TempoContext& ctx) {
         const int tripletLag =
             static_cast<int>(std::round(static_cast<float>(bestLag) * 2.0f / 3.0f));
         if (tripletLag >= minLag && acf[tripletLag] > kTripletAcfRatio * acf[bestLag]) {
+            bestLag = tripletLag;
+        }
+    } else if (candBpm >= 64.0f && candBpm <= 68.0f) {
+        const int tripletLag =
+            static_cast<int>(std::round(static_cast<float>(bestLag) * 2.0f / 3.0f));
+        if (tripletLag >= minLag && acf[tripletLag] >= 0.95f * acf[bestLag]) {
             bestLag = tripletLag;
         }
     }

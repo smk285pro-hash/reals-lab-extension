@@ -3294,12 +3294,14 @@ async function playFile(path) {
     const sampleBpm = (fileObj && fileObj.bpm) || (state.selected === path ? state.sampleBpm : 0) || 0;
     const isSyncActive = $('#btnSyncBpm')?.classList.contains('on') || !!state.syncBpm;
     state.syncBpm = isSyncActive;
+    const targetNote = (state.isUserTargetKeyLocked && state.userTargetNote) ? state.userTargetNote : '';
     const d = await bridge('audio.play', {
       path,
       loop: state.loop,
       syncBpm: isSyncActive,
       sampleBpm: sampleBpm,
-      pitchSemitones: initialPitchShift
+      pitchSemitones: initialPitchShift,
+      targetNote: targetNote
     });
     if (mySeq !== _playFileSeq) return;
     if (!d || d.ok === false) {
@@ -3307,6 +3309,40 @@ async function playFile(path) {
       toast(tr('toast.decodeFail'));
       return;
     }
+
+    // Immediately adopt real Key and BPM detected by C++ DSP
+    if (d.detectedKey && d.detectedKey !== '') {
+      state.sampleKey = d.detectedKey;
+      state.originalRootNote = extractRootNoteName(d.detectedKey);
+      if (state.isUserTargetKeyLocked && state.userTargetNote) {
+        state.selectedTargetNote = state.userTargetNote;
+        state.pitchSemitones = (typeof d.pitchSemitones === 'number') ? d.pitchSemitones : calculateSemitoneDistance(state.originalRootNote, state.userTargetNote);
+      } else {
+        state.selectedTargetNote = state.originalRootNote;
+        state.pitchSemitones = (typeof d.pitchSemitones === 'number') ? d.pitchSemitones : 0;
+      }
+      updateTransposerPopUI();
+    }
+    if (d.detectedBpm && d.detectedBpm > 0) {
+      state.sampleBpm = d.detectedBpm;
+    }
+
+    // Immediately update file table row with detected Key & BPM
+    if (fileObj) {
+      let changed = false;
+      if (d.detectedBpm && d.detectedBpm > 0 && fileObj.bpm !== d.detectedBpm) {
+        fileObj.bpm = d.detectedBpm;
+        changed = true;
+      }
+      if (d.detectedKey && fileObj.key !== d.detectedKey) {
+        fileObj.key = d.detectedKey;
+        changed = true;
+      }
+      if (changed) {
+        renderFiles();
+      }
+    }
+
     state.playingPath = path;
     state.selected = path;
     state.envelope = d.envelope || [];
@@ -3327,7 +3363,9 @@ async function playFile(path) {
     }
 
     const info = $('#trackInfo');
-    if (info) info.textContent = `♪ ${filename} | ${d.sampleRate || 44100}Hz ${d.channels || 2}ch`;
+    const bpmDisplay = state.sampleBpm > 0 ? ` | ${Math.round(state.sampleBpm)} BPM` : '';
+    const keyDisplay = state.sampleKey && state.sampleKey !== 'C' ? ` | ${state.sampleKey}` : (state.sampleKey ? ` | ${state.sampleKey}` : '');
+    if (info) info.textContent = `♪ ${filename}${bpmDisplay}${keyDisplay} | ${d.sampleRate || 44100}Hz ${d.channels || 2}ch`;
 
     // Dynamic player tags extraction
     try {
@@ -3386,6 +3424,13 @@ async function playFile(path) {
             const dawBpm = (td && td.bpm) ? td.bpm : 120;
             bridge('audio.setSyncBpm', { enabled: true, bpm: dawBpm, sampleBpm: bpm, path }).catch(()=>{});
           }).catch(()=>{});
+        }
+
+        if (fileObj) {
+          let ch = false;
+          if (bpm > 0 && fileObj.bpm !== bpm) { fileObj.bpm = bpm; ch = true; }
+          if (key && key !== 'ORIGINAL' && fileObj.key !== key) { fileObj.key = key; ch = true; }
+          if (ch) renderFiles();
         }
       }).catch(() => {
         if (mySeq !== _playFileSeq) return;

@@ -305,6 +305,41 @@ struct Bridge::Impl {
         return {};
     }
 
+    int noteNameToPitchClass(const std::string& noteName) {
+        if (noteName.empty()) return 0;
+        char n = static_cast<char>(std::toupper(noteName[0]));
+        int pc = 0;
+        switch (n) {
+            case 'C': pc = 0; break;
+            case 'D': pc = 2; break;
+            case 'E': pc = 4; break;
+            case 'F': pc = 5; break;
+            case 'G': pc = 7; break;
+            case 'A': pc = 9; break;
+            case 'B': pc = 11; break;
+            default: return 0;
+        }
+        if (noteName.size() > 1) {
+            if (noteName[1] == '#' || noteName[1] == 's' || noteName[1] == 'S') pc = (pc + 1) % 12;
+            else if (noteName[1] == 'b') pc = (pc + 11) % 12;
+        }
+        return pc;
+    }
+
+    int calculateSemitoneShift(const std::string& fromKey, const std::string& toNote) {
+        if (fromKey.empty() || toNote.empty()) return 0;
+        std::string root = fromKey;
+        if (root.size() >= 2 && (root.back() == 'm' || root.back() == 'M') && root[1] != '#') {
+            root.pop_back();
+        }
+        int pcFrom = noteNameToPitchClass(root);
+        int pcTo = noteNameToPitchClass(toNote);
+        int diff = (pcTo - pcFrom) % 12;
+        if (diff > 6) diff -= 12;
+        if (diff < -6) diff += 12;
+        return diff;
+    }
+
     void runEnvelopeScan(const std::string& path) {
         auto st = state;
         const std::lock_guard lock(jobMutex);
@@ -1112,14 +1147,20 @@ std::string Bridge::handle(const std::string& requestJson) {
                                       " m_impl->syncEnabled=" + std::to_string(m_impl->syncEnabled));
             }
 
-            const float pitchShift = static_cast<float>(args.value("pitchSemitones", static_cast<double>(eng.getPitchSemitones())));
-            eng.setPitchSemitones(pitchShift);
+            std::string detectedKey = m_impl->detectKeyForPath(p);
             float sampleBpm = args.value("sampleBpm", 0.0f);
+            if (sampleBpm <= 0.0f) {
+                sampleBpm = m_impl->detectBpmForPath(p);
+            }
+
+            float pitchShift = static_cast<float>(args.value("pitchSemitones", static_cast<double>(eng.getPitchSemitones())));
+            if (args.contains("targetNote") && args["targetNote"].is_string() && !args["targetNote"].get<std::string>().empty() && !detectedKey.empty()) {
+                const std::string targetNote = args["targetNote"].get<std::string>();
+                pitchShift = static_cast<float>(m_impl->calculateSemitoneShift(detectedKey, targetNote));
+            }
+            eng.setPitchSemitones(pitchShift);
             double projectBpm = 0.0;
             if (syncOn) {
-                if (sampleBpm <= 0.0f) {
-                    sampleBpm = m_impl->detectBpmForPath(p);
-                }
                 if (args.contains("bpm") && args.value("bpm", 0.0) > 30.0) {
                     projectBpm = args.value("bpm", 0.0);
                 } else if (m_actions) {
@@ -1348,6 +1389,9 @@ std::string Bridge::handle(const std::string& requestJson) {
             // Output playback rate so the UI can advance its playhead at the
             // real speed (output duration = raw duration / timeRatio).
             d["timeRatio"] = eng.getTimeRatio();
+            d["detectedKey"] = detectedKey;
+            d["detectedBpm"] = sampleBpm;
+            d["pitchSemitones"] = pitchShift;
 
             std::vector<float> cachedEnv;
             {
@@ -1659,29 +1703,57 @@ std::string Bridge::handle(const std::string& requestJson) {
                 d["ok"] = false;
                 d["error"] = "no path";
             } else {
-                // Try DB first
+                float bpm = 0.0f;
+                std::string key;
+                std::string camelot;
+                std::string genre;
+                std::string mood;
+                double duration = 0.0;
+                int sampleRate = 0;
+                int channels = 0;
+
                 if (auto rec = m_impl->db.getSampleByPath(target); rec.has_value()) {
-                    d["bpm"] = rec->bpm;
-                    d["key"] = rec->keyRoot + (rec->keyMode == "minor" ? "m" : "");
-                    d["camelot"] = rec->camelot;
-                    d["genre"] = rec->genre;
-                    d["mood"] = rec->mood;
-                    d["duration"] = rec->durationSec;
-                    d["sampleRate"] = rec->sampleRate;
-                    d["channels"] = rec->channels;
-                    d["ok"] = true;
-                } else {
-                    // Fallback to detection
-                    float bpm = m_impl->detectBpmForPath(target);
-                    std::string key = m_impl->detectKeyForPath(target);
-                    auto info = audio::Engine::probeFile(target);
-                    d["bpm"] = bpm;
-                    d["key"] = key;
-                    d["duration"] = info.durationSeconds;
-                    d["sampleRate"] = info.sampleRate;
-                    d["channels"] = info.channels;
-                    d["ok"] = (bpm > 0.0f || !key.empty());
+                    bpm = static_cast<float>(rec->bpm);
+                    key = rec->keyRoot.empty() ? "" : (rec->keyMode == "minor" ? rec->keyRoot + "m" : rec->keyRoot);
+                    camelot = rec->camelot;
+                    genre = rec->genre;
+                    mood = rec->mood;
+                    duration = rec->durationSec;
+                    sampleRate = rec->sampleRate;
+                    channels = rec->channels;
                 }
+
+                if (bpm <= 0.0f) {
+                    bpm = m_impl->detectBpmForPath(target);
+                }
+                if (key.empty()) {
+                    key = m_impl->detectKeyForPath(target);
+                    if (camelot.empty() && !key.empty()) {
+                        std::string root = key;
+                        std::string mode = "major";
+                        if (root.back() == 'm') {
+                            root.pop_back();
+                            mode = "minor";
+                        }
+                        camelot = ai::KeyDetector::toCamelot(root, mode);
+                    }
+                }
+                if (duration <= 0.0) {
+                    auto info = audio::Engine::probeFile(target);
+                    duration = info.durationSeconds;
+                    sampleRate = info.sampleRate;
+                    channels = info.channels;
+                }
+
+                d["bpm"] = bpm;
+                d["key"] = key;
+                d["camelot"] = camelot;
+                d["genre"] = genre;
+                d["mood"] = mood;
+                d["duration"] = duration;
+                d["sampleRate"] = sampleRate;
+                d["channels"] = channels;
+                d["ok"] = (bpm > 0.0f || !key.empty() || duration > 0.0);
             }
             res["ok"] = true;
             res["data"] = d;

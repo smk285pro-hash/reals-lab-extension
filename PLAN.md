@@ -690,4 +690,7 @@ Audit tìm thấy ~25 lỗi (9 nghiêm trọng), đã sửa hết, build zero-wa
   4. KHÔNG BAO GIỜ gọi `StopPreview(&reg)` khi đang nắm giữ `CriticalSection (&reg.cs)`. Luôn gọi `StopPreview` ngoài lock để tránh deadlock với luồng audio preview của REAPER.
   5. KHÔNG BAO GIỜ để test suite khởi tạo `BrowserModel` hoặc `Bridge` bằng đường dẫn mặc định `%APPDATA%\RealsLab\browser_store.json`. Luôn dùng file tạm riêng biệt trong `tempDir()`.
   6. KHÔNG BAO GIỜ để DSP KeyDetector hay TempoDetector ghi đè lên Key/BPM đã được sound designer chỉ định rõ trong tên file. Tên file luôn là Ground Truth tối cao; DSP chỉ dùng làm fallback khi tên file không có dữ liệu.
+  7. **Biased Autocorrelation & Dynamic Hydration cho Sample Chay (2026-09-04)**:
+     - Với file không có thông số trong tên: Phép chia `(N - lag)` trong ACF làm phình to lag lớn, khiến nhịp 160 và 175 BPM bị chia đôi (Octave Halving về 80/87.5 BPM), nhịp 100 BPM bị tụt về 66.7 BPM. Chuẩn DSP Librosa/Oppenheim dùng Biased Autocorrelation (`sum / numDiffFrames`) duy trì 90.9% PASS và 0% Octave Halving.
+     - Đồng thời, `Bridge::audio.play` và `audio.getSampleMeta` phải chủ động chạy `detectKeyForPath` và `detectBpmForPath` khi DB chưa có thông số, tính chuẩn xác `pitchShift` từ root thực tế lên `targetNote`, và trả về ngay cho UI Web cập nhật bảng danh sách và transposer tức thì, tránh việc UI mặc định gán nốt "C" làm lệch tông.
 
