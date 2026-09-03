@@ -254,23 +254,24 @@ std::vector<std::vector<float>> FeatureExtractor::computeChromagram(
         }
         const float thresh = maxMag * 0.10f;
 
-        // Skip DC and sub-bass below 27.5 Hz (A0)
+        // Skip sub-bass below 75 Hz (eliminates 21.5Hz F-major bin trap) and above 3500 Hz
         for (size_t k = 1; k + 1 < numBins; ++k) {
             const float mag = stft[t][k];
             if (mag < thresh) continue;
             if (mag < stft[t][k - 1] || mag < stft[t][k + 1]) continue; // local peak picking
 
             const float freq = static_cast<float>(k) * binHz;
-            if (freq < 27.5f || freq > 4186.0f) continue; // C8 max
+            if (freq < 75.0f || freq > 3500.0f) continue;
 
             const float midi = freqToMidi(freq);
             const float nearestNote = std::round(midi);
             const float dist = std::abs(midi - nearestNote);
-            if (dist < 1.0f) {
+            if (dist < 0.85f) {
                 const int n = static_cast<int>(nearestNote);
                 const int pc = (n % 12 + 12) % 12;
                 const float weight = 1.0f - dist;
-                chroma[t][pc] += mag * weight;
+                const float compMag = std::pow(mag, 0.4f);
+                chroma[t][pc] += compMag * weight;
             }
         }
 

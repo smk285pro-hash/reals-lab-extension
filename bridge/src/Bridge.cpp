@@ -180,50 +180,45 @@ struct Bridge::Impl {
     std::chrono::steady_clock::time_point lastTransportCheckTime{};
     bool transportInitialized = false;
 
-    // Helper: detect BPM for a file (DB -> filename regex -> TempoDetector)
+    // Helper: detect BPM for a file (Filename ground truth -> DB -> TempoDetector)
     float detectBpmForPath(const std::string& path) {
         if (path.empty()) return 0.0f;
-        // 1. DB lookup
-        if (auto rec = db.getSampleByPath(path); rec.has_value() && rec->bpm > 30.0 && rec->bpm < 300.0) {
-            LOG_INFO("SYNC_DIAG", "detectBpmForPath: found in DB: " + path + " -> " + std::to_string(rec->bpm));
-            return static_cast<float>(rec->bpm);
-        }
-        // 2. Comprehensive filename regex:
-        //    a. "128bpm", "128.5 BPM", "128_bpm", "128-bpm"
-        //    b. "BPM128", "bpm_128", "tempo_130"
-        //    c. "Drums_128_Am.wav", "[125] Synth.wav", "140_Kick.wav"
+
+        std::string fname;
         try {
-            std::string fname;
-            try {
-                auto p = platform::u8path(path);
-                fname = platform::pathToUtf8(p.filename());
-            } catch (...) { fname = path; }
-            if (fname.empty()) fname = path;
+            auto p = platform::u8path(path);
+            fname = platform::pathToUtf8(p.filename());
+        } catch (...) { fname = path; }
+        if (fname.empty()) fname = path;
 
-            std::smatch m;
-            static const std::vector<std::regex> kRegexes = {
-                std::regex(R"((\d{2,3}(?:\.\d+)?)\s*(?:bpm|tempo))", std::regex_constants::icase),
-                std::regex(R"((?:bpm|tempo)[_\s-]*(\d{2,3}(?:\.\d+)?))", std::regex_constants::icase),
-                std::regex(R"((?:^|[_\s\(\[\-])(\d{2,3})(?:[_\s\)\]\-]|\.(?:wav|mp3|flac|ogg|aif|aiff|m4a|mid|midi)))", std::regex_constants::icase)
-            };
+        // 1. Fast Filename Music Metadata parsing (Strict ground truth)
+        db::SampleRecord fnRec;
+        scanner::BackgroundScanner::parseFilenameMusicMetadata(fname, path, fnRec);
 
-            for (const auto& re : kRegexes) {
-                if (std::regex_search(fname, m, re) && m.size() > 1) {
-                    float v = std::stof(m[1].str());
-                    if (v >= 50.0f && v <= 240.0f) {
-                        LOG_INFO("SYNC_DIAG", "detectBpmForPath: found from filename regex: " + fname + " -> " + std::to_string(v));
-                        return v;
-                    }
-                }
-                if (std::regex_search(path, m, re) && m.size() > 1) {
-                    float v = std::stof(m[1].str());
-                    if (v >= 50.0f && v <= 240.0f) {
-                        LOG_INFO("SYNC_DIAG", "detectBpmForPath: found from path regex: " + path + " -> " + std::to_string(v));
-                        return v;
-                    }
-                }
+        // 2. DB lookup
+        if (auto rec = db.getSampleByPath(path); rec.has_value()) {
+            if (fnRec.bpm > 0.0 && std::abs(rec->bpm - fnRec.bpm) > 0.1) {
+                auto r = rec.value();
+                r.bpm = fnRec.bpm;
+                db.upsertSample(r);
+                return static_cast<float>(fnRec.bpm);
             }
-        } catch (...) {}
+            if (rec->bpm > 30.0 && rec->bpm < 300.0) {
+                // Clear fake 50.0 BPM on one-shot kick/clap/snare
+                if (std::abs(rec->bpm - 50.0) < 0.01 && fnRec.bpm == 0.0 &&
+                    (rec->genre == "Kick" || rec->genre == "Clap" || rec->genre == "Snare" || rec->genre == "Hi-Hat" || rec->genre == "Percussion")) {
+                    auto r = rec.value();
+                    r.bpm = 0.0;
+                    db.upsertSample(r);
+                    return 0.0f;
+                }
+                return static_cast<float>(rec->bpm);
+            }
+        }
+
+        if (fnRec.bpm > 0.0) {
+            return static_cast<float>(fnRec.bpm);
+        }
 
         // MIDI files do not have PCM audio waveforms for TempoDetector
         const std::string lowerP = platform::toLowerUtf8(path);
@@ -234,100 +229,75 @@ struct Bridge::Impl {
         // 3. Local TempoDetector (decode up to 30s mono)
         float bpm = audio::Engine::detectBpm(path);
         if (bpm >= 40.0f && bpm <= 250.0f) {
-            // cache into DB for next time
             if (auto rec = db.getSampleByPath(path); rec.has_value()) {
                 auto r = rec.value();
                 r.bpm = bpm;
                 db.upsertSample(r);
             }
-            LOG_INFO("SYNC_DIAG", "detectBpmForPath: detected via TempoDetector: " + path + " -> " + std::to_string(bpm));
             return bpm;
         }
-        LOG_INFO("SYNC_DIAG", "detectBpmForPath: could not detect BPM for: " + path);
         return 0.0f;
     }
 
-    // Helper: detect musical key for a file (DB -> filename -> KeyDetector)
+    // Helper: detect musical key for a file (Filename ground truth -> DB -> KeyDetector)
     std::string detectKeyForPath(const std::string& path) {
         if (path.empty()) return {};
-        // 1. DB lookup
+
+        std::string fname;
+        try {
+            auto p = platform::u8path(path);
+            fname = platform::pathToUtf8(p.filename());
+        } catch (...) { fname = path; }
+        if (fname.empty()) fname = path;
+
+        // 1. Fast Filename Music Metadata parsing (Strict ground truth)
+        db::SampleRecord fnRec;
+        scanner::BackgroundScanner::parseFilenameMusicMetadata(fname, path, fnRec);
+
+        // 2. DB lookup
         if (auto rec = db.getSampleByPath(path); rec.has_value() && !rec->keyRoot.empty()) {
+            // Check if DB is holding the bogus "F Major" while filename has an explicit key
+            if (!fnRec.keyRoot.empty() && rec->keyRoot == "F" && rec->keyMode == "major" &&
+                (fnRec.keyRoot != "F" || fnRec.keyMode != "major")) {
+                auto r = rec.value();
+                r.keyRoot = fnRec.keyRoot;
+                r.keyMode = fnRec.keyMode;
+                r.camelot = fnRec.camelot;
+                db.upsertSample(r);
+                return fnRec.keyMode == "minor" ? fnRec.keyRoot + "m" : fnRec.keyRoot;
+            }
+
             std::string k = rec->keyRoot;
-            if (!rec->keyMode.empty()) {
-                if (rec->keyMode == "minor" || rec->keyMode == "Minor") k += "m";
+            if (!rec->keyMode.empty() && (rec->keyMode == "minor" || rec->keyMode == "Minor")) {
+                k += "m";
             }
             return k;
         }
-        // 2. Filename regex & Camelot parsing
-        try {
-            std::string fname;
-            try {
-                auto p = platform::u8path(path);
-                fname = platform::pathToUtf8(p.filename());
-            } catch (...) { fname = path; }
-            if (fname.empty()) fname = path;
 
-            static const std::regex camelotRe(R"((?:^|[\s_\-\(\[])([1-9]|1[0-2])([ABab])(?:[\s_\-\)\]]|\.|$))");
-            std::smatch cm;
-            if (std::regex_search(fname, cm, camelotRe) && cm.size() > 2) {
-                int num = std::stoi(cm[1].str());
-                char let = static_cast<char>(std::toupper(static_cast<unsigned char>(cm[2].str()[0])));
-                static const std::unordered_map<std::string, std::string> cMap = {
-                    {"1B", "B"}, {"2B", "F#"}, {"3B", "C#"}, {"4B", "G#"}, {"5B", "D#"}, {"6B", "A#"},
-                    {"7B", "F"}, {"8B", "C"}, {"9B", "G"}, {"10B", "D"}, {"11B", "A"}, {"12B", "E"},
-                    {"1A", "G#m"}, {"2A", "D#m"}, {"3A", "A#m"}, {"4A", "Fm"}, {"5A", "Cm"}, {"6A", "Gm"},
-                    {"7A", "Dm"}, {"8A", "Am"}, {"9A", "Em"}, {"10A", "Bm"}, {"11A", "F#m"}, {"12A", "C#m"}
-                };
-                std::string keyCombo = std::to_string(num) + let;
-                auto it = cMap.find(keyCombo);
-                if (it != cMap.end()) return it->second;
-            }
+        if (!fnRec.keyRoot.empty()) {
+            return fnRec.keyMode == "minor" ? fnRec.keyRoot + "m" : fnRec.keyRoot;
+        }
 
-            static const std::regex keyRe(R"((?:^|[\s_\-\(\[])([A-G][#b]?)\s*(m|maj|min|minor|major)?(?:\s+(?:maj|min|minor|major))?(?:[\s_\-\)\]]|\.|$))", std::regex_constants::icase);
-            std::smatch km;
-            if (std::regex_search(fname, km, keyRe) && km.size() > 1) {
-                std::string k = km[1].str();
-                std::string mode = (km.size() > 2) ? km[2].str() : "";
-                if (!k.empty()) {
-                    k[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(k[0])));
-                    if (k.size() > 1) {
-                        if (k[1] == 'b' || k[1] == 'B') {
-                            if (k[0] == 'D') k = "C#";
-                            else if (k[0] == 'E') k = "D#";
-                            else if (k[0] == 'G') k = "F#";
-                            else if (k[0] == 'A') k = "G#";
-                            else if (k[0] == 'B') k = "A#";
-                            else if (k[0] == 'C') k = "B";
-                            else if (k[0] == 'F') k = "E";
-                        }
-                    }
-                    std::string lowerMode = platform::toLowerUtf8(mode);
-                    if (lowerMode == "m" || lowerMode == "min" || lowerMode == "minor") {
-                        k += "m";
-                    }
-                    return k;
-                }
-            }
-        } catch (...) {}
         // MIDI files do not have PCM audio waveforms for KeyDetector
         const std::string lowerP = platform::toLowerUtf8(path);
         if (lowerP.ends_with(".mid") || lowerP.ends_with(".midi")) {
             return {};
         }
+
         // 3. Local KeyDetector
         std::string k = audio::Engine::detectKey(path);
         if (!k.empty()) {
             if (auto rec = db.getSampleByPath(path); rec.has_value()) {
                 auto r = rec.value();
-                // Parse k into root/mode for DB
                 std::string root = k;
                 std::string mode = "major";
                 if (!k.empty() && k.back() == 'm') {
-                    root = k.substr(0, k.size()-1);
+                    root = k.substr(0, k.size() - 1);
                     mode = "minor";
                 }
                 r.keyRoot = root;
                 r.keyMode = mode;
+                r.camelot = ai::KeyDetector::toCamelot(root, mode);
                 db.upsertSample(r);
             }
             return k;
@@ -624,6 +594,17 @@ void Bridge::init() {
             std::shared_ptr<db::Database>(&m_impl->db, [](db::Database*){})
         );
         m_impl->scanner = std::make_unique<scanner::BackgroundScanner>(m_impl->db);
+
+        // One-time asynchronous background repair pass to restore corrupted F Major and erroneous BPMs in database
+        static std::atomic<bool> s_repairDone{false};
+        if (!s_repairDone.exchange(true) && m_impl->db.isOpen()) {
+            m_impl->spawnWorker([this]() {
+                try {
+                    scanner::BackgroundScanner::repairDatabaseMetadata(m_impl->db);
+                } catch (...) {}
+            });
+        }
+
         auto st = m_impl->state;
         auto* se = m_impl->searchEngine.get();
         m_impl->scanner->setProgressCallback([st, se](const scanner::ScanProgress& prog) {
@@ -2025,6 +2006,13 @@ std::string Bridge::handle(const std::string& requestJson) {
                     {"currentFile", prog.currentFile}
                 };
             }
+        } else if (cmd == "scanner.repair" || cmd == "db.repair") {
+            size_t count = scanner::BackgroundScanner::repairDatabaseMetadata(m_impl->db);
+            json d;
+            d["repaired"] = count;
+            d["ok"] = true;
+            res["ok"] = true;
+            res["data"] = d;
         } else if (cmd == "reaper.insert") {
             const std::string p = narrowPath(args.value("path", ""));
             double playrate = 1.0;

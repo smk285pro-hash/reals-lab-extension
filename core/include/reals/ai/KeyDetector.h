@@ -23,6 +23,7 @@ public:
     // Helpers to convert tonic & mode to Camelot and OpenKey notations
     [[nodiscard]] static std::string toCamelot(const std::string& key, const std::string& mode);
     [[nodiscard]] static std::string toOpenKey(const std::string& key, const std::string& mode);
+    [[nodiscard]] static std::pair<std::string, std::string> fromCamelot(const std::string& camelot);
 };
 
 } // namespace reals::ai

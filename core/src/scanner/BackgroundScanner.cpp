@@ -108,7 +108,9 @@ std::vector<std::string> splitTokens(std::string_view str) {
     return tokens;
 }
 
-void parseFilenameMusicMetadata(const std::string& filename, const std::string& fullPath, db::SampleRecord& rec) {
+} // namespace
+
+void BackgroundScanner::parseFilenameMusicMetadata(const std::string& filename, const std::string& fullPath, db::SampleRecord& rec) {
     std::string fn = filename;
     const size_t dot = fn.find_last_of('.');
     if (dot != std::string::npos) fn = fn.substr(0, dot);
@@ -197,68 +199,139 @@ void parseFilenameMusicMetadata(const std::string& filename, const std::string& 
         rec.genre = category;
     }
 
-    // 2. Extract BPM from isolated tokens
-    if (rec.bpm <= 0.0) {
-        static const std::regex bpmNumRegex(R"(^(\d{2,3}(?:\.\d+)?)(?:bpm|BPM)?$)");
-        for (const auto& t : tokens) {
+    // 2. Determine One-shot vs Loop characteristics
+    const bool isLoopExplicit = hasToken({"loop", "loops", "toploop", "drumloop", "groove", "buildup", "stem", "drop", "fill"});
+    bool isOneShot = hasToken({"oneshot", "oneshots", "shot", "shots", "hit", "hits"});
+    if (!isLoopExplicit && (category == "Clap" || category == "Kick" || category == "Snare" || category == "Hi-Hat" || category == "Percussion")) {
+        if (rec.durationSec > 0.0 && rec.durationSec < 2.0) {
+            isOneShot = true;
+        }
+    }
+
+    // 3. Extract BPM with strict token priority
+    // Priority 1: Explicit BPM/tempo token like "124BPM", "128 BPM", "BPM128", "tempo 125"
+    bool foundExplicitBpm = false;
+    static const std::regex explicitBpmRe1(R"((\d{2,3}(?:\.\d+)?)\s*(?:bpm|tempo)(?:[\s_\-\.\)\]\+\,]|$))", std::regex_constants::icase);
+    static const std::regex explicitBpmRe2(R"((?:bpm|tempo)[_\s-]*(\d{2,3}(?:\.\d+)?))", std::regex_constants::icase);
+    std::smatch mBpm;
+    if (std::regex_search(fn, mBpm, explicitBpmRe1) && mBpm.size() > 1) {
+        try {
+            double val = std::stod(mBpm[1].str());
+            if (val >= 50.0 && val <= 250.0) {
+                rec.bpm = val;
+                foundExplicitBpm = true;
+            }
+        } catch (...) {}
+    }
+    if (!foundExplicitBpm && std::regex_search(fn, mBpm, explicitBpmRe2) && mBpm.size() > 1) {
+        try {
+            double val = std::stod(mBpm[1].str());
+            if (val >= 50.0 && val <= 250.0) {
+                rec.bpm = val;
+                foundExplicitBpm = true;
+            }
+        } catch (...) {}
+    }
+
+    // Priority 2: Standalone numbers ONLY for loops or non-oneshots (e.g. DS_MDH3_122_drum_full...)
+    if (!foundExplicitBpm && !isOneShot && rec.bpm <= 0.0) {
+        static const std::regex standaloneNumRegex(R"(^(\d{2,3})$)");
+        for (size_t i = 0; i < tokens.size(); ++i) {
+            const auto& t = tokens[i];
+            // Skip if preceded by an instrument category (e.g. "Kick 50", "Clap 50", "Snare 50", "Bass 01")
+            if (i > 0) {
+                const std::string prev = toLower(tokens[i - 1]);
+                if (prev == "kick" || prev == "clap" || prev == "snare" || prev == "hat" ||
+                    prev == "percussion" || prev == "tom" || prev == "crash" || prev == "ride" ||
+                    prev == "vocal" || prev == "vocals" || prev == "vox" || prev == "shot" || prev == "fx") {
+                    continue;
+                }
+            }
             std::smatch m;
-            if (std::regex_match(t, m, bpmNumRegex)) {
+            if (std::regex_match(t, m, standaloneNumRegex)) {
                 try {
                     double val = std::stod(m[1].str());
-                    if (val >= 50.0 && val <= 220.0) {
+                    if (val >= 60.0 && val <= 200.0) {
                         rec.bpm = val;
                         break;
                     }
                 } catch (...) {}
             }
         }
+    } else if (isOneShot && !foundExplicitBpm) {
+        // One-shots without explicit BPM tag do not carry a musical tempo
+        rec.bpm = 0.0;
     }
 
-    // 3. Extract Musical Key (ONLY for tonal/melodic samples; drum/perc/fx are unpitched)
-    bool isUnpitched = (category == "Clap" || category == "Hi-Hat" || category == "Kick" ||
-                        category == "Snare" || category == "Percussion" || category == "Drums" ||
-                        category == "FX");
+    // 4. Extract Musical Key (support Camelot, explicit key+mode, and trailing note names)
+    const bool isTunedOrPitched = hasToken({"bass", "lead", "synth", "piano", "guitar", "strings", "brass", "flute",
+                                           "vocal", "vocals", "vox", "arp", "pad", "chord", "melody", "808", "sub",
+                                           "tuned", "ambiance", "drone"});
+    const bool isUnpitched = !isTunedOrPitched && (category == "Clap" || category == "Hi-Hat" || category == "Kick" ||
+                              category == "Snare" || category == "Percussion" || category == "Drums" ||
+                              category == "FX");
+
     if (!isUnpitched && rec.keyRoot.empty()) {
-        static const std::regex keyTokenRegex(R"(^([A-Ga-g][#b]?)(m|min|minor|maj|major)?$)");
-        for (const auto& t : tokens) {
-            const std::string tl = toLower(t);
-            if (kStopWords.find(tl) != kStopWords.end()) {
-                continue;
+        // A. Camelot code: e.g. 8A, 11B, 4A, 12A
+        static const std::regex camelotRe(R"((?:^|[_\s\-\(\[\,])([1-9]|1[0-2])([ABab])(?:[_\s\-\.\)\]\+\,]|\.(?:wav|mp3|flac|ogg|aif|aiff|m4a|mid|midi)|$))");
+        std::smatch cm;
+        if (std::regex_search(fn, cm, camelotRe) && cm.size() > 2) {
+            std::string code = cm[1].str() + static_cast<char>(std::toupper(static_cast<unsigned char>(cm[2].str()[0])));
+            auto [kRoot, kMode] = ai::KeyDetector::fromCamelot(code);
+            if (!kRoot.empty()) {
+                rec.keyRoot = kRoot;
+                rec.keyMode = kMode;
+                rec.camelot = code;
             }
+        }
 
-            std::smatch m;
-            if (std::regex_match(t, m, keyTokenRegex)) {
-                std::string root = m[1].str();
+        // B. Explicit key with mode: e.g. Bbmin, Amin, G#min, C#maj, Cminor, D#m, F#_minor
+        if (rec.keyRoot.empty()) {
+            static const std::regex explicitKeyRe(R"((?:^|[_\s\-\(\[\,])([A-Ga-g][#b]?)\s*(min|minor|m|maj|major)(?:[_\s\-\.\)\]\+\,]|\.(?:wav|mp3|flac|ogg|aif|aiff|m4a|mid|midi)|$))");
+            std::smatch km;
+            if (std::regex_search(fn, km, explicitKeyRe) && km.size() > 1) {
+                std::string root = km[1].str();
                 root[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(root[0])));
-                if (root.size() > 1 && root[1] == 'b') {
-                    root[1] = 'b';
-                }
+                if (root.size() > 1 && root[1] == 'B') root[1] = 'b';
 
-                // If single letter like 'D' or 'E', reject if part of typical noise or short words
-                if (t.size() == 1 && tl.size() == 1 && (tl == "d" || tl == "e" || tl == "a" || tl == "c" || tl == "b" || tl == "f" || tl == "g")) {
-                    // Only accept if filename explicitly contains Key_ or in_ or Camelot
-                    continue;
-                }
-
-                std::string modeStr = m.size() >= 3 ? m[2].str() : "";
-                std::string mode = "major";
+                std::string modeStr = km.size() > 2 ? km[2].str() : "";
                 std::string lowerMode = toLower(modeStr);
-                if (lowerMode == "m" || lowerMode == "min" || lowerMode == "minor" || (t.size() == 2 && t[1] == 'm')) {
+                std::string mode = "major";
+                if (lowerMode == "m" || lowerMode == "min" || lowerMode == "minor") {
                     mode = "minor";
                 }
                 rec.keyRoot = root;
                 rec.keyMode = mode;
                 rec.camelot = ai::KeyDetector::toCamelot(root, mode);
-                break;
+            }
+        }
+
+        // C. Trailing or delimited single key: e.g. _E.wav, - G.wav, _C#_, _D#
+        if (rec.keyRoot.empty()) {
+            static const std::regex trailingKeyRe(R"([_\-\s\(\[](A|B|C|D|E|F|G|a|b|c|d|e|f|g)([#b]?)(?:[_\-\s\)\]\+\,]|\.(?:wav|mp3|flac|ogg|aif|aiff|m4a|mid|midi)|$))");
+            std::smatch tkm;
+            if (std::regex_search(fn, tkm, trailingKeyRe) && tkm.size() > 1) {
+                std::string root = tkm[1].str();
+                root[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(root[0])));
+                if (tkm.size() > 2 && !tkm[2].str().empty()) {
+                    char acc = tkm[2].str()[0];
+                    if (acc == '#' || acc == 'b' || acc == 'B') {
+                        root += (acc == 'B') ? 'b' : acc;
+                    }
+                }
+                rec.keyRoot = root;
+                rec.keyMode = "major";
+                rec.camelot = ai::KeyDetector::toCamelot(root, "major");
             }
         }
     } else if (isUnpitched) {
-        // Clear any accidental key from drum/perc files
         rec.keyRoot.clear();
         rec.keyMode.clear();
         rec.camelot.clear();
     }
 }
+
+namespace {
 
 void analyzeAudioRealWaveform(const std::string& filePath, db::SampleRecord& rec, std::vector<float>& outEmbedding) {
     constexpr ma_uint64 kMaxFrames = 44100 * 8;
@@ -293,17 +366,23 @@ void analyzeAudioRealWaveform(const std::string& filePath, db::SampleRecord& rec
         return;
     }
 
+    const bool isUnpitched = (rec.genre == "Clap" || rec.genre == "Hi-Hat" || rec.genre == "Kick" ||
+                              rec.genre == "Snare" || rec.genre == "Percussion" || rec.genre == "FX");
+
     // 1. Real DSP Key Detection (EDMA + Temperley + Krumhansl Chromagram)
-    // Works on all audio including EDM Tuned Kicks, 808s, Toms, Piano, Strings, Bass, Vocals
-    auto keyRes = ai::KeyDetector::detect(pcm.data(), pcm.size(), sr);
-    if (keyRes.confidence >= 0.35f && !keyRes.key.empty()) {
-        rec.keyRoot = keyRes.key;
-        rec.keyMode = (keyRes.mode == "Minor" || keyRes.mode == "minor") ? "minor" : "major";
-        rec.camelot = keyRes.camelot;
+    // CRIT-KEY-PRESERVE: NEVER overwrite keyRoot if already extracted accurately from filename!
+    if (rec.keyRoot.empty() && !isUnpitched) {
+        auto keyRes = ai::KeyDetector::detect(pcm.data(), pcm.size(), sr);
+        if (keyRes.confidence >= 0.35f && !keyRes.key.empty()) {
+            rec.keyRoot = keyRes.key;
+            rec.keyMode = (keyRes.mode == "Minor" || keyRes.mode == "minor") ? "minor" : "major";
+            rec.camelot = keyRes.camelot;
+        }
     }
 
     // 2. Real DSP Tempo & BPM Detection (Onset envelope + autocorrelation)
-    if (rec.bpm <= 0.0) {
+    // CRIT-BPM-PRESERVE: NEVER overwrite bpm if already extracted accurately from filename or if unpitched one-shot!
+    if (rec.bpm <= 0.0 && !isUnpitched) {
         auto tempoRes = ai::TempoDetector::detect(pcm.data(), pcm.size(), sr);
         if (tempoRes.confidence >= 0.35f && tempoRes.bpm >= 45.0f && tempoRes.bpm <= 220.0f) {
             rec.bpm = tempoRes.bpm;
@@ -813,6 +892,59 @@ void BackgroundScanner::workerThreadFunc(ScanOptions options) {
             m_progress.errorCount++;
         }
     }
+}
+
+size_t BackgroundScanner::repairDatabaseMetadata(db::Database& db) {
+    if (!db.isOpen()) return 0;
+
+    db::QueryFilter filter;
+    filter.limit = -1; // unlimited
+    auto samples = db.querySamples(filter);
+    if (samples.empty()) return 0;
+
+    size_t repairedCount = 0;
+    auto tx = db.makeTransaction();
+
+    for (auto& s : samples) {
+        db::SampleRecord tempRec;
+        tempRec.durationSec = s.durationSec;
+        parseFilenameMusicMetadata(s.filename, s.path, tempRec);
+
+        bool changed = false;
+
+        // 1. Key repair (fix bogus F Major or missing key when filename specifies one)
+        if (!tempRec.keyRoot.empty()) {
+            if (s.keyRoot.empty() ||
+                (s.keyRoot == "F" && s.keyMode == "major" && (tempRec.keyRoot != "F" || tempRec.keyMode != "major")) ||
+                s.keyRoot != tempRec.keyRoot || s.keyMode != tempRec.keyMode) {
+                s.keyRoot = tempRec.keyRoot;
+                s.keyMode = tempRec.keyMode;
+                s.camelot = tempRec.camelot;
+                changed = true;
+            }
+        }
+
+        // 2. BPM repair (correct mismatch with filename explicit BPM or clear fake 50 BPM on one-shots)
+        if (tempRec.bpm > 0.0) {
+            if (std::abs(s.bpm - tempRec.bpm) > 0.1) {
+                s.bpm = tempRec.bpm;
+                changed = true;
+            }
+        } else if (tempRec.bpm == 0.0 && std::abs(s.bpm - 50.0) < 0.01 &&
+                   (s.genre == "Kick" || s.genre == "Clap" || s.genre == "Snare" || s.genre == "Hi-Hat" || s.genre == "Percussion")) {
+            s.bpm = 0.0;
+            changed = true;
+        }
+
+        if (changed) {
+            db.upsertSample(s);
+            ++repairedCount;
+        }
+    }
+
+    tx.commit();
+    LOG_INFO(kTag, "repairDatabaseMetadata: repaired " + std::to_string(repairedCount) + " samples in library.db.");
+    return repairedCount;
 }
 
 } // namespace reals::scanner

@@ -131,7 +131,7 @@ KeyResult KeyDetector::detect(const float* pcm, size_t frames, int sampleRate) {
 }
 
 std::string KeyDetector::toCamelot(const std::string& key, const std::string& mode) {
-    const bool isMajor = (mode == "Major");
+    const bool isMajor = (mode == "Major" || mode == "major");
 
     // Standard Camelot wheel notation
     if (key == "C" || key == "B#") return isMajor ? "8B" : "5A";
@@ -151,7 +151,7 @@ std::string KeyDetector::toCamelot(const std::string& key, const std::string& mo
 }
 
 std::string KeyDetector::toOpenKey(const std::string& key, const std::string& mode) {
-    const bool isMajor = (mode == "Major");
+    const bool isMajor = (mode == "Major" || mode == "major");
 
     // Standard OpenKey notation (1d-12d major, 1m-12m minor). Relative
     // major/minor pairs share the same number (1d = C major, 1m = A minor),
@@ -167,9 +167,41 @@ std::string KeyDetector::toOpenKey(const std::string& key, const std::string& mo
     if (key == "G#" || key == "Ab") return isMajor ? "9d" : "6m";
     if (key == "A") return isMajor ? "4d" : "1m";
     if (key == "A#" || key == "Bb") return isMajor ? "11d" : "8m";
-    if (key == "B" || key == "Cb") return isMajor ? "6d" : "3m";
-
     return isMajor ? "1d" : "1m";
+}
+
+std::pair<std::string, std::string> KeyDetector::fromCamelot(const std::string& camelot) {
+    if (camelot.size() < 2) return {"", ""};
+    std::string c = camelot;
+    for (char& ch : c) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+
+    if (c == "1A") return {"G#", "minor"};
+    if (c == "2A") return {"D#", "minor"};
+    if (c == "3A") return {"A#", "minor"};
+    if (c == "4A") return {"F", "minor"};
+    if (c == "5A") return {"C", "minor"};
+    if (c == "6A") return {"G", "minor"};
+    if (c == "7A") return {"D", "minor"};
+    if (c == "8A") return {"A", "minor"};
+    if (c == "9A") return {"E", "minor"};
+    if (c == "10A") return {"B", "minor"};
+    if (c == "11A") return {"F#", "minor"};
+    if (c == "12A") return {"C#", "minor"};
+
+    if (c == "1B") return {"B", "major"};
+    if (c == "2B") return {"F#", "major"};
+    if (c == "3B") return {"C#", "major"};
+    if (c == "4B") return {"G#", "major"};
+    if (c == "5B") return {"D#", "major"};
+    if (c == "6B") return {"A#", "major"};
+    if (c == "7B") return {"F", "major"};
+    if (c == "8B") return {"C", "major"};
+    if (c == "9B") return {"G", "major"};
+    if (c == "10B") return {"D", "major"};
+    if (c == "11B") return {"A", "major"};
+    if (c == "12B") return {"E", "major"};
+
+    return {"", ""};
 }
 
 } // namespace reals::ai

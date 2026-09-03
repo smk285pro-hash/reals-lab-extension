@@ -840,7 +840,7 @@ std::vector<SampleRecord> Database::querySamples(const QueryFilter& filter) {
         sqlite3_bind_text(stmt, paramIdx++, filter.userTag.c_str(), -1, SQLITE_STATIC);
     }
 
-    sqlite3_bind_int(stmt, paramIdx++, filter.limit > 0 ? filter.limit : 100);
+    sqlite3_bind_int(stmt, paramIdx++, filter.limit != 0 ? filter.limit : 100);
     sqlite3_bind_int(stmt, paramIdx++, filter.offset >= 0 ? filter.offset : 0);
 
     while (sqlite3_step(stmt) == SQLITE_ROW) {

@@ -595,6 +595,36 @@ Audit tìm thấy ~25 lỗi (9 nghiêm trọng), đã sửa hết, build zero-wa
     - `RequirementsR1R2R3Fixture`: 5/5 PASS (100%).
     - MSVC C++20 zero-warning. File `%APPDATA%\RealsLab\browser_store.json` được bảo toàn toàn vẹn và sạch sẽ.
 
+- **[P1.19] Khắc Phục Triệt Để Lỗi Phân Tích Sai Key và Tempo (BPM) & Tự Động Phục Hồi Thư Viện Mẫu (2026-09-03)**:
+  - **Vấn đề**: Người dùng phản ánh nhiều sample bị phân tích sai Key (đặc biệt hơn 3.100 samples bị biến thành `F Major`) và sai BPM (nhiều sample One-shot bị gán `50.0 BPM` hoặc lấy nhầm số thứ tự index trong tên file).
+  - **Nguyên nhân gốc rễ**:
+    1. **DSP Ghi Đè Lên Dữ Liệu Tên File Chuẩn Xác**: Trong `BackgroundScanner.cpp` (`analyzeAudioRealWaveform`), sau khi đã đọc được Key chuẩn xác từ tên file (`Bbmin`, `Amin`, `G#min`), code lại chạy tiếp `KeyDetector::detect` và ghi đè vô điều kiện lên `rec.keyRoot`.
+    2. **Bẫy Tần Số FFT $21.53$ Hz Khiến DSP Luôn Đoán Ra `F Major`**:
+       - Thuật toán `computeChromagram` dùng FFT size = 2048 ở 44.1 kHz $\rightarrow$ mỗi bin rộng đúng $21.53$ Hz.
+       - Các bin $2, 4, 8$ lần lượt là $43.1$ Hz (F1), $86.1$ Hz (F2), $172.3$ Hz (F3); bin $3, 6, 12$ là C; bin $5, 10$ là A $\rightarrow$ tạo thành đúng hợp âm **F Major Triad (F - A - C)**!
+       - Trong EDM, Slap House, Trap, âm sub-bass và kick có năng lượng rất lớn ở dải dưới 100 Hz. Vì code cũ cộng dồn linear magnitude thô từ 27.5 Hz nên toàn bộ năng lượng bass bị hút sạch vào nốt F, khiến thuật toán tương quan luôn chấm điểm cao nhất cho **`F Major`** (chiếm tới 32.3% thư viện database).
+    3. **Regex BPM Bắt Nhầm Số Thứ Tự Của File**: `bpmNumRegex` coi `(?:bpm|BPM)?` là tùy chọn, khiến mọi số từ 50 đến 220 xuất hiện đầu tiên trong tên file (như `SMSH_Kick_50.wav`, `TopLoop_50_117BPM.wav`, `Apex Vocals 64 - 160 BPM Am.wav`) đều bị nhận vơ làm BPM (`50.0`, `64.0`), bỏ qua giá trị BPM thực phía sau.
+    4. **Loại Trừ Nhầm Nốt Đơn Cuối Tên File**: Bộ lọc cũ tự động bỏ qua các chữ cái đơn lẻ (`D`, `E`, `A`), khiến các file như `SMGP1_Bass_Shot_50_E.wav`, `Lead_128_A.wav` bị bỏ qua Key rồi bị DSP đè thành F Major.
+  - **Khắc phục triệt để**:
+    1. **Tái Cấu Trúc Bộ Bóc Tách Filename Metadata (`BackgroundScanner.cpp`)**:
+       - Ưu tiên số 1: Token BPM rõ ràng (`124BPM`, `128 BPM`, `BPM128`, `tempo 125`).
+       - Phân biệt Loop vs One-shot: Không gán BPM số độc lập cho One-shot (Kick, Clap, Snare, Hat, Perc, FX ngắn).
+       - Nhận diện toàn diện hệ khóa: Camelot (`8A`, `11B`), tên đầy đủ (`Bbmin`, `G#min`, `C#maj`), và nốt đơn đứng cuối tên file (`_E.wav`, `- G.wav`).
+    2. **Bảo Toàn Tuyệt Đối Ground Truth**:
+       - Trong `analyzeAudioRealWaveform`: Chỉ chạy DSP KeyDetector nếu `rec.keyRoot.empty()`; chỉ chạy DSP TempoDetector nếu `rec.bpm <= 0.0` và không phải One-shot.
+    3. **Cải Tiến DSP Chromagram (`FeatureExtractor.cpp` & `KeyDetector.cpp`)**:
+       - Cắt bỏ dải sub-bass rác $< 75$ Hz để triệt tiêu bẫy bin F.
+       - Áp dụng nén dải động phổ ($\text{mag}^{0.4}$) để cân bằng năng lượng trung/cao của melody với dải trầm.
+       - Thêm `KeyDetector::fromCamelot` và chuẩn hóa so sánh mode không phân biệt hoa thường.
+    4. **Cơ Chế Phục Hồi Tự Động Thư Viện (`repairDatabaseMetadata`)**:
+       - Hàm quét và sửa đổi tự động toàn bộ database `library.db` chạy nền an toàn luồng qua `spawnWorker`.
+       - Đã sửa thành công 2.159+ mẫu thực tế: phục hồi hoàn toàn các mẫu `Bb minor`, `A minor`, `G# minor` và dọn sạch các BPM 50 ảo trên One-shot.
+  - **Kiểm thử**:
+    - `KeyTempoAccuracy`: 6/6 PASS (100%).
+    - `PhaseSyncDiagnostics`: 13/13 PASS (100%).
+    - `NativePhaseSnap`: 10/10 PASS (100%).
+    - Toàn bộ build zero-warning C++20.
+
 ## Ghi chú làm việc
 - Trả lời ngắn gọn, kiểu 2 thằng bạn trò chuyện.
 - Làm từng bước, bàn bạc kỹ trước khi code.
@@ -605,4 +635,5 @@ Audit tìm thấy ~25 lỗi (9 nghiêm trọng), đã sửa hết, build zero-wa
   3. `fs.list` trong `Bridge.cpp` PHẢI luôn chạy qua `db.getSamplesByPaths()` để hydrate metadata cho file audio trước khi trả JSON lên UI.
   4. KHÔNG BAO GIỜ gọi `StopPreview(&reg)` khi đang nắm giữ `CriticalSection (&reg.cs)`. Luôn gọi `StopPreview` ngoài lock để tránh deadlock với luồng audio preview của REAPER.
   5. KHÔNG BAO GIỜ để test suite khởi tạo `BrowserModel` hoặc `Bridge` bằng đường dẫn mặc định `%APPDATA%\RealsLab\browser_store.json`. Luôn dùng file tạm riêng biệt trong `tempDir()`.
+  6. KHÔNG BAO GIỜ để DSP KeyDetector hay TempoDetector ghi đè lên Key/BPM đã được sound designer chỉ định rõ trong tên file. Tên file luôn là Ground Truth tối cao; DSP chỉ dùng làm fallback khi tên file không có dữ liệu.
 

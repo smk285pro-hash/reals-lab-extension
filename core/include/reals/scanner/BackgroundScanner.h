@@ -56,6 +56,13 @@ public:
     // Default supported audio extensions check
     [[nodiscard]] static bool isSupportedAudioExtension(std::string_view filename);
 
+    // Parses music metadata (Category, BPM, Key, Mode, Camelot) from filename and full path.
+    static void parseFilenameMusicMetadata(const std::string& filename, const std::string& fullPath, db::SampleRecord& rec);
+
+    // Fast repair pass across existing records in database: fixes misparsed keys (e.g. bogus F Major)
+    // and erroneous BPMs from filename ground-truth without re-decoding audio. Returns number of records repaired.
+    static size_t repairDatabaseMetadata(db::Database& db);
+
 private:
     void coordinatorThreadFunc(std::vector<std::string> roots, ScanOptions options);
     void workerThreadFunc(ScanOptions options);
