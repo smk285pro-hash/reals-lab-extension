@@ -403,6 +403,10 @@ public:
     }
 
     ~DspPreviewSource() override {
+        // Wait briefly for any in-flight GetSamples call on REAPER audio thread to exit
+        for (int i = 0; i < 50 && m_activeReaders.load(std::memory_order_acquire) > 0; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
         cleanup();
         if (m_src) {
             delete m_src;
@@ -459,6 +463,18 @@ public:
             return;
         }
 
+        struct ReaderGuard {
+            std::atomic<int>& count;
+            explicit ReaderGuard(std::atomic<int>& c) : count(c) { count.fetch_add(1, std::memory_order_acquire); }
+            ~ReaderGuard() { count.fetch_sub(1, std::memory_order_release); }
+        };
+        ReaderGuard rg(m_activeReaders);
+
+        if (!m_src) {
+            block->samples_out = 0;
+            return;
+        }
+
         // Capture operating sample rate from REAPER's first GetSamples call.
         // PlayPreviewEx calls us at PROJECT rate (e.g. 48000), which may differ
         // from the source file rate (e.g. 44100). We must operate at project
@@ -486,7 +502,7 @@ public:
 
         // ── Bit-perfect bypass: ratio ≈ 1.0 and pitch ≈ 0.0 ──
         // Read directly from underlying source without élastique processing.
-        // Handles mono→stereo duplication when source is mono but output is stereo.
+        // Handles mono→stereo or multichannel routing cleanly without buffer overrun.
         const bool isBypass = (std::abs(currentRatio - 1.0) <= 0.003 &&
                                std::abs(currentPitch) <= 0.02);
         if (isBypass) {
@@ -495,32 +511,45 @@ public:
                 m_src->GetSamples(block);
                 m_rawTimePos = block->time_s + static_cast<double>(block->samples_out) / blockRate;
                 m_lastTimelinePos = block->time_s + static_cast<double>(block->samples_out) / blockRate;
+                if (block->samples_out == 0) m_streamFinished.store(true, std::memory_order_relaxed);
                 return;
             }
-            // Mono source → stereo output: read mono, duplicate to L+R
             if (m_rawReadBuf.size() < static_cast<size_t>(requestedLength * m_srcChannels)) {
                 m_rawReadBuf.resize(static_cast<size_t>(requestedLength * m_srcChannels));
             }
-            PCM_source_transfer_t monoTransfer{};
-            monoTransfer.time_s = block->time_s;
-            monoTransfer.samplerate = blockRate;
-            monoTransfer.nch = m_srcChannels;
-            monoTransfer.length = requestedLength;
-            monoTransfer.samples = m_rawReadBuf.data();
-            monoTransfer.samples_out = 0;
-            m_src->GetSamples(&monoTransfer);
-            const int got = monoTransfer.samples_out;
-            // Demux mono to stereo (duplicate each sample to L and R)
-            for (int i = 0; i < got; ++i) {
-                const ReaSample s = m_rawReadBuf[i];
-                block->samples[i * outChannels + 0] = s;
-                block->samples[i * outChannels + 1] = s;
-                for (int ch = 2; ch < outChannels; ++ch)
-                    block->samples[i * outChannels + ch] = 0.0;
+            PCM_source_transfer_t rawTransfer{};
+            rawTransfer.time_s = block->time_s;
+            rawTransfer.samplerate = blockRate;
+            rawTransfer.nch = m_srcChannels;
+            rawTransfer.length = requestedLength;
+            rawTransfer.samples = m_rawReadBuf.data();
+            rawTransfer.samples_out = 0;
+            m_src->GetSamples(&rawTransfer);
+            const int got = rawTransfer.samples_out;
+
+            if (outChannels == 1) {
+                // Stereo/multichannel downmixed to mono
+                for (int i = 0; i < got; ++i) {
+                    double sum = 0.0;
+                    for (int ch = 0; ch < m_srcChannels; ++ch) sum += m_rawReadBuf[i * m_srcChannels + ch];
+                    block->samples[i] = static_cast<ReaSample>(sum / m_srcChannels);
+                }
+            } else {
+                // Mono or stereo mapped to stereo / multichannel output
+                for (int i = 0; i < got; ++i) {
+                    const ReaSample sL = m_rawReadBuf[i * m_srcChannels];
+                    const ReaSample sR = (m_srcChannels > 1) ? m_rawReadBuf[i * m_srcChannels + 1] : sL;
+                    block->samples[i * outChannels + 0] = sL;
+                    block->samples[i * outChannels + 1] = sR;
+                    for (int ch = 2; ch < outChannels; ++ch) {
+                        block->samples[i * outChannels + ch] = 0.0;
+                    }
+                }
             }
             block->samples_out = got;
             m_rawTimePos = block->time_s + static_cast<double>(got) / blockRate;
             m_lastTimelinePos = block->time_s + static_cast<double>(got) / blockRate;
+            if (got == 0) m_streamFinished.store(true, std::memory_order_relaxed);
             return;
         }
 
@@ -550,47 +579,82 @@ public:
         const double expectedTime = m_lastTimelinePos;
         constexpr double kSeekThresholdSeconds = 0.02; // 20ms tolerance
         if (m_lastTimelinePos < 0.0 || std::abs(block->time_s - expectedTime) > kSeekThresholdSeconds) {
-            // Seek detected: reset shifter and map timeline position to raw file position.
-            // GetLength() returns rawLen/ratio, so block->time_s is in output time space.
-            // Map back to raw source time: rawPos = outputPos * ratio.
             m_shifter->Reset();
             m_rawTimePos = block->time_s * currentRatio;
             m_eofReached = false;
+            m_streamFinished.store(false, std::memory_order_relaxed);
         }
 
         int totalFramesRendered = 0;
-
         constexpr int kChunkFrames = 2048;
-        // Raw read buffer: sized for source channels (may be mono)
+
         if (m_rawReadBuf.size() < static_cast<size_t>(kChunkFrames * m_srcChannels)) {
             m_rawReadBuf.resize(static_cast<size_t>(kChunkFrames * m_srcChannels));
         }
-        // Demux buffer for mono→stereo conversion before feeding shifter
         const bool needsDemux = (m_srcChannels < m_nch);
         std::vector<ReaSample>& demuxBuf = m_demuxBuf;
         if (needsDemux && demuxBuf.size() < static_cast<size_t>(kChunkFrames * m_nch)) {
             demuxBuf.resize(static_cast<size_t>(kChunkFrames * m_nch));
         }
 
+        // Dedicated scratch buffer if output channels != 2 (prevents stride/buffer overflow)
+        if (outChannels != 2 && m_shifterOutBuf.size() < static_cast<size_t>(requestedLength * m_nch)) {
+            m_shifterOutBuf.resize(static_cast<size_t>(requestedLength * m_nch));
+        }
+
         int maxIterations = (requestedLength / kChunkFrames + 4) * 4;
         while (totalFramesRendered < requestedLength && maxIterations-- > 0) {
-            // Try to pull processed samples from the pitch shifter
             const int remaining = requestedLength - totalFramesRendered;
-            ReaSample* outPtr = block->samples + (totalFramesRendered * outChannels);
-            const int got = m_shifter->GetSamples(remaining, outPtr);
+            ReaSample* outPtr = (outChannels == 2)
+                ? (block->samples + (totalFramesRendered * 2))
+                : m_shifterOutBuf.data();
 
+            const int got = m_shifter->GetSamples(remaining, outPtr);
             if (got > 0) {
+                if (outChannels != 2) {
+                    if (outChannels == 1) {
+                        for (int i = 0; i < got; ++i) {
+                            block->samples[totalFramesRendered + i] = 0.5 * (m_shifterOutBuf[i * 2] + m_shifterOutBuf[i * 2 + 1]);
+                        }
+                    } else {
+                        for (int i = 0; i < got; ++i) {
+                            const int dstIdx = (totalFramesRendered + i) * outChannels;
+                            block->samples[dstIdx + 0] = m_shifterOutBuf[i * 2 + 0];
+                            block->samples[dstIdx + 1] = m_shifterOutBuf[i * 2 + 1];
+                            for (int ch = 2; ch < outChannels; ++ch) {
+                                block->samples[dstIdx + ch] = 0.0;
+                            }
+                        }
+                    }
+                }
                 totalFramesRendered += got;
                 if (totalFramesRendered >= requestedLength) break;
             }
 
             if (m_eofReached) {
-                // If EOF was reached on underlying source, flush shifter
                 m_shifter->FlushSamples();
                 const int remainingFlush = requestedLength - totalFramesRendered;
-                ReaSample* flushPtr = block->samples + (totalFramesRendered * outChannels);
+                ReaSample* flushPtr = (outChannels == 2)
+                    ? (block->samples + (totalFramesRendered * 2))
+                    : m_shifterOutBuf.data();
                 const int flushed = m_shifter->GetSamples(remainingFlush, flushPtr);
                 if (flushed > 0) {
+                    if (outChannels != 2) {
+                        if (outChannels == 1) {
+                            for (int i = 0; i < flushed; ++i) {
+                                block->samples[totalFramesRendered + i] = 0.5 * (m_shifterOutBuf[i * 2] + m_shifterOutBuf[i * 2 + 1]);
+                            }
+                        } else {
+                            for (int i = 0; i < flushed; ++i) {
+                                const int dstIdx = (totalFramesRendered + i) * outChannels;
+                                block->samples[dstIdx + 0] = m_shifterOutBuf[i * 2 + 0];
+                                block->samples[dstIdx + 1] = m_shifterOutBuf[i * 2 + 1];
+                                for (int ch = 2; ch < outChannels; ++ch) {
+                                    block->samples[dstIdx + ch] = 0.0;
+                                }
+                            }
+                        }
+                    }
                     totalFramesRendered += flushed;
                 }
                 break;
@@ -612,7 +676,6 @@ public:
                 ReaSample* inBuf = m_shifter->GetBuffer(rawTransfer.samples_out);
                 if (inBuf) {
                     if (needsDemux) {
-                        // Mono → stereo: duplicate each mono sample to all shifter channels
                         for (int i = 0; i < rawTransfer.samples_out; ++i) {
                             const ReaSample s = m_rawReadBuf[i * m_srcChannels];
                             for (int ch = 0; ch < m_nch; ++ch) {
@@ -620,7 +683,6 @@ public:
                             }
                         }
                     } else {
-                        // Channels match — direct copy
                         std::memcpy(inBuf, m_rawReadBuf.data(),
                                     static_cast<size_t>(rawTransfer.samples_out * m_nch) * sizeof(ReaSample));
                     }
@@ -633,6 +695,9 @@ public:
 
         block->samples_out = totalFramesRendered;
         m_lastTimelinePos = block->time_s + static_cast<double>(totalFramesRendered) / blockRate;
+        if (totalFramesRendered == 0 && m_eofReached) {
+            m_streamFinished.store(true, std::memory_order_relaxed);
+        }
     }
 
     void GetPeakInfo(PCM_source_peaktransfer_t* block) override {
@@ -681,6 +746,7 @@ public:
 
     [[nodiscard]] double getTimeRatio() const { return m_timeRatio.load(std::memory_order_relaxed); }
     [[nodiscard]] double getPitchSemitones() const { return m_pitchSemitones.load(std::memory_order_relaxed); }
+    [[nodiscard]] bool isStreamFinished() const { return m_streamFinished.load(std::memory_order_relaxed); }
 
 private:
     void initShifter() {
@@ -719,6 +785,8 @@ private:
     std::atomic<bool> m_loopActive{false};
     std::atomic<double> m_loopBeats{0.0};
     std::atomic<double> m_loopSampleBpm{0.0};
+    std::atomic<int> m_activeReaders{0};
+    std::atomic<bool> m_streamFinished{false};
     double m_srate = 44100.0;
     double m_operatingRate = 0.0;  // Project rate captured from first GetSamples() call
     int m_srcChannels = 2;   // Original source channel count (may be 1 for mono)
@@ -727,8 +795,9 @@ private:
     double m_lastTimelinePos = -1.0;
     bool m_eofReached = false;
     std::vector<ReaSample> m_rawReadBuf;
-    std::vector<ReaSample> m_demuxBuf;  // Scratch buffer for mono→stereo demuxing
-    int m_diagCounter = 0;             // Diagnostic: limit log spam
+    std::vector<ReaSample> m_demuxBuf;      // Scratch buffer for mono→stereo demuxing
+    std::vector<ReaSample> m_shifterOutBuf; // Scratch buffer for non-stereo output channel mapping
+    int m_diagCounter = 0;                  // Diagnostic: limit log spam
 };
 
 struct ReaperHostPreviewState {
@@ -752,27 +821,41 @@ struct ReaperHostPreviewState {
 
     void stopAndClear() {
         if (!csInitialized) return;
-#ifdef _WIN32
-        EnterCriticalSection(&reg.cs);
-#else
-        pthread_mutex_lock(&reg.mutex);
-#endif
-        if (isPlaying.load(std::memory_order_relaxed)) {
-            if (StopPreview) StopPreview(&reg);
-            isPlaying.store(false, std::memory_order_relaxed);
+
+        // 1. Tell REAPER to stop playing OUTSIDE the critical section.
+        // Calling StopPreview outside reg.cs prevents ABBA deadlocks where REAPER's
+        // audio preview thread is blocked on reg.cs while StopPreview is waiting for it!
+        if (isPlaying.exchange(false, std::memory_order_acq_rel)) {
+            if (StopPreview) {
+                StopPreview(&reg);
+            }
         }
-        if (reg.src) {
-            delete reg.src;
+
+        // 2. Detach pointers under critical section lock
+        PCM_source* srcToDelete = nullptr;
+        {
+#ifdef _WIN32
+            EnterCriticalSection(&reg.cs);
+#else
+            pthread_mutex_lock(&reg.mutex);
+#endif
+            srcToDelete = reg.src;
             reg.src = nullptr;
-        }
-        dspWrapper = nullptr;
-        currentPath.clear();
-        durationSeconds = 0.0;
+            dspWrapper = nullptr;
+            currentPath.clear();
+            durationSeconds = 0.0;
 #ifdef _WIN32
-        LeaveCriticalSection(&reg.cs);
+            LeaveCriticalSection(&reg.cs);
 #else
-        pthread_mutex_unlock(&reg.mutex);
+            pthread_mutex_unlock(&reg.mutex);
 #endif
+        }
+
+        // 3. Delete detached source OUTSIDE the lock.
+        // DspPreviewSource destructor safely waits for any active reader to finish.
+        if (srcToDelete) {
+            delete srcToDelete;
+        }
     }
 
     ~ReaperHostPreviewState() {
@@ -1287,28 +1370,6 @@ public:
                 t.fullBeats = fb;
             }
         }
-
-        char modeBuf[128] = {0};
-        char srateBuf[64] = {0};
-        char bsizeBuf[64] = {0};
-        char outLatBuf[64] = {0};
-        if (GetAudioDeviceInfo) {
-            GetAudioDeviceInfo("MODE", modeBuf, sizeof(modeBuf));
-            GetAudioDeviceInfo("SRATE", srateBuf, sizeof(srateBuf));
-            GetAudioDeviceInfo("BSIZE", bsizeBuf, sizeof(bsizeBuf));
-            GetAudioDeviceInfo("OUT_LAT", outLatBuf, sizeof(outLatBuf));
-        }
-
-        LOG_INFO("REAPER_TRANSPORT",
-                 "playState=" + std::to_string(t.playState) +
-                 " audiblePos=" + std::to_string(t.playPosition) +
-                 " devMode=" + std::string(modeBuf) +
-                 " bsize=" + std::string(bsizeBuf) +
-                 " srate=" + std::string(srateBuf) +
-                 " bpm=" + std::to_string(t.bpm) +
-                 " fullBeats=" + std::to_string(t.fullBeats) +
-                 " measure=" + std::to_string(t.measure) +
-                 " sig=" + std::to_string(t.beatsPerMeasure) + "/" + std::to_string(t.denom));
         return t;
     }
 
@@ -1322,28 +1383,18 @@ public:
         g_hostPreview.initCS();
         g_hostPreview.stopAndClear();
 
-#ifdef _WIN32
-        EnterCriticalSection(&g_hostPreview.reg.cs);
-#else
-        pthread_mutex_lock(&g_hostPreview.reg.mutex);
-#endif
+        // Open PCM source and create DspPreviewSource OUTSIDE the critical section
+        // to prevent holding reg.cs during disk I/O or codec initialization.
         PCM_source* rawSrc = PCM_Source_CreateFromFileEx(path.c_str(), true);
         if (!rawSrc) {
-#ifdef _WIN32
-            LeaveCriticalSection(&g_hostPreview.reg.cs);
-#else
-            pthread_mutex_unlock(&g_hostPreview.reg.mutex);
-#endif
             LOG_ERROR(kTag, "playHostPreview: PCM_Source_CreateFromFileEx failed for " + path);
             return false;
         }
 
-        PCM_source* finalSrc = rawSrc;
         // Always wrap with DspPreviewSource so real-time setTimeRatio/setPitchSemitones
         // can be applied later when user toggles Sync BPM. The wrapper handles bit-perfect
         // bypass internally when ratio ≈ 1.0 and pitch ≈ 0.0 — zero processing overhead.
         auto* dsp = new DspPreviewSource(rawSrc, playrate, pitchSemitones);
-        finalSrc = dsp;
         g_hostPreview.dspWrapper = dsp;
         // Bar-grid looping: wrap at the nominal loop (loopBeats at sampleBpm) so a
         // reverb tail / encoder padding does not drift the loop off the DAW grid.
@@ -1359,8 +1410,13 @@ public:
             LOG_INFO(kTag, "playHostPreview: DspPreviewSource bypass mode (ratio≈1.0, pitch≈0.0)");
         }
 
-        g_hostPreview.reg.src = finalSrc;
-        g_hostPreview.durationSeconds = finalSrc->GetLength();
+#ifdef _WIN32
+        EnterCriticalSection(&g_hostPreview.reg.cs);
+#else
+        pthread_mutex_lock(&g_hostPreview.reg.mutex);
+#endif
+        g_hostPreview.reg.src = dsp;
+        g_hostPreview.durationSeconds = dsp->GetLength();
         g_hostPreview.reg.curpos = std::max(0.0, startPosSeconds);
         g_hostPreview.reg.loop = loop;
         g_hostPreview.reg.volume = std::clamp(volume, 0.0, 2.0);
@@ -1388,12 +1444,23 @@ public:
     }
 
     bool isHostPreviewPlaying() const override {
-        return g_hostPreview.isPlaying.load(std::memory_order_relaxed);
+        if (!g_hostPreview.isPlaying.load(std::memory_order_relaxed)) {
+            return false;
+        }
+        if (g_hostPreview.dspWrapper && g_hostPreview.dspWrapper->isStreamFinished()) {
+            g_hostPreview.isPlaying.store(false, std::memory_order_relaxed);
+            return false;
+        }
+        return true;
     }
 
     double hostPreviewPositionFraction() const override {
         if (!g_hostPreview.isPlaying.load(std::memory_order_relaxed) || g_hostPreview.durationSeconds <= 0.0) {
             return 0.0;
+        }
+        if (g_hostPreview.dspWrapper && g_hostPreview.dspWrapper->isStreamFinished()) {
+            g_hostPreview.isPlaying.store(false, std::memory_order_relaxed);
+            return 1.0;
         }
 #ifdef _WIN32
         EnterCriticalSection(&g_hostPreview.reg.cs);
@@ -1404,6 +1471,9 @@ public:
         const double pos = g_hostPreview.reg.curpos;
         pthread_mutex_unlock(&g_hostPreview.reg.mutex);
 #endif
+        if (pos >= g_hostPreview.durationSeconds && !g_hostPreview.reg.loop) {
+            g_hostPreview.isPlaying.store(false, std::memory_order_relaxed);
+        }
         return std::clamp(pos / g_hostPreview.durationSeconds, 0.0, 1.0);
     }
 

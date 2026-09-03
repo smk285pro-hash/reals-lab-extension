@@ -448,6 +448,7 @@ static ma_data_source_vtable g_dspDataSourceVtable = {
 struct Engine::Impl {
     ma_engine engine{};
     bool engineInited = false;
+    bool deviceInited = false;
 
     ma_sound sound{};
     bool soundLoaded = false;
@@ -487,22 +488,27 @@ bool Engine::init(bool useDevice) {
     if (!m_impl)
         m_impl = std::make_unique<Impl>();
     m_impl->dspSource.useDevice = useDevice;
-    if (m_impl->engineInited)
-        return true;
+    if (m_impl->engineInited) {
+        if (!useDevice || m_impl->deviceInited)
+            return true;
+    }
     if (!useDevice) {
         m_impl->engineInited = true;
         return true;
     }
-    if (ma_engine_init(nullptr, &m_impl->engine) != MA_SUCCESS) {
-        LOG_ERROR(kTag, "ma_engine_init failed");
-        return false;
+    if (!m_impl->deviceInited) {
+        if (ma_engine_init(nullptr, &m_impl->engine) != MA_SUCCESS) {
+            LOG_ERROR(kTag, "ma_engine_init failed");
+            return false;
+        }
+        m_impl->deviceInited = true;
+        const ma_uint32 devSr = ma_engine_get_sample_rate(&m_impl->engine);
+        if (devSr > 0 && m_impl->targetSampleRate.load(std::memory_order_relaxed) == 0) {
+            m_impl->targetSampleRate.store(static_cast<int>(devSr), std::memory_order_relaxed);
+        }
+        LOG_INFO(kTag, "engine ready, targetSr=" + std::to_string(m_impl->targetSampleRate.load(std::memory_order_relaxed)));
     }
     m_impl->engineInited = true;
-    const ma_uint32 devSr = ma_engine_get_sample_rate(&m_impl->engine);
-    if (devSr > 0 && m_impl->targetSampleRate.load(std::memory_order_relaxed) == 0) {
-        m_impl->targetSampleRate.store(static_cast<int>(devSr), std::memory_order_relaxed);
-    }
-    LOG_INFO(kTag, "engine ready, targetSr=" + std::to_string(m_impl->targetSampleRate.load(std::memory_order_relaxed)));
     return true;
 }
 
@@ -510,10 +516,11 @@ void Engine::shutdown() {
     if (!m_impl)
         return;
     stop();
-    if (m_impl->engineInited) {
+    if (m_impl->deviceInited) {
         ma_engine_uninit(&m_impl->engine);
-        m_impl->engineInited = false;
+        m_impl->deviceInited = false;
     }
+    m_impl->engineInited = false;
 }
 
 bool Engine::isReady() const {

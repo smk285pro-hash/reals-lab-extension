@@ -541,6 +541,27 @@ Audit tìm thấy ~25 lỗi (9 nghiêm trọng), đã sửa hết, build zero-wa
     - Bổ sung test case `N10_Spacebar_ReaperPlayToggle_StopsPreviewAndTogglesDAW` trong `TestSuite_NativePhaseSnap.cpp`.
     - Toàn bộ 10/10 test `NativePhaseSnap` và 13/13 test `PhaseSyncDiagnostics` đạt 100% PASS.
 
+- **[P1.17] Triệt Tiêu Deadlock (AppHang) & Bảo Vệ Bộ Nhớ Luồng Preview Âm Thanh (2026-09-03)**:
+  - **Triệu chứng & Bằng chứng Crash**:
+    - Khi đang nghe preview hoặc đổi bài/kéo timeline trong REAPER, REAPER đột ngột bị treo cứng / đóng băng toàn bộ giao diện và tiến trình.
+    - Windows Error Reporting (WER) ghi nhận `AppHang_reaper.exe` (Hang Type: `134218241`, Hang Signature: `1931`) do Deadlock.
+  - **4 nguyên nhân gốc rễ**:
+    1. **Deadlock giữa UI/Main thread và Audio Preview thread**: Trong `ReaperHostPreviewState::stopAndClear()`, lệnh `StopPreview(&reg)` được gọi bên trong `EnterCriticalSection(&reg.cs)`. REAPER SDK quy định audio thread khi nạp buffer preview cũng phải lấy lock `reg.cs`. Khi `StopPreview` chờ audio thread xả block hiện tại nhưng audio thread lại đang đứng chờ `reg.cs`, 2 luồng khóa lẫn nhau vĩnh viễn $\rightarrow$ Deadlock, REAPER AppHang.
+    2. **Use-After-Free (UAF) khi chuyển bài nhanh**: `delete reg.src` được gọi ngay sau `StopPreview` trong khi audio thread của REAPER có thể vẫn đang chạy dở bên trong `DspPreviewSource::GetSamples`, xóa `m_shifter` và `m_src` dưới chân audio thread $\rightarrow$ Crash Access Violation (0xC0000005).
+    3. **Buffer Overrun / Lệch Pha Kênh trên Master Đa Kênh**: `m_shifter` chỉ tạo 2 kênh (stereo), nhưng REAPER Master track có thể là 4 kênh (sidechain), 6 kênh (surround), hoặc 1 kênh (mono). Viết trực tiếp `m_shifter->GetSamples` vào `block->samples` với stride `outChannels` làm sai lệch thứ tự kênh, hoặc gây tràn bộ đệm (heap corruption) khi master ở chế độ mono.
+    4. **EOF Stream Treo & Log Spam 30ms**: Khi sample không loop phát hết file (15.999s), `g_hostPreview.isPlaying` vẫn giữ `true`, khiến `updatePhaseSnapFromHostTransport` ở timer 30ms liên tục seek vào một preview đã chết. Đồng thời `hostTransport()` ghi log `REAPER_TRANSPORT` ra đĩa và gọi `GetAudioDeviceInfo` 4 lần mỗi 30ms làm phình file log lên 95MB và tăng DPC latency gây hụt buffer (xruns).
+  - **Khắc phục triệt để**:
+    1. **Deadlock-Free Stopping**: Gọi `StopPreview(&reg)` **HOÀN TOÀN Ở NGOÀI `reg.cs`**. Sau đó chỉ detach con trỏ `srcToDelete = reg.src; reg.src = nullptr;` trong micro-giây rồi giải phóng ngoài lock.
+    2. **Active Reader Guard (Safe Deallocation)**: Bổ sung `m_activeReaders` và `ReaderGuard` trong `DspPreviewSource`. Destructor `~DspPreviewSource()` chủ động đợi luồng audio thoát khỏi `GetSamples` trước khi xóa `m_shifter` và `m_src`.
+    3. **Safe Output Buffer Stride**: Bổ sung `m_shifterOutBuf` trong `DspPreviewSource`. Khi `outChannels != 2`, render stereo vào scratch buffer rồi định tuyến chuẩn: downmix mono hoặc ghim kênh 1-2 stereo trên master đa kênh, triệt tiêu 100% nguy cơ heap overflow và lệch pha.
+    4. **EOF Tracking**: Đánh dấu `m_streamFinished` khi stream chạm EOF; `isHostPreviewPlaying()` và `hostPreviewPositionFraction()` tự động reset `isPlaying = false`, dứt đuôi sample êm ái.
+    5. **Xóa Sổ Log Spam**: Loại bỏ hoàn toàn ghi log `REAPER_TRANSPORT` và `GetAudioDeviceInfo` mỗi 30ms trong `hostTransport()`.
+    6. **Tách Biệt `deviceInited` trong `Engine::init`**: Sửa lỗi logic trong `Engine.cpp` khiến việc khởi tạo không có device trước đó làm khóa chết `ma_engine_init` ở các lần gọi sau.
+  - **Kiểm thử**:
+    - `AudioEngineCore`: 2/2 PASS (100%).
+    - `NativePhaseSnap`: 10/10 PASS (100%).
+    - MSVC C++20 zero-warning. DLL tự động triển khai `%APPDATA%/REAPER/UserPlugins`.
+
 ## Ghi chú làm việc
 - Trả lời ngắn gọn, kiểu 2 thằng bạn trò chuyện.
 - Làm từng bước, bàn bạc kỹ trước khi code.
@@ -549,4 +570,5 @@ Audit tìm thấy ~25 lỗi (9 nghiêm trọng), đã sửa hết, build zero-wa
   1. KHÔNG BAO GIỜ để sự kiện `audio.state` ghi đè `state.pitchSemitones` hay `state.selectedTargetNote` khi `state.isUserTargetKeyLocked` đang bật.
   2. Luôn truyền `pitchSemitones` trực tiếp trong payload `bridge('audio.play')` để audio engine phát đúng cao độ từ mili-giây đầu tiên.
   3. `fs.list` trong `Bridge.cpp` PHẢI luôn chạy qua `db.getSamplesByPaths()` để hydrate metadata cho file audio trước khi trả JSON lên UI.
+  4. KHÔNG BAO GIỜ gọi `StopPreview(&reg)` khi đang nắm giữ `CriticalSection (&reg.cs)`. Luôn gọi `StopPreview` ngoài lock để tránh deadlock với luồng audio preview của REAPER.
 
