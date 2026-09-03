@@ -11,6 +11,7 @@
 
 #include <nlohmann/json.hpp>
 #include <reals/bridge/Bridge.h>
+#include <reals/platform/Path.h>
 
 namespace reals::test {
 
@@ -426,15 +427,25 @@ public:
 // Bridge Test Harness wrapping Bridge and MockHostActions
 class BridgeTestHarness {
 public:
-    explicit BridgeTestHarness(double initialDawTempo = 120.0)
-        : m_host(std::make_unique<MockHostActions>(initialDawTempo)),
-          m_bridge(std::make_unique<reals::bridge::Bridge>(m_host.get())) {
+    explicit BridgeTestHarness(double initialDawTempo = 120.0, std::string customStorePath = {})
+        : m_host(std::make_unique<MockHostActions>(initialDawTempo)) {
+        if (customStorePath.empty()) {
+            const auto nonce = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+            m_tempStore = reals::platform::joinPath(reals::platform::tempDir(), "reals_test_bridge_store_" + std::to_string(nonce) + ".json");
+            m_bridge = std::make_unique<reals::bridge::Bridge>(m_host.get(), m_tempStore);
+        } else {
+            m_bridge = std::make_unique<reals::bridge::Bridge>(m_host.get(), customStorePath);
+        }
         m_bridge->init();
     }
 
     ~BridgeTestHarness() {
         if (m_bridge) {
             m_bridge->handle(R"({"cmd":"audio.stop","args":{}})");
+        }
+        if (!m_tempStore.empty()) {
+            std::error_code ec;
+            std::filesystem::remove(reals::platform::u8path(m_tempStore), ec);
         }
     }
 
@@ -469,6 +480,7 @@ public:
 private:
     std::unique_ptr<MockHostActions> m_host;
     std::unique_ptr<reals::bridge::Bridge> m_bridge;
+    std::string m_tempStore;
 };
 
 } // namespace reals::test

@@ -677,7 +677,13 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
     m_impl->dspSource.volume.store(m_impl->volume, std::memory_order_relaxed);
     const ma_uint64 decodedFrames = static_cast<ma_uint64>(m_impl->dspSource.pcmData.size() / static_cast<size_t>(channels));
     m_impl->dspSource.totalFrames.store(decodedFrames, std::memory_order_relaxed);
-    m_impl->dspSource.loopBoundaryFrames.store(nominalLoopFrames, std::memory_order_relaxed);
+    uint64_t scaledLoopBoundary = nominalLoopFrames;
+    if (nominalLoopFrames > 0 && nativeSr > 0 && targetSr != nativeSr) {
+        scaledLoopBoundary = static_cast<uint64_t>(std::round(
+            static_cast<double>(nominalLoopFrames) * static_cast<double>(targetSr) / static_cast<double>(nativeSr)
+        ));
+    }
+    m_impl->dspSource.loopBoundaryFrames.store(scaledLoopBoundary, std::memory_order_relaxed);
     m_impl->dspSource.pendingSeekFrame.store(-1, std::memory_order_relaxed);
 
     m_impl->track.sampleRate = targetSr;

@@ -562,6 +562,39 @@ Audit tìm thấy ~25 lỗi (9 nghiêm trọng), đã sửa hết, build zero-wa
     - `NativePhaseSnap`: 10/10 PASS (100%).
     - MSVC C++20 zero-warning. DLL tự động triển khai `%APPDATA%/REAPER/UserPlugins`.
 
+- **[P1.18] Khắc Phục Triệt Để Lỗi Ẩn / Co Cụm Thư Mục Mẫu (Sample Folders Auto-Collapse & Vanishing Bug) & Cách Ly Lưu Trữ Test Suite (2026-09-03)**:
+  - **Vấn đề**: Thư mục sample trong tab Browser rất hay bị ẩn, tự động đóng lại hoặc biến mất hoàn toàn sau một thời gian sử dụng hoặc sau khi chạy test.
+  - **Nguyên nhân gốc rễ**:
+    1. **Test Runner Ghi Đè Đĩa Thật**: `TestSuite_Requirements_R1_R2_R3.cpp`, `TestSuite_PerformanceBenchmark.cpp`, và `TestSuite_PhaseSyncDiagnostics.cpp` (test D2) khởi tạo `BrowserModel` và `Bridge` mà không truyền đường dẫn store cô lập, dẫn tới việc dùng `%APPDATA%\RealsLab\browser_store.json`. Khi test gọi `removeRoot(0)` hoặc chạy benchmark, toàn bộ danh sách thư mục gốc của người dùng bị xóa trắng thành `"roots": []`.
+    2. **Click Chọn Thư Mục Làm Đóng Cây**: Trong `folderRowEl` (`ui-web/app.js`), sự kiện click vào hàng thư mục vừa mở thư mục (`openDir`) vừa gọi `expanded.delete(path)`, khiến việc click chọn xem mẫu trong thư mục làm đóng ngay cây thư mục con.
+    3. **Cơ Chế `autoCollapseTree` Mặc Định Bật**: Cấu hình `state.autoCollapseTree` mặc định là `true`, tự động dọn dẹp và thu gọn mọi thư mục không phải tổ tiên trực tiếp khi người dùng chuyển hướng.
+    4. **Lệch Ký Tự Phân Cách Đường Dẫn (`\` vs `/`)**: Windows dùng backslash trong khi một số luồng web dùng forward slash, làm cho hàm `tidyExpandedFolders` không nhận diện đúng cấu trúc cha-con, dẫn tới xóa nhầm thư mục đang mở.
+    5. **Mất Thư Mục Con Khi Khởi Động Lại**: `initBrowser` khi đọc `reals_last_dir` chỉ phục hồi nếu đường dẫn trùng khớp chính xác với thư mục gốc cấp 1; nếu người dùng đang ở thư mục con cấp sâu, cây thư mục không tự động bung mở tổ tiên.
+  - **Khắc phục triệt để**:
+    1. **Cách Ly Tuyệt Đối Test Suite**:
+       - `core/include/reals/browser/BrowserModel.h` & `BrowserModel.cpp`: Bổ sung `explicit BrowserModel(std::string storePath = {})` và `void setStorePath(std::string storePath)`.
+       - `bridge/include/reals/bridge/Bridge.h` & `Bridge.cpp`: Hỗ trợ tham số `browserStorePath` tùy chọn trong constructor và chuyển tiếp tới `model`.
+       - `tests/framework/MockHostActions.h`: `BridgeTestHarness` tự động sinh file JSON tạm thời trong `platform::tempDir()` và tự hủy khi harness giải phóng.
+       - Cô lập toàn bộ test cases trong `TestSuite_Requirements_R1_R2_R3`, `TestSuite_PerformanceBenchmark`, và `TestSuite_PhaseSyncDiagnostics` sang file tạm riêng biệt, hoàn toàn không chạm vào `%APPDATA%`.
+    2. **Bảo Toàn Trạng Thái Cây Thư Mục (`ui-web/app.js`)**:
+       - Thêm các helper chuẩn hóa: `normPath(p)`, `isSamePath(a, b)`, `isPathUnder(child, parent)`.
+       - Tách biệt hoàn toàn: Nút mũi tên xoay (`twist.onclick`) chỉ chuyên trách đóng/mở; click vào hàng (`row.onclick`) chỉ mở thư mục (`openDir`) và tự động bung mở nếu đang đóng, **tuyệt đối không bao giờ thu gọn thư mục đang mở**.
+       - Tắt mặc định `autoCollapseTree: false` trong toàn bộ mã nguồn và cấu hình người dùng.
+       - Thêm hàm `expandPathAncestors(targetPath)`: Tự động bung mở mọi thư mục cha mẹ từ gốc tới đích khi click mở bất kỳ thư mục con nào hoặc khi nạp lại `reals_last_dir` lúc khởi động.
+       - Thêm `saveExpandedFolders()` lưu trữ trạng thái mở vào `localStorage['reals_expanded']`.
+    3. **Bổ Sung Nút Thu/Mở Sidebar & Chống Co Móp Layout**:
+       - Thêm `#btnToggleTree` vào toolbar (`ui-web/index.html`), kết nối sự kiện chuyển đổi trạng thái ẩn/hiện cây thư mục.
+       - Bổ sung `min-width: 120px` cho `#tree` trong `ui-web/app.css` chống bị co ép khi co giãn cửa sổ.
+    4. **Chuẩn Hóa Khung Loop Audio & Resampling Metric**:
+       - Sửa `nominalLoopFrames` trong `Bridge.cpp` tính toán theo `info.sampleRate` gốc của file WAV.
+       - Cập nhật `core/src/audio/Engine.cpp` tự động co giãn `loopBoundaryFrames` tỉ lệ theo `targetSr / nativeSr` khi có resampling PCM, đảm bảo cả preview native lẫn engine đều loop đúng vạch bar.
+  - **Kiểm thử**:
+    - `PhaseSyncDiagnostics`: 13/13 PASS (100%).
+    - `NativePhaseSnap`: 10/10 PASS (100%).
+    - `Requirements_R3`: 5/5 PASS (100%).
+    - `RequirementsR1R2R3Fixture`: 5/5 PASS (100%).
+    - MSVC C++20 zero-warning. File `%APPDATA%\RealsLab\browser_store.json` được bảo toàn toàn vẹn và sạch sẽ.
+
 ## Ghi chú làm việc
 - Trả lời ngắn gọn, kiểu 2 thằng bạn trò chuyện.
 - Làm từng bước, bàn bạc kỹ trước khi code.
@@ -571,4 +604,5 @@ Audit tìm thấy ~25 lỗi (9 nghiêm trọng), đã sửa hết, build zero-wa
   2. Luôn truyền `pitchSemitones` trực tiếp trong payload `bridge('audio.play')` để audio engine phát đúng cao độ từ mili-giây đầu tiên.
   3. `fs.list` trong `Bridge.cpp` PHẢI luôn chạy qua `db.getSamplesByPaths()` để hydrate metadata cho file audio trước khi trả JSON lên UI.
   4. KHÔNG BAO GIỜ gọi `StopPreview(&reg)` khi đang nắm giữ `CriticalSection (&reg.cs)`. Luôn gọi `StopPreview` ngoài lock để tránh deadlock với luồng audio preview của REAPER.
+  5. KHÔNG BAO GIỜ để test suite khởi tạo `BrowserModel` hoặc `Bridge` bằng đường dẫn mặc định `%APPDATA%\RealsLab\browser_store.json`. Luôn dùng file tạm riêng biệt trong `tempDir()`.
 

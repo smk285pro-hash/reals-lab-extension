@@ -176,7 +176,11 @@ TEST(PhaseSyncDiagnostics, D2_TransportSnapshotTakenAfterDecode_PreviewNotStale)
     auto host = std::make_unique<DecodeAwareHost>(path, 5.0, 13.0);
     DecodeAwareHost* hostPtr = host.get();
 
-    reals::bridge::Bridge bridge(hostPtr);
+    const std::string tempStore = reals::platform::joinPath(reals::platform::tempDir(), "reals_d2_store.json");
+    std::error_code ec;
+    std::filesystem::remove(reals::platform::u8path(tempStore), ec);
+
+    reals::bridge::Bridge bridge(hostPtr, tempStore);
     bridge.init();
 
     json req;
@@ -190,6 +194,7 @@ TEST(PhaseSyncDiagnostics, D2_TransportSnapshotTakenAfterDecode_PreviewNotStale)
     // Vị trí áp dụng phải tương ứng DAW beat 13 (sau decode), không phải 5.
     EXPECT_NEAR(res["data"].value("startFraction", 0.0), 13.0 / 32.0, 0.02);
     bridge.handle(R"({"id":2,"cmd":"audio.stop","args":{}})");
+    std::filesystem::remove(reals::platform::u8path(tempStore), ec);
 }
 
 // ---------------------------------------------------------------------------

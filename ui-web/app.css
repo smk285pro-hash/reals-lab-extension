@@ -558,7 +558,7 @@ select option:hover, select option:focus, select option:checked {
   overflow-anchor:none;
 }
 #tree {
-  width:140px; flex-shrink:0; overflow-y:auto; padding:6px 4px;
+  width:150px; min-width:120px; flex-shrink:0; overflow-y:auto; padding:6px 4px;
   background:var(--bg-sidebar); border-right:1px solid var(--border-subtle);
   font-size:12px; overflow-anchor:none;
 }

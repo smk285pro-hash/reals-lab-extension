@@ -690,12 +690,24 @@ function isMidiFile(f) {
   if (typeof f === 'string') return /\.(mid|midi)$/i.test(f);
   return f.ext === 'mid' || f.ext === 'midi' || /\.(mid|midi)$/i.test(f.name || '') || /\.(mid|midi)$/i.test(f.path || '');
 }
+function normPath(p) {
+  if (!p) return '';
+  return String(p).replace(/[\/\\]+/g, '\\').replace(/\\+$/, '');
+}
+function isSamePath(a, b) {
+  return normPath(a).toLowerCase() === normPath(b).toLowerCase();
+}
+function isPathUnder(child, parent) {
+  const c = normPath(child).toLowerCase();
+  const p = normPath(parent).toLowerCase();
+  if (c === p) return true;
+  return c.startsWith(p + '\\');
+}
 function parentDir(path) {
   if (!path) return path;
-  const sep = path.includes('\\') ? '\\' : '/';
-  const trimmed = path.endsWith(sep) ? path.slice(0, -1) : path;
-  const i = trimmed.lastIndexOf(sep);
-  return i <= 0 ? trimmed : trimmed.slice(0, i);
+  const n = normPath(path);
+  const i = n.lastIndexOf('\\');
+  return i <= 0 ? n : n.slice(0, i);
 }
 function toast(msg) {
   const t = $('#toast');
@@ -742,7 +754,7 @@ const state = {
   originalRootNote: 'C', selectedTargetNote: 'C',
   sampleBpm: 0, sampleKey: 'ORIGINAL', sampleMode: '',
   sampleTags: [], midiNotes: [],
-  autoCollapseTree: true,
+  autoCollapseTree: false,
   displaySize: 'medium',
   subCache: {},
   dirScrolls: {},
@@ -1611,7 +1623,7 @@ async function initSettings() {
   if (cachedExp) {
     try {
       const arr = JSON.parse(cachedExp);
-      if (Array.isArray(arr)) state.expanded = new Set(arr);
+      if (Array.isArray(arr)) state.expanded = new Set(arr.map(normPath));
     } catch {}
   }
 
@@ -1627,7 +1639,7 @@ async function initSettings() {
         applyAccent(cfg.accent || 'orange');
       }
       applyNoise(cfg.noiseOverlay !== false);
-      state.autoCollapseTree = cfg.autoCollapseTree !== false;
+      state.autoCollapseTree = cfg.autoCollapseTree === true;
       applyDisplaySize(cfg.displaySize || 'medium');
       applyNavPosition(cfg.navPosition || 'top');
       applyMiniWaveSetting(localStorage.getItem('reals_mini_wave') === 'true');
@@ -1760,7 +1772,7 @@ function renderSettingsModal() {
       };
     });
 
-    const autoCol = state.autoCollapseTree !== false && cfg.autoCollapseTree !== false;
+    const autoCol = state.autoCollapseTree === true && cfg.autoCollapseTree === true;
     $$('#optAutoCollapse .setting-chip').forEach((c) => {
       c.classList.toggle('active', c.dataset.val === (autoCol ? 'true' : 'false'));
       c.onclick = (e) => {
@@ -1859,14 +1871,16 @@ function getRowH() {
 const VIRT_OVERSCAN = 8;
 
 async function initBrowser() {
-  state.roots = await bridge('fs.roots');
+  const rawRoots = await bridge('fs.roots');
+  state.roots = (rawRoots || []).map((r) => ({ name: r.name, path: normPath(r.path) }));
   if (state.roots.length) state.currentDir = state.roots[0].path;
   // Restore the last visited directory (saved on every openDir call) so the
   // user lands back where they left off instead of always on the first root.
   try {
     const saved = localStorage.getItem('reals_last_dir');
-    if (saved && state.roots.some((r) => r.path === saved)) {
-      state.currentDir = saved;
+    if (saved && state.roots.some((r) => isPathUnder(saved, r.path))) {
+      state.currentDir = normPath(saved);
+      expandPathAncestors(state.currentDir);
     }
   } catch {}
   try {
@@ -1879,10 +1893,8 @@ async function initBrowser() {
 }
 
 async function refreshRoots() {
-  state.roots = await bridge('fs.roots');
-  // The legacy <select id="roots"> dropdown no longer exists in index.html
-  // (roots are surfaced via the folder tree instead), so there's nothing
-  // to render here — we just keep state.roots fresh for renderTree().
+  const rawRoots = await bridge('fs.roots');
+  state.roots = (rawRoots || []).map((r) => ({ name: r.name, path: normPath(r.path) }));
 }
 
 // Removed dead function renderRoots(): the <select id="roots"> it targeted
@@ -1890,10 +1902,11 @@ async function refreshRoots() {
 // folder tree (#treeNodes / #tree) is the only roots surface now.
 
 async function subdirsOf(path) {
-  if (state.subCache[path]) return state.subCache[path];
-  const subs = await bridge('fs.subdirs', { path });
-  state.subCache[path] = subs || [];
-  return state.subCache[path];
+  const np = normPath(path);
+  if (state.subCache[np]) return state.subCache[np];
+  const subs = await bridge('fs.subdirs', { path: np });
+  state.subCache[np] = subs || [];
+  return state.subCache[np];
 }
 
 function isNarrowTreeMode() {
@@ -1903,17 +1916,18 @@ function isNarrowTreeMode() {
 function buildTreeSync(frag, roots, depth = 0) {
   const narrow = isNarrowTreeMode();
   for (const r of roots) {
-    const isExpanded = state.expanded.has(r.path);
-    frag.appendChild(folderRowEl(r.path, r.name, depth));
+    const np = normPath(r.path);
+    const isExpanded = state.expanded.has(np);
+    frag.appendChild(folderRowEl(np, r.name, depth));
     if (isExpanded) {
-      const subs = state.subCache[r.path];
+      const subs = state.subCache[np];
       if (subs && subs.length) {
-        const childRoots = subs.map((s) => ({ name: s, path: joinPath(r.path, s) }));
+        const childRoots = subs.map((s) => ({ name: s, path: joinPath(np, s) }));
         buildTreeSync(frag, childRoots, depth + 1);
       }
       if (narrow) {
         state.treeFilesCache = state.treeFilesCache || {};
-        const files = state.treeFilesCache[r.path];
+        const files = state.treeFilesCache[np];
         if (files && files.length) {
           const limit = Math.min(files.length, 120);
           for (let fi = 0; fi < limit; ++fi) {
@@ -1954,7 +1968,7 @@ async function renderTree() {
   tree.scrollTop = currentScroll;
 
   // 2. PARALLEL BACKGROUND PASS: If any expanded folder is not in cache, fetch in parallel
-  const uncached = Array.from(state.expanded).filter((p) => !state.subCache[p]);
+  const uncached = Array.from(state.expanded).map(normPath).filter((p) => !state.subCache[p]);
   if (uncached.length > 0) {
     await Promise.all(uncached.map(async (p) => {
       try {
@@ -1977,7 +1991,7 @@ async function renderTree() {
   // 3. FL STUDIO NARROW MODE: Fetch files for expanded folders
   if (isNarrowTreeMode()) {
     state.treeFilesCache = state.treeFilesCache || {};
-    const uncachedFiles = Array.from(state.expanded).filter((p) => !state.treeFilesCache[p]);
+    const uncachedFiles = Array.from(state.expanded).map(normPath).filter((p) => !state.treeFilesCache[p]);
     if (uncachedFiles.length > 0) {
       await Promise.all(uncachedFiles.map(async (p) => {
         try {
@@ -1998,31 +2012,81 @@ async function renderTree() {
   }
 }
 
-function tidyExpandedFolders(activePath) {
-  if (!state.autoCollapseTree || !activePath) return;
-  const sep = activePath.includes('\\') ? '\\' : '/';
-  const normActive = (activePath.endsWith('\\') || activePath.endsWith('/'))
-    ? activePath.slice(0, -1)
-    : activePath;
-  const needed = new Set();
-  for (const exp of state.expanded) {
-    const normExp = (exp.endsWith('\\') || exp.endsWith('/')) ? exp.slice(0, -1) : exp;
-    if (normActive === normExp || normActive.startsWith(normExp + '\\') || normActive.startsWith(normExp + '/')) {
-      needed.add(exp);
+function saveExpandedFolders() {
+  if (state.expanded) {
+    try {
+      localStorage.setItem('reals_expanded', JSON.stringify(Array.from(state.expanded).map(normPath)));
+    } catch {}
+  }
+}
+
+function expandPathAncestors(targetPath) {
+  if (!targetPath || !state.roots) return;
+  const nTarget = normPath(targetPath);
+  for (const r of state.roots) {
+    const nRoot = normPath(r.path);
+    if (isPathUnder(nTarget, nRoot)) {
+      state.expanded.add(nRoot);
+      if (nTarget.toLowerCase() !== nRoot.toLowerCase()) {
+        const rel = nTarget.slice(nRoot.length);
+        const parts = rel.split('\\').filter(Boolean);
+        let curr = nRoot;
+        for (const part of parts) {
+          curr += '\\' + part;
+          state.expanded.add(curr);
+        }
+      }
+      break;
     }
   }
-  needed.add(activePath);
+}
+
+function tidyExpandedFolders(activePath) {
+  if (!state.autoCollapseTree || !activePath) return;
+  const nActive = normPath(activePath);
+  const needed = new Set();
+  for (const exp of state.expanded) {
+    const nExp = normPath(exp);
+    if (isPathUnder(nActive, nExp)) {
+      needed.add(nExp);
+    }
+  }
+  needed.add(nActive);
   state.expanded = needed;
 }
 
 function folderRowEl(path, name, depth) {
   const narrow = isNarrowTreeMode();
-  const row = el('div', 'tree-row' + (state.currentDir === path ? ' on' : ''));
+  const nPath = normPath(path);
+  const row = el('div', 'tree-row' + (isSamePath(state.currentDir, nPath) ? ' on' : ''));
   const basePad = narrow ? 3 : 10;
   const stepPad = narrow ? 6 : 12;
   row.style.paddingLeft = basePad + depth * stepPad + 'px';
   row.title = name;
-  row.appendChild(el('span', 'twist', state.expanded.has(path) ? '▼' : '▶'));
+
+  const isExp = state.expanded.has(nPath);
+  const twist = el('span', 'twist', isExp ? '▼' : '▶');
+  twist.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (state.expanded.has(nPath)) {
+      state.expanded.delete(nPath);
+      const prefix = nPath.toLowerCase() + '\\';
+      for (const exp of Array.from(state.expanded)) {
+        if (normPath(exp).toLowerCase().startsWith(prefix)) state.expanded.delete(exp);
+      }
+    } else {
+      if (state.autoCollapseTree) {
+        tidyExpandedFolders(nPath);
+      } else {
+        state.expanded.add(nPath);
+      }
+    }
+    saveExpandedFolders();
+    renderTree();
+  };
+  row.appendChild(twist);
+
   const nameSpan = el('span', 'name');
   if (name.length > 10) {
     const tailLen = Math.max(4, Math.min(8, Math.floor(name.length * 0.3)));
@@ -2032,26 +2096,23 @@ function folderRowEl(path, name, depth) {
     nameSpan.textContent = name;
   }
   row.appendChild(nameSpan);
+
   row.onclick = (e) => {
     e.preventDefault();
-    if (state.expanded.has(path)) {
-      state.expanded.delete(path);
-      const sep = path.includes('\\') ? '\\' : '/';
-      const prefix = (path.endsWith('\\') || path.endsWith('/')) ? path : path + sep;
-      for (const exp of Array.from(state.expanded)) {
-        if (exp.startsWith(prefix)) state.expanded.delete(exp);
-      }
-    } else {
+    // Clicking folder name/row selects and opens folder.
+    // If not expanded, expand it. If already expanded, DO NOT collapse it!
+    if (!state.expanded.has(nPath)) {
       if (state.autoCollapseTree) {
-        tidyExpandedFolders(path);
+        tidyExpandedFolders(nPath);
       } else {
-        state.expanded.add(path);
+        state.expanded.add(nPath);
       }
     }
-    openDir(path);
+    saveExpandedFolders();
+    openDir(nPath);
     renderTree();
   };
-  row.oncontextmenu = (e) => { e.preventDefault(); folderMenu(e, path); };
+  row.oncontextmenu = (e) => { e.preventDefault(); folderMenu(e, nPath); };
   return row;
 }
 
@@ -2223,15 +2284,16 @@ function generateMiniMidiSvg(f) {
 }
 
 function openDir(path) {
+  if (!path) return;
+  const nPath = normPath(path);
   const box = $('#files');
-  if (box && state.currentDir && state.currentDir !== path) {
+  if (box && state.currentDir && !isSamePath(state.currentDir, nPath)) {
     state.dirScrolls[state.currentDir] = box.scrollTop;
   }
-  state.currentDir = path;
-  localStorage.setItem('reals_last_dir', path);
-  if (state.expanded) {
-    localStorage.setItem('reals_expanded', JSON.stringify(Array.from(state.expanded)));
-  }
+  state.currentDir = nPath;
+  localStorage.setItem('reals_last_dir', nPath);
+  expandPathAncestors(nPath);
+  saveExpandedFolders();
   state.similarSource = null;
   state.similarSourceName = null;
   state.searchQ = '';
@@ -3964,19 +4026,20 @@ function fileMenu(e, f) {
 }
 
 function folderMenu(e, path) {
-  const isRoot = state.roots.some((r) => r.path === path);
-  const name = path.split(/[\\/]/).filter(Boolean).pop() || path;
+  const nPath = normPath(path);
+  const isRoot = state.roots.some((r) => isSamePath(r.path, nPath));
+  const name = nPath.split('\\').filter(Boolean).pop() || nPath;
   const items = [
-    { label: tr('browser.ctx.scanNew'), action: () => triggerFolderScan(path, false) },
-    { label: tr('browser.ctx.rescanAll'), action: () => triggerFolderScan(path, true) },
-    { label: tr('browser.ctx.openHere'), action: () => { state.expanded.add(path); openDir(path); renderTree(); } },
-    { label: tr('browser.ctx.setRoot'), action: () => bridge('fs.addRoot', { name, path }).then(() => refreshRoots()).then(() => toast(tr('toast.rootAdded'))) },
-    { label: tr('browser.ctx.copyPath'), action: () => { navigator.clipboard?.writeText(path); toast(tr('toast.copied')); } },
-    { label: tr('browser.ctx.reveal'), action: () => bridge('reaper.reveal', { path }) },
+    { label: tr('browser.ctx.scanNew'), action: () => triggerFolderScan(nPath, false) },
+    { label: tr('browser.ctx.rescanAll'), action: () => triggerFolderScan(nPath, true) },
+    { label: tr('browser.ctx.openHere'), action: () => { state.expanded.add(nPath); openDir(nPath); renderTree(); } },
+    { label: tr('browser.ctx.setRoot'), action: () => bridge('fs.addRoot', { name, path: nPath }).then(() => refreshRoots()).then(() => toast(tr('toast.rootAdded'))) },
+    { label: tr('browser.ctx.copyPath'), action: () => { navigator.clipboard?.writeText(nPath); toast(tr('toast.copied')); } },
+    { label: tr('browser.ctx.reveal'), action: () => bridge('reaper.reveal', { path: nPath }) },
   ];
   if (isRoot) {
     items.push('-');
-    items.push({ label: tr('browser.ctx.removeRoot'), action: () => bridge('fs.removeRoot', { path }).then(() => refreshRoots()).then(renderTree) });
+    items.push({ label: tr('browser.ctx.removeRoot'), action: () => bridge('fs.removeRoot', { path: nPath }).then(() => refreshRoots()).then(renderTree) });
   }
   showMenu(e, items);
 }
@@ -4275,6 +4338,22 @@ async function boot() {
         console.warn('addRoot error:', err);
       }
       folderInput.value = '';
+    };
+  }
+
+  const btnToggleTree = $('#btnToggleTree');
+  if (btnToggleTree) {
+    const tree = $('#tree');
+    const isCol = tree ? tree.classList.contains('collapsed') : false;
+    btnToggleTree.classList.toggle('on', !isCol);
+    btnToggleTree.onclick = () => {
+      if (tree) {
+        tree.classList.toggle('collapsed');
+        const collapsed = tree.classList.contains('collapsed');
+        btnToggleTree.classList.toggle('on', !collapsed);
+        localStorage.setItem('reals_tree_collapsed', collapsed ? 'true' : 'false');
+        drawWaveform();
+      }
     };
   }
 

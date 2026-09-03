@@ -88,7 +88,7 @@ struct IHostActions {
 
 class Bridge {
 public:
-    explicit Bridge(IHostActions* actions);
+    explicit Bridge(IHostActions* actions, std::string browserStorePath = {});
     ~Bridge();
 
     // Wire core singletons (Engine, BrowserModel, Config). Call once at startup.

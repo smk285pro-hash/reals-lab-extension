@@ -51,7 +51,12 @@ public:
 // ============================================================================
 
 TEST(Requirements_R3, FreshInstall_ZeroDefaultRoots) {
-    reals::browser::BrowserModel model;
+    const auto nonce = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    const std::string storeFile = platform::joinPath(platform::tempDir(), "reals_fresh_test_" + std::to_string(nonce) + ".json");
+    std::error_code ec;
+    fs::remove(platform::u8path(storeFile), ec);
+
+    reals::browser::BrowserModel model(storeFile);
     // On fresh initialization without a store file, roots must be completely empty (0 roots)
     const auto roots = model.roots();
     EXPECT_TRUE(roots.empty());
@@ -63,10 +68,16 @@ TEST(Requirements_R3, FreshInstall_ZeroDefaultRoots) {
         EXPECT_NE(r.name, "Desktop");
         EXPECT_NE(r.name, "Downloads");
     }
+    fs::remove(platform::u8path(storeFile), ec);
 }
 
 TEST(Requirements_R3, AddFirstRoot_CleanTransition) {
-    reals::browser::BrowserModel model;
+    const auto nonce = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    const std::string storeFile = platform::joinPath(platform::tempDir(), "reals_add_test_" + std::to_string(nonce) + ".json");
+    std::error_code ec;
+    fs::remove(platform::u8path(storeFile), ec);
+
+    reals::browser::BrowserModel model(storeFile);
     EXPECT_EQ(model.roots().size(), 0u);
 
     const std::string dummyPath = platform::normalizePath(platform::joinPath(platform::tempDir(), "SampleLibrary_Drums"));
@@ -82,10 +93,16 @@ TEST(Requirements_R3, AddFirstRoot_CleanTransition) {
     const bool addedAgain = model.addRoot("Drums Duplicate", dummyPath);
     EXPECT_FALSE(addedAgain);
     EXPECT_EQ(model.roots().size(), 1u);
+    fs::remove(platform::u8path(storeFile), ec);
 }
 
 TEST(Requirements_R3, RemoveLastRoot_RemainsEmpty) {
-    reals::browser::BrowserModel model;
+    const auto nonce = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    const std::string storeFile = platform::joinPath(platform::tempDir(), "reals_remove_test_" + std::to_string(nonce) + ".json");
+    std::error_code ec;
+    fs::remove(platform::u8path(storeFile), ec);
+
+    reals::browser::BrowserModel model(storeFile);
     const std::string pathA = platform::normalizePath(platform::joinPath(platform::tempDir(), "RootA"));
     const std::string pathB = platform::normalizePath(platform::joinPath(platform::tempDir(), "RootB"));
 
@@ -100,6 +117,7 @@ TEST(Requirements_R3, RemoveLastRoot_RemainsEmpty) {
     model.removeRoot(0);
     EXPECT_EQ(model.roots().size(), 0u);
     EXPECT_TRUE(model.roots().empty());
+    fs::remove(platform::u8path(storeFile), ec);
 }
 
 TEST(Requirements_R3, StorePersistence_EmptyStoreIntegrity) {
@@ -107,8 +125,9 @@ TEST(Requirements_R3, StorePersistence_EmptyStoreIntegrity) {
     const std::string storeDir = platform::joinPath(platform::tempDir(), "reals_store_test_" + std::to_string(nonce));
     std::error_code ec;
     fs::create_directories(platform::u8path(storeDir), ec);
+    const std::string storeFile = platform::joinPath(storeDir, "test_store.json");
 
-    reals::browser::BrowserModel model;
+    reals::browser::BrowserModel model(storeFile);
     EXPECT_EQ(model.roots().size(), 0u);
 
     // Save and reload clean empty model
@@ -140,7 +159,7 @@ TEST_F(RequirementsR1R2R3Fixture, GetFavoriteEntries_AggregatesAcrossMultipleFol
     const std::string synthPath = createTestFile("Synths/Leads/Synth_Lead_128bpm_Am.wav");
     const std::string midiPath = createTestFile("MIDI/Melodies/Melody_Chords.mid");
 
-    reals::browser::BrowserModel model;
+    reals::browser::BrowserModel model(platform::joinPath(m_testDir, "fixture_store.json"));
     model.toggleFavorite(kickPath);
     model.toggleFavorite(synthPath);
     model.toggleFavorite(midiPath);
@@ -186,7 +205,7 @@ TEST_F(RequirementsR1R2R3Fixture, GetFavoriteEntries_PrunesNonExistentOrDeletedF
     const std::string validWav = createTestFile("Audio/sample_valid.wav");
     const std::string nonExistentPath = platform::normalizePath(platform::joinPath(m_testDir, "Audio/deleted_sample.wav"));
 
-    reals::browser::BrowserModel model;
+    reals::browser::BrowserModel model(platform::joinPath(m_testDir, "fixture_store.json"));
     model.toggleFavorite(validWav);
     model.toggleFavorite(nonExistentPath);
 
@@ -204,7 +223,7 @@ TEST_F(RequirementsR1R2R3Fixture, GetFavoriteEntries_PreservesFileMetadataAndSor
     const std::string pathB = createTestFile("FolderB/Beta_Sample.flac", std::string(4096, 'B'));
     const std::string pathC = createTestFile("FolderC/Charlie_Sample.mp3", std::string(2048, 'C'));
 
-    reals::browser::BrowserModel model;
+    reals::browser::BrowserModel model(platform::joinPath(m_testDir, "fixture_store.json"));
     model.toggleFavorite(pathC);
     model.toggleFavorite(pathA);
     model.toggleFavorite(pathB);

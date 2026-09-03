@@ -36,8 +36,9 @@ public:
 
     enum class Sort { Name, Size, Date };
 
-    BrowserModel();
+    explicit BrowserModel(std::string storePath = {});
 
+    void setStorePath(std::string storePath);
     void loadStore();
     void saveStore() const;
 

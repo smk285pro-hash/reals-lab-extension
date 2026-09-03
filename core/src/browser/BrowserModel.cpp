@@ -150,9 +150,19 @@ bool isIgnoredDir(std::string_view name) {
 }
 } // namespace
 
-BrowserModel::BrowserModel() {
-    // Fresh installs start with 0 default roots. User-added roots persist via store.
-    m_storePath = platform::joinPath(platform::dataDir(), "browser_store.json");
+BrowserModel::BrowserModel(std::string storePath) {
+    if (!storePath.empty()) {
+        m_storePath = std::move(storePath);
+    } else {
+        m_storePath = platform::joinPath(platform::dataDir(), "browser_store.json");
+    }
+    loadStore();
+}
+
+void BrowserModel::setStorePath(std::string storePath) {
+    const std::lock_guard lock(m_storeMutex);
+    m_storePath = std::move(storePath);
+    loadStore();
 }
 
 bool BrowserModel::isAudioExt(const std::string& fileName) {

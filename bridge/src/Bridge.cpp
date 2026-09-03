@@ -605,8 +605,12 @@ struct Bridge::Impl {
     }
 };
 
-Bridge::Bridge(IHostActions* actions) : m_actions(actions), m_impl(std::make_unique<Impl>()) {
+Bridge::Bridge(IHostActions* actions, std::string browserStorePath)
+    : m_actions(actions), m_impl(std::make_unique<Impl>()) {
     m_impl->actions = actions;
+    if (!browserStorePath.empty()) {
+        m_impl->model.setStorePath(std::move(browserStorePath));
+    }
 }
 
 Bridge::~Bridge() = default;
@@ -1217,8 +1221,7 @@ std::string Bridge::handle(const std::string& requestJson) {
 
                 if (sampleBpm > 0.0f && info.sampleRate > 0) {
                     const double nominalLoopSec = (loopBeats * 60.0) / sampleBpm;
-                    const int effectiveSr = (eng.targetSampleRate() > 0) ? eng.targetSampleRate() : info.sampleRate;
-                    nominalLoopFrames = static_cast<uint64_t>(nominalLoopSec * effectiveSr);
+                    nominalLoopFrames = static_cast<uint64_t>(nominalLoopSec * info.sampleRate);
                 }
 
                 LOG_INFO("SYNC_DIAG",

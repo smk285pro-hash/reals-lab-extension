@@ -70,7 +70,7 @@ TEST_F(PerformanceBenchmarkFixture, Benchmark_5000_Files_DirectoryListing_Under3
     constexpr size_t kSubfolders = 15;
     createSyntheticLibrary(kTargetFiles, kSubfolders);
 
-    reals::browser::BrowserModel model;
+    reals::browser::BrowserModel model(platform::joinPath(m_benchDir, "bench_store1.json"));
 
     // Initial walk to populate filesystem and verify total count
     const auto initialEntries = model.listDir(m_benchDir);
@@ -105,7 +105,7 @@ TEST_F(PerformanceBenchmarkFixture, Benchmark_5000_Files_MultiRootSearch_Under30
     constexpr size_t kTargetFiles = 1500;
     createSyntheticLibrary(kTargetFiles, 15);
 
-    reals::browser::BrowserModel model;
+    reals::browser::BrowserModel model(platform::joinPath(m_benchDir, "bench_store2.json"));
     for (size_t i = 0; i < 15; ++i) {
         const std::string sub = platform::joinPath(m_benchDir, "Category_" + std::to_string(i));
         model.addRoot("Cat_" + std::to_string(i), sub);
@@ -130,7 +130,7 @@ TEST(PerformanceBenchmark, Concurrency_16Threads_Stress) {
     const std::string fakeDir = platform::normalizePath(platform::joinPath(platform::tempDir(), "reals_concurrency_stress"));
     std::filesystem::create_directories(fakeDir);
 
-    reals::browser::BrowserModel model;
+    reals::browser::BrowserModel model(platform::joinPath(fakeDir, "bench_store3.json"));
 
     // Pre-populate roots
     for (int i = 0; i < 8; ++i) {
@@ -192,7 +192,10 @@ TEST(PerformanceBenchmark, Concurrency_16Threads_Stress) {
 // ============================================================================
 
 TEST(PerformanceBenchmark, MemoryStability_10000_Operations_ZeroLeaks) {
-    reals::browser::BrowserModel model;
+    const std::string benchStore = platform::joinPath(platform::tempDir(), "bench_store4.json");
+    std::error_code ec;
+    std::filesystem::remove(platform::u8path(benchStore), ec);
+    reals::browser::BrowserModel model(benchStore);
     constexpr int kIterations = 10000;
 
     for (int i = 0; i < kIterations; ++i) {
@@ -221,6 +224,7 @@ TEST(PerformanceBenchmark, MemoryStability_10000_Operations_ZeroLeaks) {
         model.forgetPath(fakePath);
     }
     EXPECT_TRUE(model.favorites().empty());
+    std::filesystem::remove(platform::u8path(benchStore), ec);
 }
 
 // ============================================================================
