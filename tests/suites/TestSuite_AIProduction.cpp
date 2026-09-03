@@ -291,6 +291,68 @@ TEST(KeyDetectorSuite, CamelotAndOpenKeyMappings) {
     // A minor is the relative minor of C major -> 1m.
     EXPECT_EQ(KeyDetector::toOpenKey("A", "Minor"), "1m");
     EXPECT_EQ(KeyDetector::toOpenKey("F#", "Major"), "7d");
+
+    // Pitch class 11 (B / Cb) OpenKey assertions (Milestone 1 Iteration 2 remediation)
+    EXPECT_EQ(KeyDetector::toOpenKey("B", "Major"), "6d");
+    EXPECT_EQ(KeyDetector::toOpenKey("B", "Minor"), "3m");
+    EXPECT_EQ(KeyDetector::toOpenKey("Cb", "Major"), "6d");
+    EXPECT_EQ(KeyDetector::toOpenKey("Cb", "Minor"), "3m");
+
+    // Theoretical enharmonics and fallback consistency
+    EXPECT_EQ(KeyDetector::toOpenKey("E#", "Major"), "12d");
+    EXPECT_EQ(KeyDetector::toOpenKey("Fb", "Major"), "5d");
+    EXPECT_EQ(KeyDetector::toOpenKey("UnknownKey", "Major"), "1d");
+    EXPECT_EQ(KeyDetector::toOpenKey("UnknownKey", "Minor"), "10m");
+}
+
+TEST(KeyDetectorSuite, DigitalSilenceFallback) {
+    auto silence = AudioTestFixtures::generateSilent(1.0f, 44100);
+    auto res = KeyDetector::detect(silence.data(), silence.size(), 44100);
+
+    EXPECT_EQ(res.key, "C");
+    EXPECT_EQ(res.mode, "Major");
+    EXPECT_EQ(res.camelot, "8B");
+    EXPECT_EQ(res.openKey, "1d");
+    EXPECT_FLOAT_EQ(res.confidence, 0.0f);
+}
+
+TEST(KeyDetectorSuite, NullAndZeroFramesFallback) {
+    auto resNull = KeyDetector::detect(nullptr, 44100, 44100);
+    EXPECT_EQ(resNull.key, "C");
+    EXPECT_EQ(resNull.mode, "Major");
+    EXPECT_EQ(resNull.camelot, "8B");
+    EXPECT_EQ(resNull.openKey, "1d");
+    EXPECT_FLOAT_EQ(resNull.confidence, 0.0f);
+
+    float dummy = 0.5f;
+    auto resZero = KeyDetector::detect(&dummy, 0, 44100);
+    EXPECT_EQ(resZero.key, "C");
+    EXPECT_EQ(resZero.mode, "Major");
+    EXPECT_FLOAT_EQ(resZero.confidence, 0.0f);
+}
+
+TEST(KeyDetectorSuite, DetectBMajorKey) {
+    // B Major: B3 (246.94 Hz) triad
+    auto bMaj = AudioTestFixtures::generateChordTriad(246.94f, false, 2.0f, 44100);
+    auto res = KeyDetector::detect(bMaj.data(), bMaj.size(), 44100);
+
+    EXPECT_EQ(res.key, "B");
+    EXPECT_EQ(res.mode, "Major");
+    EXPECT_EQ(res.camelot, "1B");
+    EXPECT_EQ(res.openKey, "6d");
+    EXPECT_GT(res.confidence, 0.5f);
+}
+
+TEST(KeyDetectorSuite, DetectBMinorKey) {
+    // B Minor: B3 (246.94 Hz) minor triad
+    auto bMin = AudioTestFixtures::generateChordTriad(246.94f, true, 2.0f, 44100);
+    auto res = KeyDetector::detect(bMin.data(), bMin.size(), 44100);
+
+    EXPECT_EQ(res.key, "B");
+    EXPECT_EQ(res.mode, "Minor");
+    EXPECT_EQ(res.camelot, "10A");
+    EXPECT_EQ(res.openKey, "3m");
+    EXPECT_GT(res.confidence, 0.5f);
 }
 
 // -----------------------------------------------------------------------------

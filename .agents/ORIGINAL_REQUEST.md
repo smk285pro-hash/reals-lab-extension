@@ -116,4 +116,44 @@ Develop and execute programmatic test assertions that inspect rendered PCM buffe
 - [ ] Windows preset builds cleanly with zero compilation errors and zero warnings (`cmake --build --preset windows`).
 - [ ] Final `reaper_realslab.dll` is built and deployed to REAPER `%APPDATA%/REAPER/UserPlugins`.
 
+## 2026-09-03T16:19:37Z
 
+Implement an industry-standard (Essentia / MTG-grade) pure C++ Key and Tempo detection engine to replace primitive STFT chroma and naive autocorrelation, delivering highly accurate tonality and BPM estimation for audio samples without filename metadata.
+
+Working directory: c:\Users\smk28\Desktop\reals lab extension
+Integrity mode: development
+
+## Requirements
+
+### R1. Industry-Grade HPCP Key Detection Engine (Pure C++)
+Implement a complete, standalone Harmonic Pitch Class Profile (HPCP) algorithm (based on the Emilia Gómez 2006 / Essentia specification) in `core/src/ai/`:
+- **Spectral Peak Extraction & Parabolic Interpolation**: Detect true continuous peak frequencies and amplitudes via quadratic/parabolic peak interpolation, eliminating discrete FFT bin quantization errors.
+- **Harmonic Summation**: For each detected peak, map contributions to its fundamental and harmonics ($h = 1, 2, ..., 8$) using an exponential decay weighting function ($0.6^h$) across a 36-bin sub-semitone pitch class grid.
+- **Reference Tuning Compensation**: Compute the global tuning deviation relative to 440 Hz before pitch class folding.
+- **Empirical Profile Correlation**: Correlate the resulting HPCP vector with validated electronic & pop music profiles (EDMA, Krumhansl-Schmuckler, Temperley) to produce an unambiguous tonic, mode (Major/Minor), and Camelot key.
+
+### R2. Multi-Band Onset Detection & Tempogram Beat Tracking (Pure C++)
+Upgrade `core/src/ai/TempoDetector.cpp` to an industry-standard multi-band beat tracking architecture:
+- **3-Band Spectral Flux**: Separate onset detection into Low/Bass (< 200 Hz), Mid (200–2000 Hz), and High (> 2000 Hz) to decouple kick drum punch from hi-hat patterns and melodic changes.
+- **Comb Filter Resonator Bank**: Resonate onset envelopes against pulse trains across the 50–220 BPM range to identify periodic meter.
+- **Adaptive Octave Disambiguation**: Replace rigid `< 70` / `> 180` clamping with harmonic ratio scoring and rhythmic density priors, preventing octave halving (e.g. 140–160 BPM Trap detected as 70–80 BPM) and octave doubling (e.g. 60–65 BPM Lo-Fi doubled to 120–130 BPM).
+
+### R3. Seamless Integration with Background Scanner & Library DB
+- Connect the upgraded HPCP Key Detector and Multi-Band Tempo Detector to `core/src/scanner/BackgroundScanner.cpp` and `bridge/src/Bridge.cpp`.
+- Maintain strict ground-truth precedence for explicit filename metadata (DSP acts as high-precision fallback when filename metadata is absent).
+- Ensure zero-warning MSVC C++20 build and zero performance regressions.
+
+## Acceptance Criteria
+
+### Key Detection Accuracy
+- [ ] Correctly identifies the musical key on reference tonal loops and synth/bass samples with >= 85% accuracy across all 24 major/minor keys without relying on filenames.
+- [ ] No systematic bias toward any single pitch class (the previous F Major artifact is completely eradicated).
+
+### Tempo Detection Accuracy
+- [ ] Accurately detects BPM within +/- 1.0 BPM on standard electronic, hip-hop, trap, and house loops.
+- [ ] Eliminates octave-doubling / octave-halving traps on 70-80 BPM vs 140-160 BPM genres.
+- [ ] Leaves unpitched percussion one-shots without false BPM numbers.
+
+### Verification & Regression
+- [ ] All unit and regression test suites (`KeyTempoAccuracy`, `PhaseSyncDiagnostics`, `NativePhaseSnap`) pass with 100% success.
+- [ ] Zero MSVC C++20 compiler warnings.

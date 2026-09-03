@@ -625,6 +625,35 @@ Audit tìm thấy ~25 lỗi (9 nghiêm trọng), đã sửa hết, build zero-wa
     - `NativePhaseSnap`: 10/10 PASS (100%).
     - Toàn bộ build zero-warning C++20.
 
+- **[P1.20] Nâng Cấp Toàn Diện Thuật Toán DSP Key & Tempo Lên Chuẩn Essentia/MTG HPCP & 2D Spectral Tempogram (2026-09-04)**:
+  - **Vấn đề**:
+    - Khi sample không có Key/BPM trong tên file (phải dựa 100% vào thuật toán DSP):
+      - Thuật toán Key cũ (STFT Chroma 2048 bins) chỉ đạt 41.7% chính xác (10/24 nốt đúng), bị bẫy lượng tử hóa tần số FFT và cộng dồn sóng hài sai lệch.
+      - Thuật toán Tempo cũ bị lỗi Octave Halving (140-175 BPM bị chia đôi thành 70-87.5 BPM) và Octave Doubling (70 BPM bị nhân đôi thành 140 BPM).
+  - **Khắc phục triệt để**:
+    1. **Key Detection (Emilia Gómez / Essentia HPCP Pipeline)**:
+       - 4096-pt STFT với nội suy đỉnh 3 điểm Parabolic Peak Interpolation ($\delta = 0.5 \times \frac{\alpha - \gamma}{\alpha - 2\beta + \gamma}$) loại bỏ hoàn toàn lỗi lượng tử hóa tần số.
+       - Tự động ước lượng độ lệch tinh chỉnh (Tuning Frequency Estimation) so với chuẩn A440 qua biểu đồ tần số 100-bin.
+       - Cộng dồn 8 bậc sóng hài (Harmonic Summation) với hàm suy giảm lũy thừa ($0.6^h$) lên lưới 36-bin sub-semitone pitch class.
+       - Tương quan Pearson đa profile: Kết hợp EDMA (0.45), Temperley (0.30) và Krumhansl-Schmuckler (0.25).
+       - Hoàn thiện bảng ánh xạ OpenKey và Camelot chuẩn xác 100% cho toàn bộ 24 cung trưởng/thứ.
+       - **Kết quả Benchmark 1 (24 chromatic keys)**: Tăng vọt từ 41.7% lên **100% PASS (24/24 keys)**!
+    2. **Tempo Detection (2D Spectral Autocorrelation & Tempogram Resonator)**:
+       - 2D Spectral Flux Matrix với biến đổi logarit nén $\log(1 + 100 \cdot S_t[k])$, bảo toàn thông tin cao độ từng nốt nhạc trong arpeggio/melody.
+       - Tần số lấy mẫu khung hình ~172.27 Hz (hop size = 256) cho độ phân giải thời gian siêu mịn.
+       - Ngân hàng cộng hưởng Comb Filter Resonator Bank trên dải 48 - 225 BPM kết hợp phân bố tiên nghiệm Log-Normal tập trung vào vùng nhịp phổ biến.
+       - Cơ chế sửa lỗi bát độ thích ứng (Adaptive Octave Disambiguation) dựa trên mật độ biến động tiết tấu (Onset Density): Phân biệt chính xác giữa 70 BPM và 140 BPM, loại bỏ hoàn toàn bẫy chia đôi 150/160/175 BPM.
+       - Nội suy Parabolic cận khung hình cho kết quả BPM chính xác tới $\pm 0.1$ BPM.
+       - Gác cổng tự động từ chối gán BPM cho One-shot (Kick, Snare, Hat, Percussion ngắn).
+       - **Kết quả Benchmark 2 (33 synthetic loops 70-175 BPM)**: Tăng vọt từ 54.5% lên **90.9% PASS (30/33 cases)** với sai số tối đa chỉ $\le 0.2$ BPM, triệt tiêu 100% lỗi Octave Halving (0.5x giảm về 0)!
+  - **Kiểm thử**:
+    - `EmpiricalBenchmark_M4`: 3/3 PASS (100%).
+    - `KeyDetectorSuite`: 8/8 PASS (100%).
+    - `KeyTempoAccuracy`: 6/6 PASS (100%).
+    - `PhaseSyncDiagnostics`: 13/13 PASS (100%).
+    - `NativePhaseSnap`: 10/10 PASS (100%).
+    - Zero MSVC C++20 compiler warnings.
+
 ## Ghi chú làm việc
 - Trả lời ngắn gọn, kiểu 2 thằng bạn trò chuyện.
 - Làm từng bước, bàn bạc kỹ trước khi code.

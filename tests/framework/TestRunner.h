@@ -306,6 +306,9 @@ inline void failTest(const char* file, int line, const std::string& message) {
         } \
     } while (0)
 
+#define EXPECT_FLOAT_EQ(val1, val2) EXPECT_NEAR((val1), (val2), 1e-5f)
+#define EXPECT_DOUBLE_EQ(val1, val2) EXPECT_NEAR((val1), (val2), 1e-9)
+
 #define EXPECT_LT(val1, val2) \
     do { \
         if (!((val1) < (val2))) { \

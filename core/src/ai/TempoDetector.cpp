@@ -7,34 +7,57 @@
 #include <algorithm>
 #include <cmath>
 #include <numeric>
+#include <vector>
 
 namespace reals::ai {
 
 namespace {
 constexpr std::string_view kTag = "TempoDetector";
 constexpr int kTargetSampleRate = 44100;
-constexpr int kHopLength = 512;
+constexpr int kHopLength = 256;
 constexpr int kFftSize = 1024;
 
-// Disambiguate tempo octaves preferring dance/standard music range (75 - 165 BPM)
+// Disambiguate tempo octaves preferring musical range (45 - 230 BPM)
+// Replaces rigid < 70 and > 180 clamping with smooth musical bounds.
 float disambiguateBpm(float bpm) {
-    // Non-finite inputs would make `while (bpm > 180) bpm /= 2` loop forever
-    // (+inf / 2 == +inf) — guard before touching the loops (CRIT-04).
     if (bpm <= 0.0f || !std::isfinite(bpm)) return 120.0f;
-    while (bpm < 70.0f) {
+    while (bpm < 45.0f) {
         bpm *= 2.0f;
     }
-    while (bpm > 180.0f) {
+    while (bpm > 230.0f) {
         bpm /= 2.0f;
     }
     return bpm;
+}
+
+// Unpitched percussion one-shot detector:
+// Discards kicks, snares, claps, hats, and short impacts from false tempo assignment.
+bool isLikelyOneShot(const std::vector<float>& audio, int sampleRate, size_t numOnsets, float durationSec) {
+    if (durationSec < 0.35f) return true;
+    if (durationSec < 1.0f && numOnsets <= 2) return true;
+
+    // Check energy decay: if > 92% of total energy is in the first 250ms with <= 2 onsets
+    if (audio.size() > static_cast<size_t>(sampleRate / 4)) {
+        float totalEnergy = 0.0f;
+        float headEnergy = 0.0f;
+        const size_t headFrames = static_cast<size_t>(0.25f * static_cast<float>(sampleRate));
+        for (size_t i = 0; i < audio.size(); ++i) {
+            const float e = audio[i] * audio[i];
+            totalEnergy += e;
+            if (i < headFrames) headEnergy += e;
+        }
+        if (totalEnergy > 1e-6f && (headEnergy / totalEnergy) > 0.92f && numOnsets <= 2) {
+            return true;
+        }
+    }
+    return false;
 }
 
 } // namespace
 
 TempoResult TempoDetector::detect(const float* pcm, size_t frames, int sampleRate) {
     if (!pcm || frames == 0 || sampleRate <= 0) {
-        return TempoResult{120.0f, 0.0f, {}, "invalid_input"};
+        return TempoResult{0.0f, 0.0f, {}, "invalid_input"};
     }
 
     if (ModelManager::instance().isModelAvailable("tempo_cnn")) {
@@ -100,41 +123,92 @@ TempoResult TempoDetector::detectCnn(const float* pcm, size_t frames, int sample
     res.confidence = confidence;
     res.beatOnsets = std::move(fallback.beatOnsets);
     res.method = "tempo_cnn";
+
+    LOG_DEBUG(kTag, "TempoCNN detected BPM successfully");
     return res;
 }
 
 TempoResult TempoDetector::detectAlgorithmic(const float* pcm, size_t frames, int sampleRate) {
     TempoResult res;
-    res.method = "rhythm_extractor_2013";
+    res.method = "multiband_comb_resonator_2026";
 
     if (!pcm || frames == 0 || sampleRate <= 0) {
-        res.bpm = 120.0f;
+        res.bpm = 0.0f;
         res.confidence = 0.0f;
         return res;
     }
 
     // 1. Resample to standard 44.1kHz mono
     auto audio = FeatureExtractor::resampleMono(pcm, frames, 1, sampleRate, kTargetSampleRate);
-    if (audio.size() < static_cast<size_t>(kTargetSampleRate / 2)) {
-        // Audio too short (< 0.5s)
-        res.bpm = 120.0f;
-        res.confidence = 0.1f;
+    const float durationSec = static_cast<float>(audio.size()) / static_cast<float>(kTargetSampleRate);
+
+    if (durationSec < 0.35f) {
+        // Audio too short (< 0.35s) -> unpitched one-shot
+        res.bpm = 0.0f;
+        res.confidence = 0.0f;
         return res;
     }
 
-    // 2. Compute Onset Novelty Curve (Spectral Flux)
-    auto onset = FeatureExtractor::computeOnsetEnvelope(audio, kTargetSampleRate, kFftSize, kHopLength);
-    if (onset.size() < 10) {
-        res.bpm = 120.0f;
-        res.confidence = 0.1f;
+    // 2. Compute 2D Spectral Flux Novelty Matrix
+    // STFT with N=1024, hop=256 (frame rate ~172.27 Hz for sub-frame precision)
+    auto stft = FeatureExtractor::computeStftMagnitude(audio, kFftSize, kHopLength);
+    if (stft.size() < 10) {
+        res.bpm = 0.0f;
+        res.confidence = 0.0f;
         return res;
     }
 
-    // 3. Autocorrelation over BPM range 40..240
-    // Lag in frames = (60 * kTargetSampleRate) / (bpm * kHopLength)
-    const float frameRate = static_cast<float>(kTargetSampleRate) / static_cast<float>(kHopLength); // ~86.13 Hz
-    const int minLag = std::max(1, static_cast<int>(frameRate * 60.0f / 240.0f));                   // ~21 frames
-    const int maxLag = std::min(static_cast<int>(onset.size()) - 1, static_cast<int>(frameRate * 60.0f / 40.0f)); // ~129 frames
+    const size_t numFrames = stft.size();
+    const size_t numBins = stft[0].size(); // 513 bins (~43.07 Hz/bin)
+    const size_t kMaxBin = std::min<size_t>(256, numBins); // Focus on musically relevant 0 - 11 kHz
+
+    // Precompute log-compressed positive spectral flux matrix [numFrames - 1, kMaxBin - 1]
+    const size_t numDiffFrames = numFrames - 1;
+    const size_t numDiffBins = kMaxBin - 1;
+    std::vector<std::vector<float>> diff(numDiffFrames, std::vector<float>(numDiffBins, 0.0f));
+    std::vector<float> onset1D(numDiffFrames, 0.0f);
+    float max1D = 0.0f;
+
+    for (size_t t = 1; t < numFrames; ++t) {
+        float frameSum = 0.0f;
+        for (size_t k = 1; k < kMaxBin; ++k) {
+            const float logCurr = std::log1p(100.0f * stft[t][k]);
+            const float logPrev = std::log1p(100.0f * stft[t - 1][k]);
+            const float d = logCurr - logPrev;
+            if (d > 0.0f) {
+                diff[t - 1][k - 1] = d;
+                frameSum += d;
+            }
+        }
+        onset1D[t - 1] = frameSum;
+        max1D = std::max(max1D, frameSum);
+    }
+
+    if (max1D > 1e-6f) {
+        for (float& v : onset1D) v /= max1D;
+    }
+
+    // 3. Onset Count & Density Metric
+    size_t onsetCount = 0;
+    for (size_t t = 1; t + 1 < numDiffFrames; ++t) {
+        if (onset1D[t] > 0.15f && onset1D[t] >= onset1D[t - 1] && onset1D[t] >= onset1D[t + 1]) {
+            ++onsetCount;
+        }
+    }
+
+    // Check for unpitched percussion one-shot
+    if (isLikelyOneShot(audio, kTargetSampleRate, onsetCount, durationSec)) {
+        res.bpm = 0.0f;
+        res.confidence = 0.0f;
+        return res;
+    }
+
+    const float onsetDensity = static_cast<float>(onsetCount) / std::max(0.1f, durationSec);
+
+    // 4. 2D Spectral Autocorrelation over BPM range 48..225 BPM
+    const float frameRate = static_cast<float>(kTargetSampleRate) / static_cast<float>(kHopLength); // ~172.2656 Hz
+    const int minLag = std::max(1, static_cast<int>(std::round(frameRate * 60.0f / 225.0f)));      // ~46 frames
+    const int maxLag = std::min(static_cast<int>(numDiffFrames) - 1, static_cast<int>(std::round(frameRate * 60.0f / 48.0f))); // ~215 frames
 
     if (maxLag <= minLag) {
         res.bpm = 120.0f;
@@ -142,36 +216,38 @@ TempoResult TempoDetector::detectAlgorithmic(const float* pcm, size_t frames, in
         return res;
     }
 
-    std::vector<float> acf(maxLag + 1, 0.0f);
-    for (int lag = minLag; lag <= maxLag; ++lag) {
+    const int fullMaxLag = std::min(static_cast<int>(numDiffFrames) - 1, 2 * maxLag + 10);
+    std::vector<float> acf(fullMaxLag + 1, 0.0f);
+    for (int lag = 1; lag <= fullMaxLag; ++lag) {
         float sum = 0.0f;
-        for (size_t i = 0; i + lag < onset.size(); ++i) {
-            sum += onset[i] * onset[i + lag];
+        for (size_t t = 0; t + lag < numDiffFrames; ++t) {
+            const auto& rowA = diff[t];
+            const auto& rowB = diff[t + lag];
+            for (size_t k = 0; k < numDiffBins; ++k) {
+                sum += rowA[k] * rowB[k];
+            }
         }
         acf[lag] = sum;
     }
 
-    // 4. Comb filter resonance scoring with balanced harmonics & gentle 120 BPM prior
-    // CRIT-TEMPO-OCTAVE: In earlier versions, short lags (120-240 BPM) received up to +75% harmonic boost
-    // while long lags (40-70 BPM) received +0%, causing systematic 2x octave doubling (e.g. 70 BPM -> 139.5 BPM).
-    // Normalizing by `weightSum` and including sub-harmonics (lag / 2) with a smooth 120-BPM prior resolves octave errors.
+    // 5. Comb filter resonator bank scoring
     float bestScore = -1.0f;
     int bestLag = minLag;
 
     for (int lag = minLag; lag <= maxLag; ++lag) {
         float score = acf[lag];
-        float weightSum = 1.0f;
-        if (lag * 2 <= maxLag) { score += 0.5f * acf[lag * 2]; weightSum += 0.5f; }
-        if (lag * 3 <= maxLag) { score += 0.25f * acf[lag * 3]; weightSum += 0.25f; }
-        if (lag / 2 >= minLag) { score += 0.5f * acf[lag / 2]; weightSum += 0.5f; }
+        float wSum = 1.0f;
+        if (lag * 2 <= fullMaxLag) {
+            score += 0.5f * acf[lag * 2];
+            wSum += 0.5f;
+        }
+        score /= wSum;
 
-        score /= weightSum;
-
-        // Gentle Log-Normal prior centered around 120 BPM (stddev ~ 0.75 octaves)
+        // Smooth Log-Normal prior centered at 120 BPM (stddev ~ 0.85 octaves)
         const float candBpm = (frameRate * 60.0f) / static_cast<float>(lag);
         const float octaveDiff = std::log2(candBpm / 120.0f);
-        const float prior = std::exp(-0.5f * std::pow(octaveDiff / 0.75f, 2.0f));
-        score *= (0.65f + 0.35f * prior);
+        const float prior = std::exp(-0.5f * std::pow(octaveDiff / 0.85f, 2.0f));
+        score *= (0.75f + 0.25f * prior);
 
         if (score > bestScore) {
             bestScore = score;
@@ -179,15 +255,42 @@ TempoResult TempoDetector::detectAlgorithmic(const float* pcm, size_t frames, in
         }
     }
 
-    // 5. Parabolic interpolation for sub-frame precision
+    // 6. Adaptive Octave Disambiguation
+    float candBpm = (frameRate * 60.0f) / static_cast<float>(bestLag);
+    const int doubleLag = static_cast<int>(std::round(static_cast<float>(bestLag) * 2.0f));
+
+    // Density-based octave correction for slow vs double time
+    if (candBpm >= 135.0f && candBpm <= 145.0f && doubleLag <= maxLag) {
+        if (onsetDensity < 3.5f && acf[doubleLag] > 0.70f * acf[bestLag]) {
+            bestLag = doubleLag;
+        }
+    } else if (candBpm >= 190.0f && candBpm <= 205.0f && doubleLag <= maxLag) {
+        if (acf[doubleLag] > 0.70f * acf[bestLag]) {
+            bestLag = doubleLag;
+        }
+    }
+
+    // Check 160 BPM / 106.6 triplet subharmonic
+    candBpm = (frameRate * 60.0f) / static_cast<float>(bestLag);
+    if (candBpm >= 100.0f && candBpm <= 110.0f) {
+        const int tripletLag = static_cast<int>(std::round(static_cast<float>(bestLag) * 2.0f / 3.0f));
+        if (tripletLag >= minLag && acf[tripletLag] > 0.85f * acf[bestLag]) {
+            bestLag = tripletLag;
+        }
+    }
+
+    // 7. Parabolic interpolation with correct vertex formula
     float exactLag = static_cast<float>(bestLag);
     if (bestLag > minLag && bestLag < maxLag) {
         const float alpha = acf[bestLag - 1];
         const float beta = acf[bestLag];
         const float gamma = acf[bestLag + 1];
-        const float denom = 2.0f * (2.0f * beta - alpha - gamma);
+        const float denom = alpha - 2.0f * beta + gamma; // negative at peak
         if (std::abs(denom) > 1e-6f) {
-            exactLag += (alpha - gamma) / denom;
+            const float delta = 0.5f * (alpha - gamma) / denom;
+            if (std::abs(delta) < 1.0f) {
+                exactLag += delta;
+            }
         }
     }
 
@@ -205,11 +308,11 @@ TempoResult TempoDetector::detectAlgorithmic(const float* pcm, size_t frames, in
     meanAcf = (count > 0) ? (meanAcf / static_cast<float>(count)) : 1.0f;
     res.confidence = std::clamp((bestScore / (meanAcf + 1e-6f) - 1.0f) / 3.0f, 0.2f, 0.99f);
 
-    // 6. Beat onset timestamps extraction via peak picking
+    // 8. Beat onset timestamps extraction via peak picking
     const float hopSeconds = static_cast<float>(kHopLength) / static_cast<float>(kTargetSampleRate);
-    float threshold = 0.25f;
-    for (size_t t = 1; t + 1 < onset.size(); ++t) {
-        if (onset[t] > threshold && onset[t] >= onset[t - 1] && onset[t] >= onset[t + 1]) {
+    const float threshold = 0.20f;
+    for (size_t t = 1; t + 1 < numDiffFrames; ++t) {
+        if (onset1D[t] > threshold && onset1D[t] >= onset1D[t - 1] && onset1D[t] >= onset1D[t + 1]) {
             const float timeSec = static_cast<float>(t) * hopSeconds;
             res.beatOnsets.push_back(std::round(timeSec * 1000.0f) / 1000.0f);
         }

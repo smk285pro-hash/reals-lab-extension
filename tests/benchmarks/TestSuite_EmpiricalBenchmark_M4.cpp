@@ -35,6 +35,19 @@ const std::array<std::string, 12> kChromaticNotes = {
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
 };
 
+const std::array<const char*, 12> kMajorCamelot = {
+    "8B", "3B", "10B", "5B", "12B", "7B", "2B", "9B", "4B", "11B", "6B", "1B"
+};
+const std::array<const char*, 12> kMinorCamelot = {
+    "5A", "12A", "7A", "2A", "9A", "4A", "11A", "6A", "1A", "8A", "3A", "10A"
+};
+const std::array<const char*, 12> kMajorOpenKey = {
+    "1d", "8d", "3d", "10d", "5d", "12d", "7d", "2d", "9d", "4d", "11d", "6d"
+};
+const std::array<const char*, 12> kMinorOpenKey = {
+    "10m", "5m", "12m", "7m", "2m", "9m", "4m", "11m", "6m", "1m", "8m", "3m"
+};
+
 // Calculate shortest semitone distance (as in ui-web/app.js:1247-1257)
 int calculateSemitoneDistance(int rootIdx, int targetIdx) {
     if (rootIdx < 0 || targetIdx < 0) return 0;
@@ -228,9 +241,17 @@ TEST(EmpiricalBenchmark_M4, Benchmark_12_Chromatic_Keys_And_Transpose_144_Matrix
             auto pcm = synthesizeHarmonicKeyAudio(r, isMajor, 3.0f, 44100);
             auto res = ai::KeyDetector::detect(pcm.data(), pcm.size(), 44100);
 
+            const std::string expectedCamelot = isMajor ? kMajorCamelot[r] : kMinorCamelot[r];
+            const std::string expectedOpenKey = isMajor ? kMajorOpenKey[r] : kMinorOpenKey[r];
+
             const bool keyMatches = (res.key == rootName);
             const bool modeMatches = (res.mode == modeStr);
-            const bool isPass = keyMatches && modeMatches;
+            const bool camelotMatches = (res.camelot == expectedCamelot);
+            const bool openKeyMatches = (res.openKey == expectedOpenKey);
+            const bool isPass = keyMatches && modeMatches && camelotMatches && openKeyMatches;
+
+            EXPECT_EQ(res.camelot, expectedCamelot);
+            EXPECT_EQ(res.openKey, expectedOpenKey);
 
             if (isPass) ++keyCorrectCount;
 
