@@ -1349,6 +1349,41 @@ function extractKeyFromFilename(filename) {
   return null;
 }
 
+function extractBpmFromFilename(filename) {
+  if (!filename) return 0;
+  const base = filename.replace(/\.[^/.]+$/, '');
+  const lowerBase = base.toLowerCase();
+
+  // 1. Explicit BPM/tempo token like "124BPM", "128 BPM", "BPM128", "tempo 125"
+  const explicit1 = base.match(/(?:^|[\s_\-\(\[])(\d{2,3}(?:\.\d+)?)\s*(?:bpm|tempo)(?:[\s_\-\)\]]|$)/i);
+  if (explicit1) {
+    const val = parseFloat(explicit1[1]);
+    if (val >= 40 && val <= 250) return val;
+  }
+  const explicit2 = base.match(/(?:^|[\s_\-\(\[])(?:bpm|tempo)[_\s-]*(\d{2,3}(?:\.\d+)?)(?:[\s_\-\)\]]|$)/i);
+  if (explicit2) {
+    const val = parseFloat(explicit2[1]);
+    if (val >= 40 && val <= 250) return val;
+  }
+
+  // If explicitly tagged as oneshot/shot/hit, don't guess standalone number as BPM
+  const isOneShot = /oneshot|one[\s_-]shot|\bshot\b|\bhit\b/i.test(lowerBase) && !/loop|groove/i.test(lowerBase);
+  if (isOneShot) return 0;
+
+  // 2. Standalone number between 60 and 200 (e.g. "07 Drum Loop Claps 120.wav")
+  const tokens = base.split(/[_\s\-+,()\[\]]+/);
+  for (let i = 0; i < tokens.length; ++i) {
+    const t = tokens[i];
+    if (/^\d{2,3}$/.test(t)) {
+      const val = parseFloat(t);
+      if (val >= 60 && val <= 200) {
+        return val;
+      }
+    }
+  }
+  return 0;
+}
+
 // Pretty-print a sample key for display: "AM" -> "Am", "F#M" -> "F#m",
 // "DB" -> "C#", "EB" -> "D#", etc. Preserves an explicit minor "m" suffix
 // and normalizes flat spellings to their sharp equivalents (matching the
@@ -1515,12 +1550,19 @@ async function toggleSyncBpm() {
         if (tempoData && tempoData.bpm > 0) dawTempo = tempoData.bpm;
       } catch {}
       // If we don't have a sample BPM yet, try to detect it first
+      const curPath = state.selected || state.playingPath || '';
       let sampleBpm = state.sampleBpm;
       if (!sampleBpm || sampleBpm <= 0) {
+        if (curPath) {
+          const fn = curPath.split(/[\\/]/).pop() || '';
+          sampleBpm = extractBpmFromFilename(fn);
+          if (sampleBpm > 0) state.sampleBpm = sampleBpm;
+        }
+      }
+      if (!sampleBpm || sampleBpm <= 0) {
         try {
-          const path = state.selected || state.playingPath;
-          if (path) {
-            const det = await bridge('audio.detectBpm', { path });
+          if (curPath) {
+            const det = await bridge('audio.detectBpm', { path: curPath });
             if (det && det.bpm > 0) {
               sampleBpm = det.bpm;
               state.sampleBpm = det.bpm;
@@ -1528,9 +1570,19 @@ async function toggleSyncBpm() {
           }
         } catch {}
       }
+      if (!sampleBpm || sampleBpm <= 0) {
+        try {
+          if (curPath) {
+            const meta = await bridge('audio.getSampleMeta', { path: curPath });
+            if (meta && meta.bpm > 0) {
+              sampleBpm = meta.bpm;
+              state.sampleBpm = meta.bpm;
+            }
+          }
+        } catch {}
+      }
       // Pass path as well so C++ can re-detect if still 0
-      const curPath = state.selected || state.playingPath || '';
-      await bridge('audio.setSyncBpm', { enabled: true, bpm: dawTempo, sampleBpm, path: curPath });
+      await bridge('audio.setSyncBpm', { enabled: true, bpm: dawTempo, sampleBpm: sampleBpm || 0, path: curPath });
       if (!sampleBpm || sampleBpm <= 0) {
         toast(tr('sync.noBpm'));
       }
@@ -3268,8 +3320,7 @@ async function playFile(path) {
     }
     const fileObj = (state.files || []).find((x) => x.path === path);
     const filename = path.split(/[\\/]/).pop() || '';
-    const bpmMatch = filename.match(/(\d+)\s*bpm/i);
-    const filenameBpm = bpmMatch ? parseFloat(bpmMatch[1]) : 0;
+    const filenameBpm = extractBpmFromFilename(filename);
     const filenameKey = extractKeyFromFilename(filename) || '';
 
     const initialBpm = (fileObj && fileObj.bpm > 0) ? fileObj.bpm : filenameBpm;
@@ -3339,7 +3390,7 @@ async function playFile(path) {
         changed = true;
       }
       if (changed) {
-        renderFiles();
+        paintFromRaw(true);
       }
     }
 
@@ -3430,7 +3481,7 @@ async function playFile(path) {
           let ch = false;
           if (bpm > 0 && fileObj.bpm !== bpm) { fileObj.bpm = bpm; ch = true; }
           if (key && key !== 'ORIGINAL' && fileObj.key !== key) { fileObj.key = key; ch = true; }
-          if (ch) renderFiles();
+          if (ch) paintFromRaw(true);
         }
       }).catch(() => {
         if (mySeq !== _playFileSeq) return;
@@ -3448,7 +3499,9 @@ async function playFile(path) {
   } catch (err) {
     if (mySeq === _playFileSeq) {
       console.error('playFile error:', err);
-      toast(tr('toast.decodeFail'));
+      if (!state.playing) {
+        toast(tr('toast.decodeFail'));
+      }
     }
   }
 }

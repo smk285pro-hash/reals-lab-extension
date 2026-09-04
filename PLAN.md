@@ -693,4 +693,6 @@ Audit tìm thấy ~25 lỗi (9 nghiêm trọng), đã sửa hết, build zero-wa
   7. **Biased Autocorrelation & Dynamic Hydration cho Sample Chay (2026-09-04)**:
      - Với file không có thông số trong tên: Phép chia `(N - lag)` trong ACF làm phình to lag lớn, khiến nhịp 160 và 175 BPM bị chia đôi (Octave Halving về 80/87.5 BPM), nhịp 100 BPM bị tụt về 66.7 BPM. Chuẩn DSP Librosa/Oppenheim dùng Biased Autocorrelation (`sum / numDiffFrames`) duy trì 90.9% PASS và 0% Octave Halving.
      - Đồng thời, `Bridge::audio.play` và `audio.getSampleMeta` phải chủ động chạy `detectKeyForPath` và `detectBpmForPath` khi DB chưa có thông số, tính chuẩn xác `pitchShift` từ root thực tế lên `targetNote`, và trả về ngay cho UI Web cập nhật bảng danh sách và transposer tức thì, tránh việc UI mặc định gán nốt "C" làm lệch tông.
-
+  8. **Báo Lỗi Ảo "Không đọc được file audio" & Standalone BPM trong Loops (2026-09-04)**:
+      - Khi audio đang phát bình thường và vẽ sóng âm mà UI vẫn hiện popup "Không đọc được file audio": nguyên nhân gốc là do gọi nhầm hàm `renderFiles()` (không tồn tại trong code $\rightarrow$ ném `ReferenceError`) thay vì `paintFromRaw(true)`. Khối `catch` của `playFile` bắt phải lỗi này và bắn toast `toast.decodeFail`.
+      - Khắc phục: Đổi sang `paintFromRaw(true)` và chỉ bắn toast `toast.decodeFail` khi `!state.playing`. Đồng thời hỗ trợ đọc BPM dạng số đứng một mình trong tên loop (như `07 Drum Loop Claps 120.wav`) ở cả JS và `BackgroundScanner`.

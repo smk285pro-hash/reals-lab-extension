@@ -220,6 +220,16 @@ struct Bridge::Impl {
             return static_cast<float>(fnRec.bpm);
         }
 
+        // Explicit one-shot files (oneshot, shot, hit) do not have musical tempo
+        const std::string lowerFn = platform::toLowerUtf8(fname);
+        const bool isOneShotName = (lowerFn.find("oneshot") != std::string::npos ||
+                                    lowerFn.find("one shot") != std::string::npos ||
+                                    lowerFn.find("one_shot") != std::string::npos ||
+                                    lowerFn.find("one-shot") != std::string::npos);
+        if (isOneShotName && fnRec.bpm <= 0.0) {
+            return 0.0f;
+        }
+
         // MIDI files do not have PCM audio waveforms for TempoDetector
         const std::string lowerP = platform::toLowerUtf8(path);
         if (lowerP.ends_with(".mid") || lowerP.ends_with(".midi")) {

@@ -238,8 +238,8 @@ void BackgroundScanner::parseFilenameMusicMetadata(const std::string& filename, 
         static const std::regex standaloneNumRegex(R"(^(\d{2,3})$)");
         for (size_t i = 0; i < tokens.size(); ++i) {
             const auto& t = tokens[i];
-            // Skip if preceded by an instrument category (e.g. "Kick 50", "Clap 50", "Snare 50", "Bass 01")
-            if (i > 0) {
+            // Skip if preceded by an instrument category (e.g. "Kick 50", "Clap 50", "Snare 50", "Bass 01"), unless file is explicitly a loop
+            if (i > 0 && !isLoopExplicit) {
                 const std::string prev = toLower(tokens[i - 1]);
                 if (prev == "kick" || prev == "clap" || prev == "snare" || prev == "hat" ||
                     prev == "percussion" || prev == "tom" || prev == "crash" || prev == "ride" ||
