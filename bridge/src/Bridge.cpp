@@ -1,8 +1,6 @@
 #include "reals/bridge/Bridge.h"
-#include "reals/ai/ClapEmbedder.h"
-#include "reals/ai/GenreClassifier.h"
+#include "AgentBridge.h"
 #include "reals/ai/KeyDetector.h"
-#include "reals/ai/MoodClassifier.h"
 #include "reals/ai/TempoDetector.h"
 #include "reals/audio/Engine.h"
 #include "reals/browser/BrowserModel.h"
@@ -11,6 +9,7 @@
 #include "reals/platform/DirWatch.h"
 #include "reals/platform/Path.h"
 #include "reals/lab/LabApi.h"
+#include "reals/lab/StoredZip.h"
 #include "reals/scanner/BackgroundScanner.h"
 #include "reals/search/QueryParser.h"
 #include "reals/search/SearchEngine.h"
@@ -27,10 +26,39 @@
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <mutex>
 #include <regex>
 #include <thread>
 #include <unordered_map>
+
+// #region agent log
+namespace {
+void AgentDebugLog(const char* hypothesisId, const char* location, const char* message,
+                   const nlohmann::json& data) {
+    FILE* f = nullptr;
+#if defined(_MSC_VER)
+    fopen_s(&f, "C:\\Users\\smk28\\Desktop\\reals lab extension\\debug-50e7ab.log", "a");
+#else
+    f = std::fopen("C:\\Users\\smk28\\Desktop\\reals lab extension\\debug-50e7ab.log", "a");
+#endif
+    if (!f) return;
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch())
+                        .count();
+    const std::string line =
+        nlohmann::json{{"sessionId", "50e7ab"},
+                       {"hypothesisId", hypothesisId},
+                       {"location", location},
+                       {"message", message},
+                       {"data", data},
+                       {"timestamp", ms}}
+            .dump();
+    std::fprintf(f, "%s\n", line.c_str());
+    std::fclose(f);
+}
+} // namespace
+// #endregion
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -77,7 +105,25 @@ struct SharedState {
     std::deque<std::string> events;
     std::atomic<bool> abortJobs{false};
 
+    // Agent hook: sees lab.result / lab.error so audio_lab_job can return
+    // the real result. Guarded so Bridge teardown can detach it first.
+    std::mutex obsMutex;
+    std::function<void(const json&)> labObserver;
+
+    void setLabObserver(std::function<void(const json&)> fn) {
+        const std::lock_guard lock(obsMutex);
+        labObserver = std::move(fn);
+    }
+
     void pushEvent(json j) {
+        {
+            const std::lock_guard lock(obsMutex);
+            if (labObserver) {
+                const std::string name = j.value("event", "");
+                if (name == "lab.result" || name == "lab.error")
+                    labObserver(j);
+            }
+        }
         const std::lock_guard lock(evMutex);
         events.push_back(j.dump());
     }
@@ -109,7 +155,14 @@ struct Bridge::Impl {
     std::mutex jobMutex;
     std::vector<TrackedWorker> workers;
 
+    // In-product agent (P5). Destroyed first in ~Impl so its turn thread and
+    // pending main-thread tool tasks are gone before workers are joined.
+    std::unique_ptr<AgentBridge> agent;
+
     ~Impl() {
+        if (state)
+            state->setLabObserver(nullptr);
+        agent.reset();
         if (scanner) {
             scanner->cancel();
             scanner->waitForCompletion();
@@ -156,6 +209,10 @@ struct Bridge::Impl {
     std::unordered_map<std::string, std::vector<float>> envCache;
     std::unordered_map<std::string, audio::TrackInfo> probeCache;
 
+    // In-flight background BPM/key detection (dedup per path)
+    std::mutex detectMutex;
+    std::unordered_set<std::string> pendingDetect;
+
     // Sync BPM state (for preview and DAW insert auto-match)
     std::mutex syncMutex;
     bool syncEnabled = false;
@@ -167,10 +224,14 @@ struct Bridge::Impl {
     // stopped, so audio.setSyncBpm cannot rely on eng.currentTrack() to re-phase
     // a running preview. These mirror what was handed to playHostPreview.
     std::string previewPath;
+    double previewRawDurationSeconds = 0.0;
     double previewDurationSeconds = 0.0;
     double previewLoopBeats = 0.0;
     double previewSampleBpm = 0.0;
     uint64_t previewNominalLoopFrames = 0;
+    bool previewLoopEnabled = false;
+    bool transportStartPhaseArmed = false;
+    std::chrono::steady_clock::time_point transportStartPhaseTime{};
     double lastPhaseFraction = -1.0;
 
     // Transport tracking for DAW seek / cursor movement detection
@@ -180,8 +241,10 @@ struct Bridge::Impl {
     std::chrono::steady_clock::time_point lastTransportCheckTime{};
     bool transportInitialized = false;
 
-    // Helper: detect BPM for a file (Filename ground truth -> DB -> TempoDetector)
-    float detectBpmForPath(const std::string& path) {
+    // Fast BPM lookup (filename ground truth -> DB). NEVER decodes audio —
+    // safe to call on the UI thread. Returns 0.0 when unknown; the caller can
+    // then schedule the heavy TempoDetector via spawnMetaDetection().
+    float detectBpmForPathFast(const std::string& path) {
         if (path.empty()) return 0.0f;
 
         std::string fname;
@@ -236,7 +299,24 @@ struct Bridge::Impl {
             return 0.0f;
         }
 
-        // 3. Local TempoDetector (decode up to 30s mono)
+        return 0.0f; // Unknown — heavy TempoDetector runs in background
+    }
+
+    // Full BPM detection: fast path first, then the heavy TempoDetector
+    // (decodes up to 30s + STFT). UI-thread callers must prefer the Fast
+    // variant; this one is for background workers only.
+    float detectBpmForPath(const std::string& path) {
+        const float fast = detectBpmForPathFast(path);
+        if (fast > 0.0f) return fast;
+
+        // One-shot names must never receive a DSP tempo — the fast path
+        // already rejected them, so the heavy detector must not re-guess.
+        if (isOneShotFilename(path)) {
+            return 0.0f;
+        }
+
+        // 3. Local TempoDetector (decode up to 30s mono, duration-bars
+        // fallback inside Engine::detectBpm for fully-decoded files)
         float bpm = audio::Engine::detectBpm(path);
         if (bpm >= 40.0f && bpm <= 250.0f) {
             if (auto rec = db.getSampleByPath(path); rec.has_value()) {
@@ -249,8 +329,39 @@ struct Bridge::Impl {
         return 0.0f;
     }
 
-    // Helper: detect musical key for a file (Filename ground truth -> DB -> KeyDetector)
-    std::string detectKeyForPath(const std::string& path) {
+    // Token-based one-shot name check (mirrors the scanner's rule):
+    // "Shot"/"Hit"/"Oneshot" files are single attacks with no musical tempo.
+    bool isOneShotFilename(const std::string& path) {
+        std::string fname;
+        try {
+            auto p = platform::u8path(path);
+            fname = platform::pathToUtf8(p.filename());
+        } catch (...) { fname = path; }
+        std::string lower = platform::toLowerUtf8(fname);
+        std::vector<std::string> tokens;
+        {
+            std::string cur;
+            for (char c : lower) {
+                if (c == '_' || c == '-' || c == ' ' || c == '.' || c == '[' || c == ']' ||
+                    c == '(' || c == ')' || c == '{' || c == '}' || c == '+' || c == ',') {
+                    if (!cur.empty()) { tokens.push_back(std::move(cur)); cur.clear(); }
+                } else {
+                    cur += c;
+                }
+            }
+            if (!cur.empty()) tokens.push_back(std::move(cur));
+        }
+        for (const auto& t : tokens) {
+            if (t == "oneshot" || t == "oneshots" || t == "shot" || t == "shots" ||
+                t == "hit" || t == "hits") {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Fast key lookup (filename ground truth -> DB). NEVER decodes audio.
+    std::string detectKeyForPathFast(const std::string& path) {
         if (path.empty()) return {};
 
         std::string fname;
@@ -293,6 +404,15 @@ struct Bridge::Impl {
         if (lowerP.ends_with(".mid") || lowerP.ends_with(".midi")) {
             return {};
         }
+
+        return {}; // Unknown — heavy KeyDetector runs in background
+    }
+
+    // Full key detection: fast path first, then the heavy KeyDetector
+    // (decodes up to 30s + HPCP FFT). Background workers only.
+    std::string detectKeyForPath(const std::string& path) {
+        const std::string fast = detectKeyForPathFast(path);
+        if (!fast.empty()) return fast;
 
         // 3. Local KeyDetector
         std::string k = audio::Engine::detectKey(path);
@@ -372,6 +492,47 @@ struct Bridge::Impl {
         });
     }
 
+    // Background BPM/key detection for files whose metadata is unknown.
+    // Decodes audio + runs TempoDetector/KeyDetector OFF the UI thread, then
+    // pushes the "audio.detected" event so the UI can update badges and
+    // re-apply Sync BPM live (the heavy work must never block a click).
+    void spawnMetaDetection(const std::string& path) {
+        if (path.empty()) return;
+        {
+            const std::lock_guard lock(detectMutex);
+            if (!pendingDetect.insert(path).second) return; // already in flight
+        }
+        auto st = state;
+        const std::lock_guard lock(jobMutex);
+        purgeFinishedWorkers();
+        spawnWorker([this, st, path]() {
+            // If the job is aborted the pending entry is cleared on teardown.
+            float bpm = 0.0f;
+            std::string key;
+            if (!st || st->abortJobs) {
+                const std::lock_guard lk(detectMutex);
+                pendingDetect.erase(path);
+                return;
+            }
+            bpm = detectBpmForPath(path);
+            if (!st || st->abortJobs) {
+                const std::lock_guard lk(detectMutex);
+                pendingDetect.erase(path);
+                return;
+            }
+            key = detectKeyForPath(path);
+            {
+                const std::lock_guard lk(detectMutex);
+                pendingDetect.erase(path);
+            }
+            if (!st || st->abortJobs) return;
+            json ev;
+            ev["event"] = "audio.detected";
+            ev["data"] = {{"path", path}, {"bpm", bpm}, {"key", key}};
+            st->pushEvent(ev);
+        });
+    }
+
     // Background lab job: start -> poll -> download results -> emit event.
     void runLabJob(const std::string& job, const std::string& path, const int modeOrStrength) {
         auto st = state;
@@ -443,39 +604,88 @@ struct Bridge::Impl {
                         }
                         if (stems) {
                             const std::string taskId2 = last.value("task_id", "");
+                            int validCount = 0;
                             for (auto it = stems->begin(); it != stems->end(); ++it) {
-                                if (st->abortJobs) return;
-                                if (!it.value().is_object())
-                                    continue;
-                                const std::string url = it.value().value("url", "");
-                                if (url.empty())
-                                    continue;
-                                const std::string dest = platform::joinPath(
-                                    labDir, taskId2 + "_" + it.key() + ".wav");
-                                if (lab::LabApi::downloadToFile(url, dest)) {
-                                    out["files"].push_back({{"name", it.key()},
-                                                            {"path", dest},
-                                                            {"color",
-                                                             it.value().value("color", "#cccccc")}});
+                                if (it.value().is_object() && !it.value().value("url", "").empty())
+                                    validCount++;
+                            }
+
+                            std::string zipUrl;
+                            if (last.contains("result") && last["result"].is_object())
+                                zipUrl = last["result"].value("zip_url", "");
+                            const std::string zipDest = platform::joinPath(labDir, taskId2 + "_stems.zip");
+                            if (!zipUrl.empty() && !st->abortJobs) {
+                                json zipProgress;
+                                zipProgress["event"] = "lab.progress";
+                                zipProgress["data"] = {{"percent", 5}, {"stage", "Đang tải gói stems..."}};
+                                st->pushEvent(zipProgress);
+                                if (!lab::LabApi::downloadToFile(zipUrl, zipDest))
+                                    throw std::runtime_error("stem ZIP download failed or was incomplete");
+                                const std::string stemDir = platform::joinPath(labDir, taskId2);
+                                platform::ensureDir(stemDir);
+                                const auto extracted = lab::extractStoredZip(zipDest, stemDir);
+                                for (const auto& file : extracted) {
+                                    std::string stemName = file.name;
+                                    if (stemName.size() > 4 && stemName.ends_with(".wav"))
+                                        stemName.resize(stemName.size() - 4);
+                                    std::string color = "#cccccc";
+                                    if (stems->contains(stemName) && (*stems)[stemName].is_object())
+                                        color = (*stems)[stemName].value("color", color);
+                                    out["files"].push_back({{"name", stemName}, {"path", file.path}, {"color", color}});
+                                }
+                                if (validCount > 0 && static_cast<int>(out["files"].size()) != validCount)
+                                    throw std::runtime_error("stem ZIP file count does not match server result");
+                                out["zipPath"] = zipDest;
+                            }
+
+                            if (out["files"].empty()) {
+                                int curIdx = 0;
+                                for (auto it = stems->begin(); it != stems->end(); ++it) {
+                                    if (st->abortJobs) return;
+                                    if (!it.value().is_object())
+                                        continue;
+                                    const std::string url = it.value().value("url", "");
+                                    if (url.empty())
+                                        continue;
+
+                                    curIdx++;
+                                    const int pct = validCount > 0 ? (curIdx * 100) / validCount : 100;
+                                    json prog;
+                                    prog["event"] = "lab.progress";
+                                    prog["data"] = {
+                                        {"percent", pct},
+                                        {"stage", "Đang tải stems: " + it.key() + " (" + std::to_string(curIdx) + "/" + std::to_string(validCount) + ")"}
+                                    };
+                                    st->pushEvent(prog);
+
+                                    const std::string dest = platform::joinPath(
+                                        labDir, taskId2 + "_" + it.key() + ".wav");
+                                    LOG_INFO("bridge", "Downloading stem " + it.key() + " to " + dest);
+                                    if (lab::LabApi::downloadToFile(url, dest)) {
+                                        LOG_INFO("bridge", "Downloaded stem " + it.key() + " successfully");
+                                        out["files"].push_back({{"name", it.key()},
+                                                                {"path", dest},
+                                                                {"color",
+                                                                 it.value().value("color", "#cccccc")}});
+                                    } else {
+                                        throw std::runtime_error("stem download failed or was incomplete: " + it.key());
+                                    }
                                 }
                             }
-                        }
-                        std::string zipUrl;
-                        if (last.contains("result") && last["result"].is_object())
-                            zipUrl = last["result"].value("zip_url", "");
-                        if (!zipUrl.empty() && !st->abortJobs) {
-                            const std::string zipDest = platform::joinPath(
-                                labDir, last.value("task_id", "stems") + "_stems.zip");
-                            if (lab::LabApi::downloadToFile(zipUrl, zipDest))
-                                out["zipPath"] = zipDest;
                         }
                     } else { // denoise
                         std::string url;
                         if (last.contains("result") && last["result"].is_object())
                             url = last["result"].value("denoise_url", "");
                         if (!url.empty()) {
+                            json prog;
+                            prog["event"] = "lab.progress";
+                            prog["data"] = {{"percent", 90}, {"stage", "Đang tải file đã khử ồn..."}};
+                            st->pushEvent(prog);
+
                             const std::string dest = platform::joinPath(
                                 labDir, last.value("task_id", "denoise") + "_clean.wav");
+                            LOG_INFO("bridge", "Downloading clean audio to " + dest);
                             if (lab::LabApi::downloadToFile(url, dest))
                                 out["files"].push_back({{"name", "clean"},
                                                         {"path", dest},
@@ -488,6 +698,7 @@ struct Bridge::Impl {
                         ev["event"] = "lab.result";
                         ev["data"] = out;
                         st->pushEvent(ev);
+                        LOG_INFO("bridge", "lab.result dispatched with " + std::to_string(out["files"].size()) + " files");
                     } else {
                         throw std::runtime_error(
                             "unexpected result shape from api (no files downloaded)");
@@ -542,7 +753,10 @@ struct Bridge::Impl {
                 search::SearchOptions opts;
                 opts.limit = static_cast<int>(maxResults);
                 opts.basePath = base;
-                opts.enableSemantic = true;
+                // Semantic (CLAP vector) search removed: the embedding pipeline
+                // produced non-aligned audio/text vectors -> meaningless cosine
+                // results. Syntax + text matching over real DB metadata only.
+                opts.enableSemantic = false;
                 opts.enableSyntax = true;
 
                 const auto sResults = searchEngine->search(query, opts);
@@ -623,9 +837,27 @@ struct Bridge::Impl {
 Bridge::Bridge(IHostActions* actions, std::string browserStorePath)
     : m_actions(actions), m_impl(std::make_unique<Impl>()) {
     m_impl->actions = actions;
+    // Agent history lives next to the browser store, so tests that isolate
+    // the store (temp dir) never touch the user's %APPDATA% history.
+    std::string agentHistoryPath;
     if (!browserStorePath.empty()) {
+        const std::filesystem::path storeParent =
+            platform::u8path(browserStorePath).parent_path();
+        agentHistoryPath = platform::pathToUtf8(storeParent / "agent_history.json");
         m_impl->model.setStorePath(std::move(browserStorePath));
+    } else {
+        agentHistoryPath = platform::joinPath(platform::dataDir(), "agent_history.json");
     }
+    Impl* impl = m_impl.get();
+    m_impl->agent = std::make_unique<AgentBridge>(
+        actions,
+        [st = m_impl->state](const json& ev) { st->pushEvent(ev); },
+        [impl](const std::string& job, const std::string& path, int param) {
+            impl->runLabJob(job, path, param);
+        },
+        std::move(agentHistoryPath));
+    m_impl->state->setLabObserver(
+        [agent = m_impl->agent.get()](const json& ev) { agent->onLabEvent(ev); });
 }
 
 Bridge::~Bridge() = default;
@@ -677,6 +909,9 @@ void Bridge::init() {
 std::vector<std::string> Bridge::drainEvents() {
     std::vector<std::string> out;
     if (!m_impl || !m_impl->state) return out;
+    // Host/UI thread: run agent tool calls queued by the agent worker.
+    if (m_impl->agent)
+        m_impl->agent->pumpMainThread();
     const std::lock_guard lock(m_impl->state->evMutex);
     while (!m_impl->state->events.empty()) {
         out.push_back(std::move(m_impl->state->events.front()));
@@ -826,7 +1061,14 @@ bool Bridge::updatePhaseSnapFromHostTransport() {
     double beatInLoop = std::fmod(transport.fullBeats, loopBeats);
     if (beatInLoop < 0.0) beatInLoop += loopBeats;
 
-    if (isPlaying && transport.blockLatencySeconds > 0.0 && transport.bpm > 30.0) {
+    // A stopped -> playing transition is already anchored at the transport
+    // start cursor.  The first live snapshot after Space is not a normal
+    // running block: adding the full block duration here would advance the
+    // preview once more and create a small offset exactly when the DAW starts
+    // alongside an already-playing preview.  Keep latency compensation for
+    // steady playback discontinuities (seek/loop wrap), and for the initial
+    // audio.play snapshot handled above.
+    if (isPlaying && wasPlaying && transport.blockLatencySeconds > 0.0 && transport.bpm > 30.0) {
         beatInLoop += transport.blockLatencySeconds * transport.bpm / 60.0;
         beatInLoop = std::fmod(beatInLoop, loopBeats);
         if (beatInLoop < 0.0) beatInLoop += loopBeats;
@@ -842,6 +1084,16 @@ bool Bridge::updatePhaseSnapFromHostTransport() {
     const bool previewPlaying = m_actions->isHostPreviewPlaying();
     const bool enginePlaying = reals::audio::Engine::instance().isPlaying();
 
+    bool startPhaseArmed = false;
+    {
+        const std::lock_guard lock(m_impl->syncMutex);
+        if (m_impl->transportStartPhaseArmed && isPlaying && !wasPlaying) {
+            startPhaseArmed = now - m_impl->transportStartPhaseTime < std::chrono::seconds(1);
+            m_impl->transportStartPhaseArmed = false;
+        }
+    }
+
+    bool hardTransitionSeek = false;
     if (previewPlaying) {
         double projectBpm = transport.bpm > 30.0 ? transport.bpm : m_actions->projectTempo();
         double seekReferenceSec = 0.0;
@@ -851,8 +1103,57 @@ bool Bridge::updatePhaseSnapFromHostTransport() {
             seekReferenceSec = durationSeconds;
         }
         const double targetPosSec = targetFrac * (seekReferenceSec > 0.0 ? seekReferenceSec : 1.0);
-        m_actions->setHostPreviewPosition(targetPosSec);
-        m_actions->setHostPreviewPositionFraction(targetFrac);
+        // When Space starts the DAW, the preview may have run ahead while the
+        // user waited. A soft seek keeps old élastique lookahead audio, so a
+        // large first correction remains audibly offset. Use one hard seek for
+        // that transition only; normal timer corrections stay soft to avoid
+        // dead air from repeated DSP resets.
+        if (!wasPlaying && isPlaying && seekReferenceSec > 0.0) {
+            const double currentFrac = std::clamp(m_actions->hostPreviewPositionFraction(), 0.0, 1.0);
+            const double currentPos = currentFrac * durationSeconds;
+            const double phaseDelta = std::abs(std::remainder(currentPos - targetPosSec, seekReferenceSec));
+            const double phaseErrorSec = phaseDelta;
+            constexpr double kHardTransitionSeekThresholdSec = 0.050;
+            hardTransitionSeek = phaseErrorSec > kHardTransitionSeekThresholdSec;
+            // #region agent log
+            AgentDebugLog("A,B,D", "Bridge.cpp:updatePhaseSnap", "space_transition_phase",
+                          {{"wasPlaying", wasPlaying},
+                           {"isPlaying", isPlaying},
+                           {"startPhaseArmed", startPhaseArmed},
+                           {"currentPos", currentPos},
+                           {"targetPosSec", targetPosSec},
+                           {"phaseErrorSec", phaseErrorSec},
+                           {"hardTransitionSeek", hardTransitionSeek},
+                           {"durationSeconds", durationSeconds},
+                           {"seekReferenceSec", seekReferenceSec},
+                           {"targetFrac", targetFrac}});
+            // #endregion
+            // Space already moved the DAW cursor onto the audible preview phase.
+            // Any timer seek here (soft or hard) either keeps stale lookahead or
+            // Resets élastique while the DAW is already rolling — both audible.
+            if (startPhaseArmed) {
+                LOG_INFO("SYNC_DIAG", "SPACE_START: kept pre-aligned preview; phaseDeltaSec=" +
+                         std::to_string(phaseErrorSec));
+                // #region agent log
+                AgentDebugLog("C", "Bridge.cpp:updatePhaseSnap", "kept_pre_aligned",
+                              {{"phaseErrorSec", phaseErrorSec},
+                               {"hardTransitionSeek", hardTransitionSeek}});
+                // #endregion
+                return false;
+            }
+        }
+        if (hardTransitionSeek) {
+            m_actions->setHostPreviewPosition(targetPosSec);
+        } else {
+            m_actions->setHostPreviewPositionSoft(targetPosSec);
+        }
+        // #region agent log
+        AgentDebugLog("A,D", "Bridge.cpp:updatePhaseSnap", "preview_seek_dispatched",
+                      {{"hardTransitionSeek", hardTransitionSeek},
+                       {"targetPosSec", targetPosSec},
+                       {"wasPlaying", wasPlaying},
+                       {"isPlaying", isPlaying}});
+        // #endregion
     }
 
     if (enginePlaying) {
@@ -861,7 +1162,8 @@ bool Bridge::updatePhaseSnapFromHostTransport() {
 
     LOG_INFO("SYNC_DIAG", "updatePhaseSnapFromHostTransport: re-aligned to targetFrac=" +
              std::to_string(targetFrac) + " fullBeats=" + std::to_string(transport.fullBeats) +
-             " isPlaying=" + std::to_string(isPlaying) + " previewPlaying=" + std::to_string(previewPlaying));
+             " isPlaying=" + std::to_string(isPlaying) + " previewPlaying=" + std::to_string(previewPlaying) +
+             " seekMode=" + std::string(hardTransitionSeek ? "hard-transition" : "soft"));
 
     return true;
 }
@@ -1157,10 +1459,17 @@ std::string Bridge::handle(const std::string& requestJson) {
                                       " m_impl->syncEnabled=" + std::to_string(m_impl->syncEnabled));
             }
 
-            std::string detectedKey = m_impl->detectKeyForPath(p);
+            // FAST PATH ONLY on the UI thread: filename regex + DB lookup.
+            // The heavy TempoDetector/KeyDecoder (30s decode + FFT) would block
+            // the click -> audible lag, so unknown metadata is detected in a
+            // background worker that pushes "audio.detected" when finished.
+            std::string detectedKey = m_impl->detectKeyForPathFast(p);
             float sampleBpm = args.value("sampleBpm", 0.0f);
             if (sampleBpm <= 0.0f) {
-                sampleBpm = m_impl->detectBpmForPath(p);
+                sampleBpm = m_impl->detectBpmForPathFast(p);
+            }
+            if (sampleBpm <= 0.0f || detectedKey.empty()) {
+                m_impl->spawnMetaDetection(p);
             }
 
             float pitchShift = static_cast<float>(args.value("pitchSemitones", static_cast<double>(eng.getPitchSemitones())));
@@ -1179,11 +1488,22 @@ std::string Bridge::handle(const std::string& requestJson) {
                     else projectBpm = m_actions->projectTempo();
                 }
 
-                if (sampleBpm <= 0.0f && projectBpm > 0.0) {
-                    sampleBpm = static_cast<float>(projectBpm);
-                }
-
-                if (projectBpm > 30.0 && sampleBpm > 30.0) {
+                if (sampleBpm <= 0.0f) {
+                    // BPM unknown: keep original tempo (ratio 1.0) instead of
+                    // faking sampleBpm = projectBpm. The fake made the UI report
+                    // the PROJECT tempo as the sample's detected BPM (e.g. "120"
+                    // on every file) and skipped the stretch silently. The
+                    // background worker delivers the real BPM via audio.detected
+                    // and the UI re-applies Sync (live re-phase) when it arrives.
+                    eng.setTimeRatio(1.0f);
+                    {
+                        const std::lock_guard lock(m_impl->syncMutex);
+                        m_impl->syncRatio = 1.0f;
+                        m_impl->syncSampleBpm = 0.0f;
+                    }
+                    LOG_INFO("SYNC_DIAG", "[AUDIO_PLAY] path=" + p +
+                                          " sampleBpm unknown -> ratio=1.0 (background detect pending)");
+                } else if (projectBpm > 30.0 && sampleBpm > 30.0) {
                     float ratio = std::clamp(static_cast<float>(projectBpm / sampleBpm), 0.25f, 4.0f);
                     if (std::abs(projectBpm - sampleBpm) / projectBpm < 0.003) {
                         ratio = 1.0f; // Bit-perfect bypass when tempo difference < 0.3%
@@ -1198,8 +1518,13 @@ std::string Bridge::handle(const std::string& requestJson) {
                                           " projectBpm=" + std::to_string(projectBpm) +
                                           " sampleBpm=" + std::to_string(sampleBpm) +
                                           " ratio=" + std::to_string(ratio) +
-                                          " pitchSemitones=" + std::to_string(pitchShift) +
-                                          " mode=" + std::string(ratio == 1.0f && pitchShift == 0.0f ? "BIT_PERFECT_BYPASS" : "REAPER_ELASTIQUE_DSP"));
+                                           " pitchSemitones=" + std::to_string(pitchShift) +
+                                           " mode=" + std::string(ratio == 1.0f && pitchShift == 0.0f ? "BIT_PERFECT_BYPASS" : "REAPER_ELASTIQUE_DSP"));
+                } else {
+                    // Sync requested but no usable project tempo: original tempo.
+                    eng.setTimeRatio(1.0f);
+                    const std::lock_guard lock(m_impl->syncMutex);
+                    m_impl->syncRatio = 1.0f;
                 }
             } else {
                 eng.setTimeRatio(1.0f);
@@ -1378,13 +1703,27 @@ std::string Bridge::handle(const std::string& requestJson) {
                 LOG_INFO("bridge", "audio.play launched custom DSP engine (standalone fallback) for: " + p);
             }
             if (ok) {
+                const double rawDuration = info.durationSeconds > 0.0
+                    ? info.durationSeconds
+                    : eng.currentTrack().durationSeconds;
+                double trackedDuration = eng.getTimeRatio() > 0.01f
+                    ? rawDuration / eng.getTimeRatio()
+                    : rawDuration;
+                if (args.value("loop", false) && syncOn && loopBeats > 0.0 && projectBpm > 30.0) {
+                    trackedDuration = loopBeats * 60.0 / projectBpm;
+                }
                 const std::lock_guard lock(m_impl->syncMutex);
                 m_impl->previewPath = p;
-                m_impl->previewDurationSeconds = info.durationSeconds > 0.0 ? info.durationSeconds : eng.currentTrack().durationSeconds;
+                m_impl->previewRawDurationSeconds = rawDuration;
+                m_impl->previewDurationSeconds = trackedDuration;
                 m_impl->previewLoopBeats = loopBeats;
                 m_impl->previewSampleBpm = static_cast<double>(sampleBpm);
                 m_impl->previewNominalLoopFrames = nominalLoopFrames;
+                m_impl->previewLoopEnabled = args.value("loop", false);
                 m_impl->lastPhaseFraction = startFraction;
+                m_impl->syncPath = p;
+                m_impl->syncSampleBpm = sampleBpm;
+                m_impl->syncRatio = eng.getTimeRatio();
             }
             LOG_INFO("bridge", "audio.play ok=" + std::to_string(ok));
             model.addRecent(p);
@@ -1426,6 +1765,19 @@ std::string Bridge::handle(const std::string& requestJson) {
             const bool loop = args.value("value", false);
             if (m_actions) m_actions->setHostPreviewLoop(loop);
             eng.setLoop(loop);
+            {
+                const std::lock_guard lock(m_impl->syncMutex);
+                m_impl->previewLoopEnabled = loop;
+                if (m_impl->previewRawDurationSeconds > 0.0) {
+                    m_impl->previewDurationSeconds = m_impl->syncRatio > 0.01f
+                        ? m_impl->previewRawDurationSeconds / m_impl->syncRatio
+                        : m_impl->previewRawDurationSeconds;
+                    if (loop && m_impl->previewLoopBeats > 0.0 && m_impl->previewSampleBpm > 30.0) {
+                        m_impl->previewDurationSeconds = m_impl->previewLoopBeats * 60.0 /
+                            (m_impl->previewSampleBpm * m_impl->syncRatio);
+                    }
+                }
+            }
             res["ok"] = true;
         } else if (cmd == "audio.setVolume") {
             const float vol = args.value("value", 1.0f);
@@ -1549,18 +1901,38 @@ std::string Bridge::handle(const std::string& requestJson) {
             std::string syncPath = args.value("path", "");
             if (syncPath.empty()) {
                 syncPath = eng.currentTrack().path;
+                if (syncPath.empty()) {
+                    const std::lock_guard lock(m_impl->syncMutex);
+                    syncPath = m_impl->previewPath;
+                }
             }
-            // Auto-detect BPM if missing and sync is being enabled
+            bool previousEnabled = false;
+            float previousRatio = 1.0f;
+            float previousSampleBpm = 0.0f;
+            std::string previousPath;
+            {
+                const std::lock_guard lock(m_impl->syncMutex);
+                previousEnabled = m_impl->syncEnabled;
+                previousRatio = m_impl->syncRatio;
+                previousSampleBpm = m_impl->syncSampleBpm;
+                previousPath = m_impl->syncPath;
+            }
+            // Auto-detect BPM if missing and sync is being enabled.
+            // Fast sources only (filename + DB); if still unknown, schedule the
+            // heavy TempoDetector in the background — audio.detected arrives and
+            // the UI re-applies sync with the real BPM (live re-phase).
             if (enabled && sampleBpm <= 0.0f) {
                 const std::string target = !syncPath.empty() ? syncPath : narrowPath(args.value("path", ""));
                 if (!target.empty()) {
-                    sampleBpm = m_impl->detectBpmForPath(target);
+                    sampleBpm = m_impl->detectBpmForPathFast(target);
                     // also try current track if still 0
                     if (sampleBpm <= 0.0f && !eng.currentTrack().path.empty()) {
-                        sampleBpm = m_impl->detectBpmForPath(eng.currentTrack().path);
+                        sampleBpm = m_impl->detectBpmForPathFast(eng.currentTrack().path);
                     }
+                    if (sampleBpm <= 0.0f) m_impl->spawnMetaDetection(target);
                 } else if (!eng.currentTrack().path.empty()) {
-                    sampleBpm = m_impl->detectBpmForPath(eng.currentTrack().path);
+                    sampleBpm = m_impl->detectBpmForPathFast(eng.currentTrack().path);
+                    if (sampleBpm <= 0.0f) m_impl->spawnMetaDetection(eng.currentTrack().path);
                 }
             }
             if (enabled) {
@@ -1572,11 +1944,22 @@ std::string Bridge::handle(const std::string& requestJson) {
                 } else if (args.contains("ratio")) {
                     ratio = args.value("ratio", 1.0f);
                 } else {
-                    // If we still have no sampleBpm, fallback to 120
-                    if (projectBpm > 0.0f) ratio = projectBpm / 120.0f;
+                    // BPM still unknown: keep original tempo instead of assuming
+                    // 120 BPM (the old projectBpm/120 fallback stretched wrongly
+                    // and displayed a fake tempo). Background detection will
+                    // deliver the real BPM and the UI re-applies Sync.
+                    ratio = 1.0f;
                 }
             }
-            if (m_actions) m_actions->setHostPreviewTimeRatio(static_cast<double>(ratio));
+            ratio = enabled ? std::clamp(ratio, 0.25f, 4.0f) : 1.0f;
+            const bool syncPathChanged = previousPath != syncPath;
+            const bool syncRatioChanged = std::abs(previousRatio - ratio) > 0.0005f;
+            const bool syncSampleChanged = std::abs(previousSampleBpm - sampleBpm) > 0.05f;
+            const bool syncConfigChanged = previousEnabled != enabled || syncPathChanged ||
+                                           syncRatioChanged || (enabled && syncSampleChanged);
+            if (m_actions && (previousEnabled != enabled || syncPathChanged || syncRatioChanged)) {
+                m_actions->setHostPreviewTimeRatio(static_cast<double>(ratio));
+            }
             eng.setTimeRatio(ratio);
             {
                 const std::lock_guard lock(m_impl->syncMutex);
@@ -1592,17 +1975,29 @@ std::string Bridge::handle(const std::string& requestJson) {
             const bool enginePlaying = eng.isPlaying();
             const bool previewPlaying = m_actions && m_actions->isHostPreviewPlaying();
             double rephaseDurationSeconds = 0.0;
+            double previewRawDurationSeconds = 0.0;
+            bool previewLoopEnabled = false;
             int rephaseSampleRate = 0;
             if (enginePlaying) {
                 const auto& trk = eng.currentTrack();
                 rephaseDurationSeconds = trk.durationSeconds;
                 rephaseSampleRate = trk.sampleRate;
             }
-            if (rephaseDurationSeconds < 1.0 && previewPlaying) {
+            if (previewPlaying) {
                 const std::lock_guard lock(m_impl->syncMutex);
-                rephaseDurationSeconds = m_impl->previewDurationSeconds;
+                previewRawDurationSeconds = m_impl->previewRawDurationSeconds;
+                if (rephaseDurationSeconds < 1.0) {
+                    // Loop quantization needs the source duration. The mirrored
+                    // preview duration is already divided by the previous time
+                    // ratio, so using it here can turn a 16-beat loop into 24
+                    // beats when the project tempo changes during playback.
+                    rephaseDurationSeconds = previewRawDurationSeconds > 0.0
+                        ? previewRawDurationSeconds
+                        : m_impl->previewDurationSeconds;
+                }
+                previewLoopEnabled = m_impl->previewLoopEnabled;
             }
-            if (enabled && m_actions && (enginePlaying || previewPlaying)) {
+            if (enabled && m_actions && (enginePlaying || previewPlaying) && syncConfigChanged) {
                 const auto transport = m_actions->hostTransport();
                 if (transport.isPlaying() && transport.bpm > 30.0 && sampleBpm > 30.0) {
                     if (rephaseDurationSeconds >= 1.0) {
@@ -1631,8 +2026,21 @@ std::string Bridge::handle(const std::string& requestJson) {
                         if (resolvedBeats <= 0.0) {
                             resolvedBeats = std::max(1.0, std::round(rawBeats));
                         }
+                        if (previewPlaying) {
+                            // Refresh the native wrapper's nominal loop and its
+                            // output duration before converting the phase fraction
+                            // to a position. This matters when BPM detection
+                            // arrives after the preview has already started.
+                            m_actions->setHostPreviewLoopBoundary(resolvedBeats, sampleBpm);
+                        }
+                        const double nominalOutputSeconds = resolvedBeats * 60.0 / transport.bpm;
                         double beatInLoop = std::fmod(transport.fullBeats, resolvedBeats);
                         if (beatInLoop < 0.0) beatInLoop += resolvedBeats;
+                        if (transport.blockLatencySeconds > 0.0) {
+                            beatInLoop += transport.blockLatencySeconds * transport.bpm / 60.0;
+                            beatInLoop = std::fmod(beatInLoop, resolvedBeats);
+                            if (beatInLoop < 0.0) beatInLoop += resolvedBeats;
+                        }
                         const double syncFrac = std::clamp(beatInLoop / resolvedBeats, 0.0, 0.999);
                         if (enginePlaying) {
                             const double nominalLoopSec = (resolvedBeats * 60.0) / sampleBpm;
@@ -1644,9 +2052,15 @@ std::string Bridge::handle(const std::string& requestJson) {
                         }
                         // Seek the REAPER native preview to the same bar phase.
                         if (previewPlaying) {
-                            m_actions->setHostPreviewPositionFraction(syncFrac);
+                            m_actions->setHostPreviewPositionSoft(syncFrac * nominalOutputSeconds);
                             const std::lock_guard lock(m_impl->syncMutex);
                             m_impl->previewLoopBeats = resolvedBeats;
+                            m_impl->previewSampleBpm = sampleBpm;
+                            m_impl->previewDurationSeconds = previewLoopEnabled
+                                ? nominalOutputSeconds
+                                : (previewRawDurationSeconds > 0.0
+                                    ? previewRawDurationSeconds / ratio
+                                    : rephaseDurationSeconds);
                             m_impl->lastPhaseFraction = syncFrac;
                         }
                     }
@@ -1733,20 +2147,12 @@ std::string Bridge::handle(const std::string& requestJson) {
                     channels = rec->channels;
                 }
 
-                if (bpm <= 0.0f) {
-                    bpm = m_impl->detectBpmForPath(target);
-                }
-                if (key.empty()) {
-                    key = m_impl->detectKeyForPath(target);
-                    if (camelot.empty() && !key.empty()) {
-                        std::string root = key;
-                        std::string mode = "major";
-                        if (root.back() == 'm') {
-                            root.pop_back();
-                            mode = "minor";
-                        }
-                        camelot = ai::KeyDetector::toCamelot(root, mode);
-                    }
+                if (bpm <= 0.0f || key.empty()) {
+                    // Fast sources only on the UI thread; heavy detectors run
+                    // in background and update the DB (audio.detected event).
+                    if (bpm <= 0.0f) bpm = m_impl->detectBpmForPathFast(target);
+                    if (key.empty()) key = m_impl->detectKeyForPathFast(target);
+                    m_impl->spawnMetaDetection(target);
                 }
                 if (duration <= 0.0) {
                     auto info = audio::Engine::probeFile(target);
@@ -1819,14 +2225,6 @@ std::string Bridge::handle(const std::string& requestJson) {
                 } else {
                 auto tempoRes = ai::TempoDetector::detect(pcm.data(), pcm.size(), sr);
                 auto keyRes = ai::KeyDetector::detect(pcm.data(), pcm.size(), sr);
-                auto genreRes = ai::GenreClassifier::classify(pcm.data(), pcm.size(), sr, 5);
-                auto moodRes = ai::MoodClassifier::classify(pcm.data(), pcm.size(), sr, 0.2f);
-                auto emb = ai::ClapEmbedder::embedAudio(pcm.data(), pcm.size(), sr);
-
-                json genreArr = json::array();
-                for (const auto& g : genreRes) genreArr.push_back({{"tag", g.tag}, {"score", g.score}});
-                json moodArr = json::array();
-                for (const auto& m : moodRes) moodArr.push_back({{"tag", m.tag}, {"score", m.score}});
 
                 json analysis;
                 analysis["tempo"] = {
@@ -1841,9 +2239,6 @@ std::string Bridge::handle(const std::string& requestJson) {
                     {"openKey", keyRes.openKey},
                     {"confidence", keyRes.confidence}
                 };
-                analysis["genres"] = genreArr;
-                analysis["moods"] = moodArr;
-                analysis["embeddingDim"] = emb.size();
 
                 auto optSample = m_impl->db.getSampleByPath(p);
                 if (optSample.has_value()) {
@@ -1852,19 +2247,8 @@ std::string Bridge::handle(const std::string& requestJson) {
                     rec.keyRoot = keyRes.key;
                     rec.keyMode = keyRes.mode;
                     rec.camelot = keyRes.camelot;
-                    if (!genreRes.empty()) rec.genre = genreRes[0].tag;
-                    if (!moodRes.empty()) rec.mood = moodRes[0].tag;
                     rec.aiAnalyzed = true;
                     m_impl->db.upsertSample(rec);
-
-                    db::AnalysisRecord ar;
-                    ar.sampleId = rec.id;
-                    ar.tempoConfidence = tempoRes.confidence;
-                    ar.keyConfidence = keyRes.confidence;
-                    for (const auto& g : genreRes) ar.genreTags.push_back(g.tag);
-                    for (const auto& m : moodRes) ar.moodTags.push_back(m.tag);
-                    ar.embedding = emb;
-                    m_impl->db.updateAnalysis(rec.id, ar);
                 }
 
                 res["ok"] = true;
@@ -1872,98 +2256,16 @@ std::string Bridge::handle(const std::string& requestJson) {
                 }
                 }
             }
-        } else if (cmd == "ai.searchSemantic") {
-            const std::string query = args.value("query", "");
-            const int limit = args.value("limit", 20);
-            const auto queryVec = ai::ClapEmbedder::embedText(query);
-            const auto allEmbs = m_impl->db.getAllEmbeddings();
-
-            std::vector<std::pair<float, int64_t>> scored;
-            scored.reserve(allEmbs.size());
-            for (const auto& [id, emb] : allEmbs) {
-                if (emb.size() == queryVec.size()) {
-                    float sim = ai::ClapEmbedder::cosineSimilarity(queryVec, emb);
-                    scored.emplace_back(sim, id);
-                }
-            }
-            std::sort(scored.begin(), scored.end(), [](const auto& a, const auto& b) {
-                return a.first > b.first;
-            });
-
-            json arr = json::array();
-            size_t take = std::min<size_t>(scored.size(), limit > 0 ? limit : 20);
-            for (size_t i = 0; i < take; ++i) {
-                auto optSample = m_impl->db.getSampleById(scored[i].second);
-                if (optSample.has_value()) {
-                    const auto& s = optSample.value();
-                    json item;
-                    item["id"] = s.id;
-                    item["path"] = s.path;
-                    item["filename"] = s.filename;
-                    item["name"] = s.filename;
-                    item["filesize"] = s.filesize;
-                    item["size"] = s.filesize;
-                    item["score"] = scored[i].first;
-                    item["similarity"] = std::clamp(static_cast<int>(std::round(scored[i].first * 100.0f)), 1, 100);
-                    item["bpm"] = s.bpm;
-                    item["key"] = s.keyRoot;
-                    item["mode"] = s.keyMode;
-                    item["camelot"] = s.camelot;
-                    item["genre"] = s.genre;
-                    item["mood"] = s.mood;
-                    item["duration"] = s.durationSec;
-                    item["isDir"] = false;
-                    item["isAudio"] = true;
-                    arr.push_back(item);
-                }
-            }
-            res["ok"] = true;
-            res["data"] = {{"results", arr}, {"count", arr.size()}};
-        } else if (cmd == "search.findSimilar" || cmd == "ai.findSimilar" || cmd == "browser.findSimilar") {
-            const std::string path = narrowPath(args.value("path", ""));
-            const int64_t sampleId = args.value("id", static_cast<int64_t>(0));
-            const int limit = args.value("limit", 50);
-
-            if (!m_impl->searchEngine) {
-                m_impl->searchEngine = std::make_unique<search::SearchEngine>(
-                    std::shared_ptr<db::Database>(&m_impl->db, [](db::Database*) {}));
-            }
-
-            std::vector<search::SearchResult> results;
-            if (sampleId > 0) {
-                results = m_impl->searchEngine->searchSimilar(sampleId, limit, 0.30f);
-            } else if (!path.empty()) {
-                results = m_impl->searchEngine->searchSimilarByPath(path, limit, 0.30f);
-            }
-
-            json arr = json::array();
-            for (const auto& r : results) {
-                json item;
-                item["id"] = r.sample.id;
-                item["path"] = r.sample.path;
-                item["filename"] = r.sample.filename;
-                item["name"] = r.sample.filename;
-                item["filesize"] = r.sample.filesize;
-                item["size"] = r.sample.filesize;
-                item["duration"] = r.sample.durationSec;
-                item["sampleRate"] = r.sample.sampleRate;
-                item["channels"] = r.sample.channels;
-                item["bpm"] = r.sample.bpm;
-                item["key"] = r.sample.keyRoot;
-                item["mode"] = r.sample.keyMode;
-                item["camelot"] = r.sample.camelot;
-                item["genre"] = r.sample.genre;
-                item["mood"] = r.sample.mood;
-                item["score"] = r.combinedScore;
-                item["similarity"] = std::clamp(static_cast<int>(std::round(r.combinedScore * 100.0f)), 1, 100);
-                item["aiAnalyzed"] = r.sample.aiAnalyzed;
-                item["isDir"] = false;
-                item["isAudio"] = true;
-                arr.push_back(item);
-            }
-            res["ok"] = true;
-            res["data"] = {{"results", arr}, {"count", arr.size()}};
         } else if (cmd == "diag.getLogs" || cmd == "system.getLogs") {
+            const size_t limit = static_cast<size_t>(args.value("limit", 200));
+            const auto logs = util::Log::recentLogs(limit);
+            json arr = json::array();
+            for (const auto& line : logs) {
+                arr.push_back(line);
+            }
+            res["ok"] = true;
+            res["data"] = {{"logs", arr}, {"count", arr.size()}};
+        } else if (cmd == "db.search") {
             const size_t limit = static_cast<size_t>(args.value("limit", 200));
             const auto logs = util::Log::recentLogs(limit);
             json arr = json::array();
@@ -2125,7 +2427,8 @@ std::string Bridge::handle(const std::string& requestJson) {
                 if (syncOn) {
                     float sampleBpm = args.value("sampleBpm", 0.0f);
                     if (sampleBpm <= 0.0f) {
-                        sampleBpm = m_impl->detectBpmForPath(p);
+                        sampleBpm = m_impl->detectBpmForPathFast(p);
+                        if (sampleBpm <= 0.0f) m_impl->spawnMetaDetection(p);
                     }
                     double projectBpm = 0.0;
                     if (m_actions) projectBpm = m_actions->projectTempo();
@@ -2169,7 +2472,8 @@ std::string Bridge::handle(const std::string& requestJson) {
                     double playrate = 1.0;
                     bool doSync = false;
                     if (syncOn) {
-                        float sampleBpm = m_impl->detectBpmForPath(p);
+                        float sampleBpm = m_impl->detectBpmForPathFast(p);
+                        if (sampleBpm <= 0.0f) m_impl->spawnMetaDetection(p);
                         if (sampleBpm > 30.0f && projectBpm > 30.0) {
                             playrate = projectBpm / sampleBpm;
                             doSync = true;
@@ -2213,12 +2517,129 @@ std::string Bridge::handle(const std::string& requestJson) {
             if (m_actions)
                 m_actions->sendToLab(narrowPath(args.value("path", "")), args.value("job", "analyze").c_str());
             res["ok"] = true;
+        } else if (cmd == "reaper.selectedItem") {
+            const std::string path = m_actions ? m_actions->getSelectedMediaItemPath() : "";
+            const double pos = m_actions ? m_actions->getSelectedMediaItemPosition() : 0.0;
+            const double len = m_actions ? m_actions->getSelectedMediaItemLength() : 0.0;
+            res["ok"] = true;
+            res["data"] = {{"path", path}, {"itemPosition", pos}, {"itemLength", len}};
+        } else if (cmd == "reaper.insertChords" || cmd == "reaper.insertChordTrack") {
+            const bool ok = m_actions && m_actions->insertChordTrack(args.dump());
+            res["ok"] = ok;
+        } else if (cmd == "reaper.insertStemsToFolder") {
+            const bool ok = m_actions && m_actions->insertStemsToFolder(args.dump());
+            res["ok"] = ok;
+        } else if (cmd == "reaper.showChordDocker") {
+            const bool show = args.value("show", true);
+            if (m_actions) {
+                m_actions->showChordDocker(show, args.dump());
+            }
+            res["ok"] = true;
         } else if (cmd == "reaper.tempo") {
             json d;
             d["bpm"] = m_actions ? m_actions->projectTempo() : 0.0;
             res["ok"] = true;
             res["data"] = d;
+        } else if (cmd == "reaper.transportState") {
+            json d;
+            if (m_actions) {
+                const auto t = m_actions->hostTransport();
+                d["playing"] = t.isPlaying();
+                d["bpm"] = t.bpm;
+            } else {
+                d["playing"] = false;
+                d["bpm"] = 0.0;
+            }
+            d["previewPlaying"] = m_actions ? m_actions->isHostPreviewPlaying() : false;
+            res["ok"] = true;
+            res["data"] = d;
+        } else if (cmd == "reaper.dawPlay") {
+            // Spacebar preview cycle step 1: DAW is stopped -> start rolling
+            // WITHOUT killing the sample preview (marked so commandHook lets
+            // the preview keep running).
+            if (m_actions) {
+                bool armStartPhase = false;
+                double startPosSec = -1.0;
+                {
+                    const std::lock_guard lock(m_impl->syncMutex);
+                    const bool syncOn = m_impl->syncEnabled;
+                    const double loopBeats = m_impl->previewLoopBeats > 0.0
+                        ? m_impl->previewLoopBeats : 16.0;
+                    const double durationSeconds = m_impl->previewDurationSeconds;
+                    if (syncOn && m_actions->isHostPreviewPlaying() && durationSeconds >= 1.0 &&
+                        loopBeats > 0.0) {
+                        const auto t = m_actions->hostTransport();
+                        if (t.bpm > 30.0) {
+                            const double seekRef = loopBeats * 60.0 / t.bpm;
+                            const double previewPos =
+                                std::clamp(m_actions->hostPreviewPositionFraction(), 0.0, 1.0) *
+                                durationSeconds;
+                            double phaseInLoop = seekRef > 0.0 ? std::fmod(previewPos, seekRef)
+                                                               : previewPos;
+                            if (phaseInLoop < 0.0) phaseInLoop += seekRef;
+                            if (!m_impl->previewLoopEnabled) {
+                                // Finite clips stay on the absolute phrase phase;
+                                // do not wrap into a synthetic loop cycle.
+                                phaseInLoop = previewPos;
+                            }
+                            double cycleStart = 0.0;
+                            if (m_impl->previewLoopEnabled && seekRef > 0.0) {
+                                cycleStart = std::floor(t.playPosition / seekRef) * seekRef;
+                            } else if (!m_impl->previewLoopEnabled) {
+                                // Anchor the phrase at the stopped cursor's bar cycle
+                                // when possible so Space does not jump to t=0.
+                                if (seekRef > 0.0) {
+                                    cycleStart = std::floor(t.playPosition / seekRef) * seekRef;
+                                }
+                            }
+                            startPosSec = cycleStart + phaseInLoop;
+                            // First audible DAW block is anticipatory; pull the
+                            // edit cursor back by one block so DAC output meets
+                            // the already-audible preview phase.
+                            if (t.blockLatencySeconds > 0.0) {
+                                startPosSec -= t.blockLatencySeconds;
+                            }
+                            if (startPosSec < 0.0) startPosSec = 0.0;
+                            armStartPhase = true;
+                        }
+                    }
+                    m_impl->transportStartPhaseArmed = armStartPhase;
+                    if (armStartPhase) {
+                        m_impl->transportStartPhaseTime = std::chrono::steady_clock::now();
+                    }
+                }
+                // #region agent log
+                {
+                    const auto t = m_actions->hostTransport();
+                    AgentDebugLog("C,E", "Bridge.cpp:dawPlay", "daw_play_before_startTransport",
+                                  {{"previewPlaying", m_actions->isHostPreviewPlaying()},
+                                   {"previewFrac", m_actions->hostPreviewPositionFraction()},
+                                   {"dawPlaying", t.isPlaying()},
+                                   {"playPosition", t.playPosition},
+                                   {"fullBeats", t.fullBeats},
+                                   {"transportStartPhaseArmed", armStartPhase},
+                                   {"startPosSec", startPosSec},
+                                   {"blockLatencySeconds", t.blockLatencySeconds}});
+                }
+                // #endregion
+                if (armStartPhase && startPosSec >= 0.0) {
+                    m_actions->startTransport(startPosSec);
+                } else {
+                    m_actions->startTransport();
+                }
+            }
+            res["ok"] = true;
+        } else if (cmd == "reaper.dawStop") {
+            // Spacebar preview cycle step 2: both playing -> stop BOTH the
+            // DAW and the sample preview (cycle ends).
+            if (m_actions) {
+                m_actions->stopHostPreview();
+                m_actions->stopTransport();
+            }
+            eng.stop();
+            res["ok"] = true;
         } else if (cmd == "reaper.playToggle") {
+            // Legacy path (outside the preview cycle): stop preview + toggle DAW.
             eng.stop();
             if (m_actions) {
                 m_actions->stopHostPreview();
@@ -2260,7 +2681,8 @@ std::string Bridge::handle(const std::string& requestJson) {
                         sampleBpm = args["sampleBpm"].get<float>();
                     }
                     if (sampleBpm <= 0.0f) {
-                        sampleBpm = m_impl->detectBpmForPath(p);
+                        sampleBpm = m_impl->detectBpmForPathFast(p);
+                        if (sampleBpm <= 0.0f) m_impl->spawnMetaDetection(p);
                     }
                     double projectBpm = m_actions->projectTempo();
                     if (sampleBpm > 30.0f && projectBpm > 30.0) {
@@ -2304,6 +2726,8 @@ std::string Bridge::handle(const std::string& requestJson) {
         } else if (cmd == "window.isDocked") {
             res["docked"] = m_actions ? m_actions->isDocked() : false;
             res["ok"] = true;
+        } else if (cmd.rfind("agent.", 0) == 0 && m_impl->agent) {
+            m_impl->agent->handle(cmd, args, res);
         } else {
             res["ok"] = false;
             res["error"] = "unknown cmd: " + cmd;

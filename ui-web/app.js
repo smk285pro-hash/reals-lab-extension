@@ -23,6 +23,45 @@ const I18N = {
     'agent.mode2': 'Chỉ hỏi nguy hiểm', 'agent.mode3': 'Toàn quyền',
     'agent.hint': 'Ra lệnh cho agent... (VD: lọc noise all track audio)',
     'agent.apiStub': 'Phase 5 — cần API LLM từ server RealS',
+    'agent.greeting': "Xin chào! Mình là trợ lý AI của Reals Lab — mình có thể đọc và chỉnh project REAPER của bạn. Cứ ra lệnh nhé.",
+    'agent.thinking': "Agent đang xử lý...",
+    'agent.stop': "Dừng",
+    'agent.thinkingLive': "Đang suy nghĩ…",
+    'agent.thought': "Đã suy nghĩ",
+    'agent.clear': "Xóa hội thoại",
+    'agent.cleared': "Đã xóa hội thoại.",
+    'agent.cancelled': "Đã dừng.",
+    'agent.allow': "Cho phép",
+    'agent.deny': "Từ chối",
+    'agent.tool.waiting': "Chờ xác nhận",
+    'agent.tool.running': "Đang chạy",
+    'agent.tool.done': "Xong",
+    'agent.tool.failed': "Lỗi",
+    'agent.tool.denied': "Đã từ chối",
+    'agent.risk.read': "Đọc",
+    'agent.risk.write': "Ghi",
+    'agent.risk.danger': "Nguy hiểm",
+    'agent.err.prefix': "Lỗi: ",
+    'agent.err.config': "Chưa cấu hình API — mở Cài đặt › Agent AI để nhập Base URL và API key.",
+    'agent.err.steps': "Agent đã chạy quá số bước cho phép nên dừng lại.",
+    'agent.preview': "Bản xem trước trên trình duyệt — agent chỉ chạy bên trong REAPER.",
+    'agent.set.title': "Kết nối LLM",
+    'agent.set.provider': "Chuẩn API",
+    'agent.set.provAnthropic': "Anthropic",
+    'agent.set.provOpenai': "OpenAI tương thích",
+    'agent.set.baseUrl': "Địa chỉ API (Base URL)",
+    'agent.set.apiKey': "API key",
+    'agent.set.keyPh': "Để trống = giữ key hiện tại",
+    'agent.set.keyNone': "Chưa có key",
+    'agent.set.keyFrom': "Đang dùng key ",
+    'agent.set.clearKey': "Xóa key",
+    'agent.set.model': "Model",
+    'agent.set.loadModels': "Tải danh sách model",
+    'agent.set.loading': "Đang tải...",
+    'agent.set.modelsErr': "Không tải được danh sách model: ",
+    'agent.set.save': "Lưu",
+    'agent.set.saved': "Đã lưu cài đặt Agent",
+    'agent.set.note': "API key chỉ lưu trên máy này (config.json trong thư mục dữ liệu RealsLab), không đưa vào mã nguồn.",
     'browser.searchHint': 'Tìm trong thư mục...', 'browser.sort.name': 'Tên',
     'browser.sort.size': 'Dung lượng', 'browser.sort.date': 'Ngày sửa',
     'browser.audioOnly': 'Audio', 'browser.autoPreview': 'Auto', 'browser.favOnly': 'Yêu thích',
@@ -87,10 +126,6 @@ const I18N = {
     'scanner.cpuMode.low': 'Thấp (30%)', 'scanner.cpuMode.normal': 'Chuẩn (50%)',
     'scanner.cpuMode.high': 'Cao (85%)',
     'scanner.cpuMode.highWarn': 'Chế độ cao dùng nhiều CPU — tiếp tục?',
-    'browser.similarTo': 'Tương tự', 'browser.matchPercent': 'khớp',
-    'browser.noResults': 'Không tìm thấy mẫu tương tự',
-    'browser.clearSimilar': 'Xóa bộ lọc tương tự',
-    'browser.ctx.findSimilar': 'Tìm mẫu tương tự (AI)',
     'browser.ctx.scanNew': 'Quét file mới', 'browser.ctx.rescanAll': 'Quét lại tất cả',
     // Window / splitter / toast keys (MIN-01/02/07)
     'window.dockHint': 'Dock vào REAPER / Cửa sổ riêng', 'window.settingsHint': 'Cài đặt',
@@ -99,7 +134,6 @@ const I18N = {
     'splitter.tree': 'Kéo để chỉnh độ rộng Cây thư mục',
     'splitter.preview': 'Kéo để chỉnh chiều cao Trình phát',
     'toast.labError': 'Lỗi Lab', 'toast.scannerError': 'Lỗi quét',
-    'toast.similarError': 'Lỗi tìm mẫu tương tự',
     'sync.noBpm': 'Sync: không tìm thấy BPM, thử 120',
     'player.dragTip': 'Kéo vào REAPER',
     'browser.loadingSamples': 'Đang tải sample...',
@@ -107,6 +141,21 @@ const I18N = {
     'scanner.cancel': 'Dừng',
     'settings.miniWave': 'Sóng âm mini dưới tên file',
     'lab.alreadyRunning': 'Đang có job chạy — chờ xong đã nhé',
+    'lab.btnFetchDaw': 'Lấy từ Item DAW', 'lab.btnBrowse': 'Chọn file...',
+    'lab.ribbon.stem': 'Tách Stems', 'lab.ribbon.denoise': 'Lọc Noise',
+    'lab.ribbon.chords': 'Dò Hợp Âm & Key', 'lab.ribbon.analyze': 'BPM & Key',
+    'lab.action.process': 'Bắt đầu Xử lý', 'lab.action.processing': 'Đang xử lý...',
+    'lab.stems.title': 'Bộ trộn Stems (Demucs v4)', 'lab.stems.insertAll': 'Chèn tất cả Stems vào REAPER',
+    'lab.stems.zip': 'Mở thư mục ZIP', 'lab.stems.insertTrack': '+ Track mới',
+    'lab.chords.title': 'Tiến trình Hợp Âm (Chord Progression)', 'lab.chords.insertTrack': 'Tạo Chord Track vào REAPER',
+    'lab.chords.openDocker': 'Hiện trên Dock DAW (Top)', 'lab.chords.insertMidi': 'Chèn Track MIDI vào REAPER',
+    'lab.chords.toggleDocker': 'Bật / Tắt Dock Chord Track',
+    'lab.chords.audition': 'Nghe thử', 'lab.chords.roman': 'Bậc',
+    'lab.status.ready': 'Sẵn sàng', 'lab.status.processing': 'Đang gửi xử lý trên Modal Serverless GPU...',
+    'lab.status.complete': 'Đã hoàn thành', 'lab.dropHere': 'Thả file audio vào đây hoặc chọn từ DAW',
+    'lab.stem.vocal': 'Vocal', 'lab.stem.drums': 'Drums', 'lab.stem.bass': 'Bass', 'lab.stem.other': 'Other',
+    'lab.noItemSelected': 'Chưa chọn Media Item nào trong REAPER',
+    'lab.itemFetched': 'Đã lấy item từ REAPER', 'lab.chordsInserted': 'Đã tạo Chord Track thành công trong REAPER',
   },
   en: {
     'update.available': 'is ready — Audio Lab added', 'update.button': 'Update',
@@ -128,6 +177,45 @@ const I18N = {
     'agent.mode2': 'Ask dangerous only', 'agent.mode3': 'Full control',
     'agent.hint': 'Command the agent... (e.g. denoise all audio tracks)',
     'agent.apiStub': 'Phase 5 — needs RealS server LLM API',
+    'agent.greeting': "Hi! I'm the Reals Lab AI assistant — I can read and edit your REAPER project. Just tell me what to do.",
+    'agent.thinking': "Agent is working...",
+    'agent.stop': "Stop",
+    'agent.thinkingLive': "Thinking…",
+    'agent.thought': "Thought process",
+    'agent.clear': "Clear conversation",
+    'agent.cleared': "Conversation cleared.",
+    'agent.cancelled': "Stopped.",
+    'agent.allow': "Allow",
+    'agent.deny': "Deny",
+    'agent.tool.waiting': "Awaiting approval",
+    'agent.tool.running': "Running",
+    'agent.tool.done': "Done",
+    'agent.tool.failed': "Failed",
+    'agent.tool.denied': "Denied",
+    'agent.risk.read': "Read",
+    'agent.risk.write': "Write",
+    'agent.risk.danger': "Dangerous",
+    'agent.err.prefix': "Error: ",
+    'agent.err.config': "API not configured — open Settings › Agent AI to enter a base URL and API key.",
+    'agent.err.steps': "The agent hit its step limit and stopped.",
+    'agent.preview': "Browser preview — the agent only runs inside REAPER.",
+    'agent.set.title': "LLM connection",
+    'agent.set.provider': "API flavour",
+    'agent.set.provAnthropic': "Anthropic",
+    'agent.set.provOpenai': "OpenAI-compatible",
+    'agent.set.baseUrl': "API base URL",
+    'agent.set.apiKey': "API key",
+    'agent.set.keyPh': "Leave empty to keep the current key",
+    'agent.set.keyNone': "No key set",
+    'agent.set.keyFrom': "Using key ",
+    'agent.set.clearKey': "Remove key",
+    'agent.set.model': "Model",
+    'agent.set.loadModels': "Fetch model list",
+    'agent.set.loading': "Loading...",
+    'agent.set.modelsErr': "Could not fetch models: ",
+    'agent.set.save': "Save",
+    'agent.set.saved': "Agent settings saved",
+    'agent.set.note': "The API key is stored only on this machine (config.json in the RealsLab data folder), never in the source tree.",
     'browser.searchHint': 'Search in folder...', 'browser.sort.name': 'Name',
     'browser.sort.size': 'Size', 'browser.sort.date': 'Date',
     'browser.audioOnly': 'Audio', 'browser.autoPreview': 'Auto', 'browser.favOnly': 'Favorites',
@@ -191,10 +279,6 @@ const I18N = {
     'scanner.cpuMode.low': 'Low (30%)', 'scanner.cpuMode.normal': 'Normal (50%)',
     'scanner.cpuMode.high': 'High (85%)',
     'scanner.cpuMode.highWarn': 'High mode uses a lot of CPU — continue?',
-    'browser.similarTo': 'Similar to', 'browser.matchPercent': 'match',
-    'browser.noResults': 'No similar samples found',
-    'browser.clearSimilar': 'Clear similar filter',
-    'browser.ctx.findSimilar': 'Find similar (AI)',
     'browser.ctx.scanNew': 'Scan new files', 'browser.ctx.rescanAll': 'Rescan all',
     // Window / splitter / toast keys (MIN-01/02/07)
     'window.dockHint': 'Dock into REAPER / Float window', 'window.settingsHint': 'Settings',
@@ -203,7 +287,6 @@ const I18N = {
     'splitter.tree': 'Drag to resize the folder tree',
     'splitter.preview': 'Drag to resize the player',
     'toast.labError': 'Lab error', 'toast.scannerError': 'Scanner error',
-    'toast.similarError': 'Error finding similar samples',
     'sync.noBpm': 'Sync: no BPM found, trying 120',
     'player.dragTip': 'Drag to REAPER',
     'browser.loadingSamples': 'Loading samples...',
@@ -213,6 +296,21 @@ const I18N = {
     'browser.dropTitle': 'Add Root Folder',
     'browser.dropHint': 'Drop folder from Windows Explorer here to add as root',
     'lab.alreadyRunning': 'A job is already running — please wait',
+    'lab.btnFetchDaw': 'Fetch DAW Item', 'lab.btnBrowse': 'Browse File...',
+    'lab.ribbon.stem': 'Split Stems', 'lab.ribbon.denoise': 'Denoise',
+    'lab.ribbon.chords': 'Detect Chords & Key', 'lab.ribbon.analyze': 'BPM & Key',
+    'lab.action.process': 'Start Processing', 'lab.action.processing': 'Processing...',
+    'lab.stems.title': 'Stem Mixer (Demucs v4)', 'lab.stems.insertAll': 'Insert all Stems into REAPER',
+    'lab.stems.zip': 'Open ZIP folder', 'lab.stems.insertTrack': '+ New Track',
+    'lab.chords.title': 'Chord Progression (Chord Track)', 'lab.chords.insertTrack': 'Create Chord Track in REAPER',
+    'lab.chords.openDocker': 'Show in DAW Dock (Top)', 'lab.chords.insertMidi': 'Insert MIDI Track into REAPER',
+    'lab.chords.toggleDocker': 'Toggle Chord Track Dock',
+    'lab.chords.audition': 'Preview', 'lab.chords.roman': 'Degree',
+    'lab.status.ready': 'Ready', 'lab.status.processing': 'Processing on Modal Serverless GPU...',
+    'lab.status.complete': 'Completed', 'lab.dropHere': 'Drop audio file here or fetch from DAW',
+    'lab.stem.vocal': 'Vocal', 'lab.stem.drums': 'Drums', 'lab.stem.bass': 'Bass', 'lab.stem.other': 'Other',
+    'lab.noItemSelected': 'No Media Item selected in REAPER',
+    'lab.itemFetched': 'Fetched selected item from REAPER', 'lab.chordsInserted': 'Chord Track created successfully in REAPER',
   },
 };
 let LANG = 'vi';
@@ -536,30 +634,6 @@ function mockBridge(cmd, args = {}) {
             embeddingDim: 512
           }
         });
-      } else if (cmd === 'search.findSimilar' || cmd === 'ai.findSimilar' || cmd === 'browser.findSimilar') {
-        const results = mockStore.files.filter((f) => !f.isDir).map((f, i) => ({
-          ...f,
-          score: 0.95 - (i * 0.05),
-          similarity: Math.round((0.95 - (i * 0.05)) * 100),
-          bpm: 120,
-          key: 'F#',
-          mode: 'Minor',
-          genre: 'Trap-EDM',
-          mood: 'dark'
-        }));
-        resolve({ ok: true, results, count: results.length });
-      } else if (cmd === 'ai.searchSemantic') {
-        const q = (args.query || '').toLowerCase();
-        const results = mockStore.files.filter((f) => !f.isDir).map((f) => ({
-          ...f,
-          score: 0.85,
-          bpm: 120,
-          key: 'F#',
-          mode: 'Minor',
-          genre: 'Trap-EDM',
-          mood: 'dark'
-        }));
-        resolve({ ok: true, results, count: results.length });
       } else if (cmd === 'db.search') {
         const results = mockStore.files.filter((f) => !f.isDir).map((f) => ({
           ...f,
@@ -748,7 +822,6 @@ const state = {
   autoPreview: true, favOnly: false, tagFilter: 0,
   rawFiles: [], files: [], listDir: null,
   searchQ: '', searchPending: false, searchGen: 0,
-  similarSource: null, similarSourceName: null,
   probeCache: {}, probeInflight: new Set(),
   syncBpm: false, pitchSemitones: 0,
   originalRootNote: 'C', selectedTargetNote: 'C',
@@ -770,6 +843,7 @@ const state = {
 // ============ Events from C++ ============
 function handleEvent(event, data) {
   if (event === 'toast') { toast(data.text || ''); return; }
+  if (typeof event === 'string' && event.startsWith('agent.')) { handleAgentEvent(event, data); return; }
   if (event === 'window.state') {
     if (data) {
       $('#app')?.classList.toggle('maximized', !!data.maximized);
@@ -784,6 +858,34 @@ function handleEvent(event, data) {
   }
   if (event === 'lab.progress') { labProgress(true, data.percent, data.stage); return; }
   if (event === 'lab.result') { renderLabResult(data); return; }
+  if (event === 'lab.agentJob') {
+    // Job started by the agent: adopt it like a user-started job so results
+    // (Chord Track dock, stem folder) land at the analyzed item's position.
+    if (data && data.path) {
+      setLabFile(data.path);
+      labState.itemPosition = (typeof data.itemPosition === 'number') ? data.itemPosition : 0.0;
+      labState.itemLength = (typeof data.itemLength === 'number') ? data.itemLength : 0.0;
+      labState.running = true;
+      labProgress(true, 0, tr('lab.status.processing'));
+    }
+    return;
+  }
+  if (event === 'lab.zipReady') {
+    if (data && data.zipPath) {
+      labState.lastZipPath = data.zipPath;
+      const zipBtn = $("#btnLabOpenZip");
+      if (zipBtn) zipBtn.classList.remove('hidden');
+    }
+    return;
+  }
+  if (event === 'lab.itemSelected') {
+    if (data && data.path) {
+      labState.itemPosition = (typeof data.itemPosition === 'number') ? data.itemPosition : 0.0;
+      labState.itemLength = (typeof data.itemLength === 'number') ? data.itemLength : 0.0;
+      sendToLabJob(data.path, data.action || 'analyze');
+    }
+    return;
+  }
   if (event === 'lab.error') { labState.running = false; labProgress(false); toast(tr('toast.labError') + (data.error ? ': ' + data.error : '')); return; }
   if (event === 'scanner.progress') {
     const bar = $('#scannerBar');
@@ -887,6 +989,46 @@ function handleEvent(event, data) {
     if (state.playingPath === data.path || state.selected === data.path) {
       state.envelope = data.envelope || [];
       drawWaveform();
+    }
+    return;
+  }
+  if (event === 'audio.detected') {
+    // Background BPM/key detection finished (started by audio.play etc).
+    // Update DB-backed row badges + state, and re-apply Sync BPM live so the
+    // running preview snaps to the real tempo without waiting for a re-click.
+    if (data && data.path) {
+      const fileObj = (state.files || []).find((x) => x.path === data.path);
+      const isCurrent = state.selected === data.path || state.playingPath === data.path;
+      let changed = false;
+      if (data.bpm && data.bpm > 0) {
+        if (isCurrent && state.syncBpm) {
+          bridge('audio.setSyncBpm', { enabled: true, sampleBpm: data.bpm, path: data.path }).catch(() => {});
+        }
+        if (isCurrent) state.sampleBpm = data.bpm;
+        if (fileObj && fileObj.bpm !== data.bpm) {
+          fileObj.bpm = data.bpm;
+          changed = true;
+        }
+      }
+      if (data.key && data.key !== '') {
+        if (fileObj && fileObj.key !== data.key) {
+          fileObj.key = data.key;
+          changed = true;
+        }
+        if (isCurrent) {
+          state.sampleKey = data.key;
+          state.originalRootNote = extractRootNoteName(data.key);
+          if (state.isUserTargetKeyLocked && state.userTargetNote) {
+            state.selectedTargetNote = state.userTargetNote;
+            state.pitchSemitones = calculateSemitoneDistance(state.originalRootNote, state.userTargetNote);
+            bridge('audio.setPitchShift', { semitones: state.pitchSemitones }).catch(() => {});
+          } else {
+            state.selectedTargetNote = state.originalRootNote;
+          }
+          updateTransposerPopUI();
+        }
+      }
+      if (changed) paintFromRaw(true);
     }
     return;
   }
@@ -2346,8 +2488,6 @@ function openDir(path) {
   localStorage.setItem('reals_last_dir', nPath);
   expandPathAncestors(nPath);
   saveExpandedFolders();
-  state.similarSource = null;
-  state.similarSourceName = null;
   state.searchQ = '';
   state.searchPending = false;
   state.searchGen = ++state.searchSeq;
@@ -2447,12 +2587,7 @@ function sortFileList(list) {
 }
 
 function paintFromRaw(preserveScroll = false) {
-  if (state.similarSource) {
-    state.files = (state.rawFiles || []).slice();
-    sortFileList(state.files);
-  } else {
-    state.files = filteredFiles();
-  }
+  state.files = filteredFiles();
   const box = $('#files');
   if (!box) return;
 
@@ -2464,9 +2599,7 @@ function paintFromRaw(preserveScroll = false) {
   const header = $('#filesHead') || box.querySelector('.files-head');
   if (header) {
     const q = (state.searchQ || '').trim();
-    if (state.similarSource) {
-      header.textContent = `${tr('browser.similarTo')}: ${state.similarSourceName || ''} (${state.files.length})`;
-    } else if (state.favOnly) {
+    if (state.favOnly) {
       header.textContent = `★ ${tr('browser.favOnly')} (${state.files.length})`;
     } else {
       header.textContent = q
@@ -2474,8 +2607,6 @@ function paintFromRaw(preserveScroll = false) {
         : (state.currentDir || tr('browser.pickRoot'));
     }
   }
-
-  paintSimilarBanner();
 
   let spacer = $('#fileSpacer');
   if (!spacer) {
@@ -2567,13 +2698,9 @@ function fileRowEl(f, isSelected, compact) {
   }
   fnameSpan.appendChild(textSpan);
   row.appendChild(fnameSpan);
-  if (!compact && !isDir) {
+    if (!compact && !isDir) {
     if (isMidiFile(f)) {
       row.appendChild(el('span', 'fmeta-badge midi', 'MIDI'));
-    }
-    const simVal = (f.similarity !== undefined && f.similarity > 0) ? f.similarity : (f.score !== undefined && f.score > 0 ? Math.round(f.score * 100) : (state.similarSource ? 95 : null));
-    if (simVal && (state.similarSource || f.similarity || f.score)) {
-      row.appendChild(el('span', 'fmeta-badge sim-badge', `${simVal}%`));
     }
     if (f.duration && !state.probeCache[f.path]) state.probeCache[f.path] = f.duration;
     const dur = state.probeCache[f.path] || f.duration;
@@ -2712,8 +2839,6 @@ function runSearch(q) {
   const gen = ++state.searchSeq;
   state.searchGen = gen;
   state.searchPending = true;
-  state.similarSource = null;
-  state.similarSourceName = null;
   state.rawFiles = [];
   paintFromRaw(false);
   bridge('browser.search', { base: '', query: q, audioOnly: state.audioOnly, gen })
@@ -2723,70 +2848,6 @@ function runSearch(q) {
         paintFromRaw(false);
       }
     });
-}
-
-function findSimilarSamples(f) {
-  if (!f || !f.path) return;
-  const rawName = f.name || f.filename || (f.path ? f.path.split(/[\\/]/).pop() : '') || '';
-  state.similarSource = f.path;
-  state.similarSourceName = rawName;
-  state.searchQ = '';
-  const searchInput = $('#search');
-  if (searchInput) searchInput.value = '';
-  paintLoadingFiles();
-  bridge('browser.findSimilar', { path: f.path, limit: 30 }).then((data) => {
-    const list = (data && data.results) ? data.results : [];
-    for (const item of list) {
-      const itemRaw = item.name || item.filename || (item.path ? item.path.split(/[\\/]/).pop() : '') || '';
-      item.name = itemRaw;
-      item.filename = itemRaw;
-      if (item.isDir === undefined) item.isDir = false;
-      if (item.isAudio === undefined) item.isAudio = !isMidiFile(item.path || itemRaw);
-    }
-    state.rawFiles = list;
-    paintFromRaw(false);
-    probeVisibleAudio();
-  }).catch((err) => {
-    console.error('findSimilar error', err);
-    toast(tr('toast.similarError'));
-  });
-}
-
-function clearSimilarFilter() {
-  state.similarSource = null;
-  state.similarSourceName = null;
-  const banner = $('#similarBanner');
-  if (banner) banner.classList.add('hidden');
-  if (state.currentDir) loadDir(state.currentDir, false);
-}
-
-function paintSimilarBanner() {
-  const box = $('#files');
-  if (!box) return;
-  let banner = $('#similarBanner');
-  if (!banner) {
-    banner = el('div', 'similar-banner');
-    banner.id = 'similarBanner';
-    box.prepend(banner);
-  }
-  if (!state.similarSource) {
-    banner.classList.add('hidden');
-    return;
-  }
-  banner.classList.remove('hidden');
-  banner.replaceChildren();
-
-  const info = el('div', 'similar-banner-info');
-  info.appendChild(el('span', 'similar-banner-icon', '🔍'));
-  info.appendChild(el('span', 'similar-banner-label', tr('browser.similarTo') + ':'));
-  info.appendChild(el('span', 'similar-target-name', state.similarSourceName || ''));
-  info.appendChild(el('span', 'similar-count-badge', `${state.files.length} ${tr('browser.matchPercent')}`));
-  banner.appendChild(info);
-
-  const btnClose = el('button', 'btn-exit-similar', '✕');
-  btnClose.title = tr('browser.clearSimilar');
-  btnClose.onclick = () => clearSimilarFilter();
-  banner.appendChild(btnClose);
 }
 
 function selectedIndex() {
@@ -3014,7 +3075,6 @@ function wireBrowserEvents() {
 
   filesBox.onclick = (e) => {
     if (state._suppressClick) return;
-    if (e.target.closest('#similarBanner') || e.target.closest('.similar-banner')) return;
     const row = e.target.closest('.file-row');
     if (row && row._path) {
       const f = (state.files || []).find((x) => x.path === row._path);
@@ -3024,9 +3084,7 @@ function wireBrowserEvents() {
     const rect = filesBox.getBoundingClientRect();
     const clickY = (e.clientY - rect.top) + filesBox.scrollTop;
     const rowH = getRowH();
-    const banner = $('#similarBanner');
-    const bannerH = (banner && !banner.classList.contains('hidden')) ? banner.offsetHeight : 0;
-    const idx = Math.floor((clickY - bannerH) / rowH);
+    const idx = Math.floor(clickY / rowH);
     if (state.files && idx >= 0 && idx < state.files.length) {
       selectEntry(state.files[idx]);
     }
@@ -3215,13 +3273,16 @@ function onBrowserKey(e) {
     return;
   }
   // ---------------------------------------------------------------------------
-  // Spacebar Behavior Rule (DAW Producer / Beatmaker Workflow):
-  // When typing in a text/search input field: allow normal space character entry.
-  // When browsing files / navigating the UI: Spacebar MUST toggle the DAW (REAPER)
-  // project transport (Play/Stop), allowing producers to start/stop their arrangement
-  // without losing focus or switching windows. Sample preview in Reals Lab is triggered
-  // by selection / Enter / Play button.
-  // (QUY TẮC: Phím cách khi duyệt file BẮT BUỘC dùng để Play/Stop bài nhạc trong DAW).
+  // Spacebar Preview Cycle (DAW Producer / Beatmaker Workflow):
+  // A cycle starts when the user clicks a sample (preview plays).
+  //   • Preview playing + DAW stopped  -> Space: DAW starts rolling TOO
+  //     (sample preview keeps playing alongside the project).
+  //   • Preview playing + DAW playing  -> Space: BOTH stop (cycle ends).
+  //   • No preview in Reals Lab        -> Space: plain DAW transport toggle
+  //     (previous behavior, e.g. starting/stopping the project alone).
+  // Typing in a text field still inserts a normal space character.
+  // (QUY TẮC: Nhấp sample = bắt đầu chu kỳ. Space 1: DAW phát cùng preview.
+  //  Space 2: dừng cả hai, kết thúc chu kỳ. Không preview: Space = toggle DAW.)
   // ---------------------------------------------------------------------------
   if (e.key === ' ' || e.code === 'Space') {
     if (typingInField()) {
@@ -3229,12 +3290,31 @@ function onBrowserKey(e) {
     }
     e.preventDefault();
     e.stopPropagation();
-    if (state.playing) {
-      stopMidiPlayback();
-      state.playing = false;
-      refreshPlayState(true);
-    }
-    bridge('reaper.playToggle').catch(() => {});
+    (async () => {
+      try {
+        const previewActive = !!(state.playing || state.playingPath);
+        if (previewActive) {
+          const ts = await bridge('reaper.transportState', {});
+          const dawPlaying = !!(ts && ts.playing);
+          if (dawPlaying) {
+            // Both running -> stop BOTH and end the cycle.
+            state.playing = false;
+            stopMidiPlayback();
+            refreshPlayState(false);
+            await bridge('reaper.dawStop', {});
+          } else {
+            // Preview running + DAW stopped -> start the DAW alongside.
+            await bridge('reaper.dawPlay', {});
+          }
+        } else {
+          // No Reals Lab preview: behave like a plain DAW transport toggle.
+          await bridge('reaper.playToggle', {});
+        }
+      } catch (err) {
+        console.error('spacebar cycle failed:', err);
+        try { await bridge('reaper.playToggle', {}); } catch {}
+      }
+    })();
     return;
   }
   if (state.tab !== 'browser') return;
@@ -3336,8 +3416,12 @@ async function playFile(path) {
       state.selectedTargetNote = state.userTargetNote;
       initialPitchShift = calculateSemitoneDistance(rootNote, state.userTargetNote);
     } else {
+      // No key lock -> every new preview starts at ORIGINAL pitch. Never
+      // carry over the previous sample's shift (a stale +3st from an old
+      // file made every later preview sound slightly sharp).
       state.selectedTargetNote = rootNote;
-      initialPitchShift = state.pitchSemitones || 0;
+      initialPitchShift = 0;
+      state.pitchSemitones = 0;
     }
     state.pitchSemitones = initialPitchShift;
     updateTransposerPopUI();
@@ -3535,25 +3619,10 @@ function startPlayerAnimLoop() {
         state.position = (state.position + dt / outDuration) % 1.0;
       } else {
         const nextPos = state.position + dt / outDuration;
-        if (nextPos >= 1.0) {
-          state.position = 0;
-          state.playing = false;
-          _meterSmoothedVal = 0;
-          const bp = $('#btnPlay');
-          if (bp) {
-            bp.textContent = '▶';
-            bp.classList.remove('playing');
-          }
-          const timeLbl = $('#timeLabel');
-          if (timeLbl) timeLbl.textContent = `0.0 / ${state.duration.toFixed(1)}s`;
-          drawMeterSmoothed(0);
-          drawWaveform();
-          bridge('audio.stop').catch(() => {});
-          _playerRafId = null;
-          return;
-        } else {
-          state.position = nextPos;
-        }
+        // Do not infer EOF from RAF timing. The native host reports terminal
+        // EOF through audio.state; stopping here races the first transport
+        // block and killed preview immediately after Spacebar.
+        state.position = Math.min(nextPos, 0.999999);
       }
     }
 
@@ -3579,6 +3648,7 @@ function startPlayerAnimLoop() {
     if (timeLbl) timeLbl.textContent = `${(state.position * state.duration).toFixed(1)} / ${state.duration.toFixed(1)}s`;
     drawMeterSmoothed(_meterSmoothedVal);
     drawWaveform();
+    if (typeof updateChordTrackPlayhead === 'function') updateChordTrackPlayhead();
 
     _playerRafId = requestAnimationFrame(step);
   }
@@ -3596,6 +3666,7 @@ function refreshPlayState(keepPosition = false) {
     _playerRafId = null;
   }
   _meterSmoothedVal = 0;
+  if (typeof updateChordTrackPlayhead === 'function') updateChordTrackPlayhead(state.position * (state.duration || 0));
   const bp = $('#btnPlay');
   if (bp) {
     bp.textContent = '▶';
@@ -4041,7 +4112,8 @@ function sendToLabJob(path, job) {
   showTab('audioLab');
   const tool = LAB_MENU_TO_TOOL[job] || job;
   setTimeout(() => {
-    const b = document.querySelector(`#labGrid .lab-tool[data-job="${tool}"]`);
+    selectLabTool(tool);
+    const b = $('#btnLabExecute');
     if (b) b.click();
   }, 0);
 }
@@ -4063,7 +4135,6 @@ function fileMenu(e, f) {
   if (f.isAudio) {
     items.push({ label: tr('browser.ctx.preview'), action: () => playFile(f.path) });
     items.push({ label: tr('browser.ctx.insert'), sub: 'Enter', action: () => insertMedia(f.path) });
-    items.push({ label: tr('browser.ctx.findSimilar'), sub: 'AI', action: () => findSimilarSamples(f) });
     items.push('-');
     ['stem', 'denoise', 'keychord', 'tempo', 'midi'].forEach((job) => {
       const key = 'browser.lab.' + job;
@@ -4186,109 +4257,859 @@ function renderMarket() {
   });
 }
 
-// ============ Audio Lab (REAL API) ============
-const labState = { file: null, running: false };
-function setLabFile(path) {
-  labState.file = path;
-  const box = $('#labFile');
-  box.innerHTML = '';
-  const name = path.split(/[\\/]/).pop();
-  box.appendChild(el('b', '', name));
-  box.appendChild(el('div', 'muted', path));
-}
-function labProgress(show, percent, stage) {
-  const box = $('#labProgress');
-  box.classList.toggle('hidden', !show);
-  if (show) {
-    $('#labProgressFill').style.width = (percent || 0) + '%';
-    $('#labProgressText').textContent = stage || '';
-  }
-}
-function initLab() {
-  $$('#labGrid .lab-tool').forEach((b) => {
-    b.onclick = () => {
-      if (!labState.file) { toast(tr('lab.noFile')); return; }
-      if (labState.running) { toast(tr('lab.alreadyRunning')); return; }
-      labState.running = true;
-      labProgress(true, 0, '...');
-      const job = b.dataset.job;
-      const args = { path: labState.file };
-      if (job === 'stem') args.mode = 4;
-      if (job === 'denoise') args.strength = 80;
-      bridge('lab.' + job, args).catch((e) => { labState.running = false; labProgress(false); toast(e.message); });
-    };
-  });
-}
-function renderLabResult(d) {
-  labState.running = false;
-  labProgress(false);
-  const box = $('#labResults');
-  box.innerHTML = '';
-  const card = el('div', 'result-card');
-  if (d.job === 'analyze') {
-    const p = d.payload || {};
-    card.innerHTML = '';
-    card.appendChild(el('h4', '', 'Tempo & Key'));
-    card.appendChild(el('div', 'kbd-line', `BPM: ${p.bpm} · Key: ${p.master_key} ${p.scale_mode || ''} · ${p.duration}s`));
-  } else if (d.job === 'keychord') {
-    const p = d.payload || {};
-    card.appendChild(el('h4', '', 'Key & Hợp âm'));
-    const tel = p.telemetry || {};
-    card.appendChild(el('div', 'kbd-line', `Key: ${tel.master_key} ${tel.scale_mode || ''} · BPM: ${tel.bpm} · ${tel.time_signature || ''}`));
-    const chords = (p.chords || []).slice(0, 24).map((c) => c.chord).join(' — ');
-    card.appendChild(el('div', 'muted', chords || '(no chords)'));
-  } else if (d.job === 'stem' || d.job === 'denoise') {
-    card.appendChild(el('h4', '', d.job === 'stem' ? 'Kết quả tách stem' : 'Audio đã lọc noise'));
-    const paths = [];
-    (d.files || []).forEach((f) => {
-      const row = el('div', 'stem-row');
-      armOleDrag(row, { path: f.path, isDir: false });
-      const dot = el('span', 'tagdot');
-      dot.style.background = f.color || '#ccc';
-      row.appendChild(dot);
-      row.appendChild(el('span', 'sn', f.name));
-      const ins = el('a', '', '+ vào project');
-      ins.onclick = () => insertMedia(f.path);
-      row.appendChild(ins);
-      card.appendChild(row);
-      paths.push(f.path);
+// ============ Audio Lab (REAL API & Studio Deck) ============
+const NOTE_TO_SEMITONE = {
+  'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3, 'E': 4, 'F': 5,
+  'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8, 'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11
+};
+
+const labState = {
+  file: null,
+  running: false,
+  selectedJob: 'stem',
+  lastChords: [],
+  lastStems: [],
+  lastZipPath: null,
+};
+
+let labAudioCtx = null;
+function auditionChord(chordName) {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    if (!labAudioCtx) labAudioCtx = new AudioCtx();
+    if (labAudioCtx.state === 'suspended') labAudioCtx.resume();
+    const m = chordName.match(/^([A-G][#b]?)(.*)$/);
+    if (!m) return;
+    const root = m[1];
+    const qual = m[2] || '';
+    const rootSemi = NOTE_TO_SEMITONE[root];
+    if (rootSemi === undefined) return;
+    let intervals = [0, 4, 7];
+    if (qual.startsWith('m') && !qual.startsWith('maj')) intervals = [0, 3, 7];
+    else if (qual.startsWith('dim')) intervals = [0, 3, 6];
+    else if (qual.startsWith('aug')) intervals = [0, 4, 8];
+    else if (qual.startsWith('sus4')) intervals = [0, 5, 7];
+    else if (qual.startsWith('sus2')) intervals = [0, 2, 7];
+    if (qual.includes('maj7')) intervals.push(11);
+    else if (qual.includes('7')) intervals.push(10);
+
+    const baseMidi = 48 + rootSemi;
+    const now = labAudioCtx.currentTime;
+    intervals.forEach((iv, i) => {
+      const midi = baseMidi + iv;
+      const freq = 440 * Math.pow(2, (midi - 69) / 12);
+      const osc = labAudioCtx.createOscillator();
+      const gain = labAudioCtx.createGain();
+      osc.type = i === 0 ? 'sine' : 'triangle';
+      osc.frequency.setValueAtTime(freq, now);
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.exponentialRampToValueAtTime(0.12, now + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.7);
+      osc.connect(gain);
+      gain.connect(labAudioCtx.destination);
+      osc.start(now);
+      osc.stop(now + 0.75);
     });
-    if (d.zipPath) {
-      const row = el('div', 'stem-row');
-      row.appendChild(el('span', 'sn', 'ZIP'));
-      const ins = el('a', '', 'đã tải — mở thư mục');
-      ins.onclick = () => bridge('reaper.reveal', { path: d.zipPath });
-      row.appendChild(ins);
-      card.appendChild(row);
-    }
-    if (paths.length) {
-      const btn = el('button', 'accent', 'Chèn tất cả vào project');
-      btn.onclick = () => bridge('reaper.insertMany', { paths }).then(() => toast(tr('toast.inserted')));
-      card.appendChild(btn);
-    }
+  } catch (err) {
+    console.warn('Audition error', err);
   }
-  box.appendChild(card);
 }
 
-// ============ Agent (mock — API Phase 5) ============
-function agentSay(text, cls = 'bot') {
-  const chat = $('#chat');
-  chat.appendChild(el('div', 'bubble ' + cls, text));
-  chat.scrollTop = chat.scrollHeight;
-}
-function initAgent() {
-  agentSay('Xin chào! Mình là trợ lý AI của Reals Lab. (Phase 5 — demo giao diện)');
-  $('#btnSend').onclick = () => {
-    const inp = $('#chatInput');
-    if (!inp.value.trim()) return;
-    agentSay(inp.value, 'user');
-    inp.value = '';
-    setTimeout(() => agentSay('Mình sẽ trả lời khi API LLM được nối ở Phase 5. Mọi lệnh điều khiển REAPER sẽ chạy qua bridge đã sẵn sàng!'), 400);
+function computeRomanNumeral(chordName, key) {
+  if (!chordName) return '';
+  const m = chordName.match(/^([A-G][#b]?)(.*)$/);
+  if (!m) return chordName;
+  const root = m[1];
+  const qual = m[2] || '';
+  const keyRoot = (key || 'C').split(' ')[0].replace(/m$/, '');
+  const rootSemi = NOTE_TO_SEMITONE[root];
+  const keySemi = NOTE_TO_SEMITONE[keyRoot];
+  if (rootSemi === undefined || keySemi === undefined) return chordName;
+  const diff = (rootSemi - keySemi + 12) % 12;
+  const majorDegrees = {
+    0: 'I', 1: 'bII', 2: 'ii', 3: 'bIII', 4: 'iii', 5: 'IV',
+    6: '#IV', 7: 'V', 8: 'bVI', 9: 'vi', 10: 'bVII', 11: 'vii°'
   };
-  $('#chatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#btnSend').click(); });
-  $$('#agentMode button').forEach((b) => {
-    b.onclick = () => { $$('#agentMode button').forEach((x) => x.classList.remove('on')); b.classList.add('on'); };
+  let deg = majorDegrees[diff] || 'I';
+  if (qual.includes('m') && !qual.includes('maj')) deg = deg.toLowerCase();
+  if (qual.includes('7')) deg += '7';
+  return deg;
+}
+
+function renderLabWaveform(path) {
+  const canvas = $('#labMasterWave');
+  if (!canvas || !canvas.parentElement) return;
+  const w = canvas.width = canvas.parentElement.clientWidth || 300;
+  const h = canvas.height = 34;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#161922';
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = 'rgba(255, 107, 44, 0.45)';
+  const bars = Math.floor(w / 4);
+  const mid = h / 2;
+  let seed = 0;
+  for (let i = 0; i < (path || '').length; i++) seed = (seed * 31 + path.charCodeAt(i)) % 1000;
+  for (let i = 0; i < bars; i++) {
+    const v = Math.abs(Math.sin((i + seed) * 0.18) * Math.cos(i * 0.07)) * (mid - 2);
+    ctx.fillRect(i * 4, mid - v, 2, v * 2 + 1);
+  }
+}
+
+function setLabFile(path) {
+  labState.file = path;
+  const name = path ? path.split(/[\\/]/).pop() : '';
+  const nameEl = $('#labFileName');
+  const pathEl = $('#labFilePath');
+  if (nameEl) nameEl.textContent = name || tr('lab.noFile');
+  if (pathEl) pathEl.textContent = path || '';
+  const emptyState = $('#labEmptyPlaceholder');
+  if (emptyState && path) emptyState.classList.add('hidden');
+  renderLabWaveform(path);
+}
+
+function selectLabTool(tool) {
+  labState.selectedJob = tool;
+  $$('#labRibbon .lab-ribbon-btn').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.job === tool);
   });
+}
+
+function updateLabRunningState(running) {
+  labState.running = running;
+  const btn = $('#btnLabExecute');
+  const sp = $('#labExecSpinner');
+  const tx = $('#labExecText');
+  const dot = $('#labStatusIndicator');
+  const statTx = $('#labStatusText');
+  if (btn) btn.disabled = running;
+  if (sp) sp.classList.toggle('hidden', !running);
+  if (tx) tx.textContent = running ? tr('lab.action.processing') : tr('lab.action.process');
+  if (dot) dot.classList.toggle('busy', running);
+  if (statTx && running) statTx.textContent = tr('lab.status.processing');
+}
+
+function labProgress(show, percent, stage) {
+  const line = $('#labProgressLine');
+  const statTx = $('#labStatusText');
+  if (line) line.style.width = (show ? (percent || 0) : 0) + '%';
+  if (statTx && stage) statTx.textContent = stage;
+}
+
+function initLab() {
+  $('#btnLabFetchDaw')?.addEventListener('click', () => {
+    bridge('reaper.selectedItem', {})
+      .then((res) => {
+        if (res && res.path) {
+          labState.itemPosition = (typeof res.itemPosition === 'number') ? res.itemPosition : 0.0;
+          labState.itemLength = (typeof res.itemLength === 'number') ? res.itemLength : 0.0;
+          setLabFile(res.path);
+          toast(tr('lab.itemFetched') + ': ' + (res.name || ''));
+        } else {
+          toast(tr('lab.noItemSelected'));
+        }
+      })
+      .catch(() => toast(tr('lab.noItemSelected')));
+  });
+
+  const fileInput = $('#labFileInput');
+  $('#btnLabBrowse')?.addEventListener('click', () => fileInput?.click());
+  fileInput?.addEventListener('change', (e) => {
+    const f = e.target.files?.[0];
+    if (f) setLabFile(f.path || f.name);
+  });
+
+  const dropDeck = $('#labDropDeck');
+  if (dropDeck) {
+    dropDeck.addEventListener('dragover', (e) => { e.preventDefault(); dropDeck.classList.add('dragover'); });
+    dropDeck.addEventListener('dragleave', () => dropDeck.classList.remove('dragover'));
+    dropDeck.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropDeck.classList.remove('dragover');
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) setLabFile(files[0].path || files[0].name);
+    });
+  }
+
+  $$('#labRibbon .lab-ribbon-btn').forEach((b) => {
+    b.onclick = () => selectLabTool(b.dataset.job);
+  });
+
+  $('#btnLabExecute')?.addEventListener('click', () => {
+    if (!labState.file) { toast(tr('lab.noFile')); return; }
+    if (labState.running) { toast(tr('lab.alreadyRunning')); return; }
+    updateLabRunningState(true);
+    labProgress(true, 5, 'Đang gửi xử lý...');
+    const job = labState.selectedJob;
+    const args = { path: labState.file };
+    if (job === 'stem') args.mode = 4;
+    if (job === 'denoise') args.strength = 80;
+    bridge('lab.' + job, args).catch((e) => {
+      updateLabRunningState(false);
+      labProgress(false);
+      toast(e.message || String(e));
+    });
+  });
+
+  $('#btnOpenTopChordDocker')?.addEventListener('click', () => {
+    const payload = { show: true };
+    if (labState.lastChords && labState.lastChords.length > 0) {
+      payload.chords = labState.lastChords;
+      payload.itemPosition = labState.itemPosition || 0;
+      payload.bpm = labState.lastBpm || state.sampleBpm || 120;
+      payload.masterKey = labState.lastKey || state.sampleKey || 'C';
+      payload.scaleMode = labState.lastScale || 'Major';
+    }
+    bridge('reaper.showChordDocker', payload);
+  });
+
+  $('#btnToggleChordDocker')?.addEventListener('click', () => {
+    const payload = { toggle: true };
+    if (labState.lastChords && labState.lastChords.length > 0) {
+      payload.chords = labState.lastChords;
+      payload.itemPosition = labState.itemPosition || 0;
+      payload.bpm = labState.lastBpm || state.sampleBpm || 120;
+      payload.masterKey = labState.lastKey || state.sampleKey || 'C';
+      payload.scaleMode = labState.lastScale || 'Major';
+    }
+    bridge('reaper.showChordDocker', payload);
+  });
+
+  $('#btnInsertChordMidi')?.addEventListener('click', () => {
+    if (!labState.lastChords || labState.lastChords.length === 0) return;
+    bridge('reaper.insertChordTrack', {
+      chords: labState.lastChords,
+      bpm: labState.lastBpm || state.sampleBpm || 120,
+      itemPosition: labState.itemPosition || 0
+    }).then(() => {
+      toast(tr('lab.chordsInserted') || 'Đã chèn Track MIDI vào dự án');
+    }).catch((err) => {
+      toast(tr('toast.labError') + ': ' + err);
+    });
+  });
+
+  $('#btnLabInsertChordTrack')?.addEventListener('click', () => {
+    if (!labState.lastChords || labState.lastChords.length === 0) return;
+    bridge('reaper.insertChords', {
+      chords: labState.lastChords,
+      trackName: 'Chord Track',
+      itemPosition: labState.itemPosition || 0
+    }).then(() => {
+      toast(tr('lab.chordsInserted'));
+    }).catch((err) => {
+      toast(tr('toast.labError') + ': ' + err);
+    });
+  });
+
+  $('#btnLabInsertAllStems')?.addEventListener('click', () => {
+    if (!labState.lastStems || labState.lastStems.length === 0) return;
+    bridge('reaper.insertStemsToFolder', {
+      originalPath: labState.file || '',
+      itemPosition: labState.itemPosition || 0.0,
+      itemLength: labState.itemLength || 0.0,
+      stems: labState.lastStems
+    }).then(() => toast(tr('lab.stemsInserted') || 'Đã tạo group và chèn Stems vào REAPER'))
+      .catch((err) => toast(tr('toast.labError') + ': ' + err));
+  });
+
+  $('#btnLabOpenZip')?.addEventListener('click', () => {
+    if (labState.lastZipPath) bridge('reaper.reveal', { path: labState.lastZipPath });
+  });
+
+  $('#btnLabPlay')?.addEventListener('click', () => {
+    if (!labState.file) return;
+    playFile(labState.file);
+  });
+
+  $('#btnLabLoop')?.addEventListener('click', () => {
+    state.loop = !state.loop;
+    $('#btnLabLoop')?.classList.toggle('on', state.loop);
+  });
+
+  $('#labMasterVol')?.addEventListener('input', (e) => {
+    const vol = parseFloat(e.target.value);
+    bridge('audio.setVolume', { volume: vol });
+  });
+}
+
+function renderRealsChordTrack(chords, tel) {
+  const rulerStrip = $('#rcRulerStrip');
+  const cellsStrip = $('#rcCellsStrip');
+  const timelineBox = $('#rcTimelineBox');
+  if (!rulerStrip || !cellsStrip) return;
+
+  rulerStrip.innerHTML = '';
+  cellsStrip.innerHTML = '';
+
+  const bpm = (tel && tel.bpm > 0) ? tel.bpm : (state.sampleBpm || 120);
+  const secPerBeat = 60.0 / bpm;
+  const secPerBar = secPerBeat * 4.0;
+  const pixelsPerBeat = 40;
+
+  let maxTime = state.duration || 0;
+  if (chords && chords.length) {
+    chords.forEach((c) => {
+      const end = Number(c.time || 0) + (Number(c.duration) || secPerBeat * 2);
+      if (end > maxTime) maxTime = end;
+    });
+  }
+  if (maxTime <= 0) maxTime = 32.0;
+
+  const totalBeats = Math.ceil(maxTime / secPerBeat) + 4;
+  const totalBars = Math.ceil(totalBeats / 4);
+  const totalWidth = Math.max((timelineBox ? timelineBox.clientWidth : 600), totalBars * 4 * pixelsPerBeat);
+
+  rulerStrip.style.width = totalWidth + 'px';
+  cellsStrip.style.width = totalWidth + 'px';
+
+  for (let m = 0; m < totalBars; ++m) {
+    const barX = m * 4 * pixelsPerBeat;
+    const measEl = el('div', 'rc-ruler-measure');
+    measEl.style.left = barX + 'px';
+    measEl.textContent = (m + 1) + '.1.00';
+    rulerStrip.appendChild(measEl);
+
+    for (let b = 1; b < 4; ++b) {
+      const subEl = el('div', 'rc-ruler-subtick');
+      subEl.style.left = (barX + b * pixelsPerBeat) + 'px';
+      rulerStrip.appendChild(subEl);
+    }
+  }
+
+  if (chords && chords.length) {
+    for (let i = 0; i < chords.length; ++i) {
+      const c = chords[i];
+      const nextC = chords[i + 1];
+      const startSec = Number(c.time || 0);
+      let durSec = Number(c.duration || 0);
+      if (durSec <= 0) {
+        durSec = nextC ? Math.max(0.5, Number(nextC.time || 0) - startSec) : secPerBeat * 2;
+      }
+      const xLeft = (startSec / secPerBeat) * pixelsPerBeat;
+      const cellW = Math.max(24, (durSec / secPerBeat) * pixelsPerBeat);
+
+      const cell = el('div', 'rc-chord-cell');
+      cell.style.left = xLeft + 'px';
+      cell.style.width = (cellW - 1) + 'px';
+      cell.title = `${c.chord} (${startSec.toFixed(1)}s - ${(startSec + durSec).toFixed(1)}s)`;
+
+      const nameEl = el('div', 'rc-cell-name', c.chord || '-');
+      cell.appendChild(nameEl);
+
+      const barNum = Math.floor(startSec / secPerBar) + 1;
+      const beatNum = Math.floor((startSec % secPerBar) / secPerBeat) + 1;
+      const beatEl = el('div', 'rc-cell-beat', `${barNum}.${beatNum}`);
+      cell.appendChild(beatEl);
+
+      cell.onclick = (e) => {
+        e.stopPropagation();
+        auditionChord(c.chord);
+        cell.classList.add('playing');
+        setTimeout(() => cell.classList.remove('playing'), 500);
+      };
+
+      cellsStrip.appendChild(cell);
+    }
+  }
+
+  labState.chordTimeline = {
+    pixelsPerBeat,
+    secPerBeat,
+    totalWidth,
+    totalDuration: maxTime
+  };
+
+  if (timelineBox) {
+    timelineBox.onclick = (e) => {
+      const rect = timelineBox.getBoundingClientRect();
+      const clickX = e.clientX - rect.left + timelineBox.scrollLeft;
+      const targetSec = (clickX / pixelsPerBeat) * secPerBeat;
+      if (state.duration > 0) {
+        const frac = Math.max(0, Math.min(1, targetSec / state.duration));
+        bridge('audio.seek', { fraction: frac }).catch(() => {});
+        state.position = frac;
+        updateChordTrackPlayhead(targetSec);
+      }
+    };
+  }
+}
+
+function updateChordTrackPlayhead(curSec) {
+  const playhead = $('#rcPlayhead');
+  if (!playhead || !labState.chordTimeline) return;
+  const cfg = labState.chordTimeline;
+  const sec = typeof curSec === 'number' ? curSec : (state.position * (state.duration || 0));
+  const x = (sec / cfg.secPerBeat) * cfg.pixelsPerBeat;
+  playhead.style.left = `${Math.max(0, x)}px`;
+
+  const timelineBox = $('#rcTimelineBox');
+  if (timelineBox && state.playing) {
+    const sl = timelineBox.scrollLeft;
+    const cw = timelineBox.clientWidth;
+    if (x > sl + cw - 40 || x < sl) {
+      timelineBox.scrollLeft = Math.max(0, x - 80);
+    }
+  }
+}
+
+function renderLabResult(d) {
+  updateLabRunningState(false);
+  labProgress(true, 100, tr('lab.status.complete'));
+  setTimeout(() => labProgress(false), 2500);
+
+  const emptyPlaceholder = $('#labEmptyPlaceholder');
+  if (emptyPlaceholder) emptyPlaceholder.classList.add('hidden');
+
+  const stemSec = $('#labStemSection');
+  const chordSec = $('#labChordSection');
+  const genSec = $('#labGeneralResult');
+
+  if (d.job === 'keychord') {
+    if (stemSec) stemSec.classList.add('hidden');
+    if (genSec) genSec.classList.add('hidden');
+    if (chordSec) chordSec.classList.remove('hidden');
+
+    const p = d.payload || {};
+    const tel = p.telemetry || {};
+    labState.lastChords = p.chords || [];
+
+    const bpmVal = Math.round(tel.bpm) || (state.sampleBpm ? Math.round(state.sampleBpm) : '---');
+    const keyVal = tel.master_key ? `${tel.master_key} ${tel.scale_mode || ''}`.trim() : (state.sampleKey || '---');
+
+    const badgeKey = $('#labChordKeyBadge');
+    if (badgeKey) badgeKey.textContent = keyVal;
+    const badgeBpm = $('#labChordBpmBadge');
+    if (badgeBpm) badgeBpm.textContent = `${bpmVal}`;
+    const badgeCount = $('#labChordCountBadge');
+    if (badgeCount) badgeCount.textContent = `${(p.chords || []).length}`;
+
+    const progBox = $('#labChordProgPreview');
+    if (progBox) {
+      progBox.innerHTML = '';
+      (p.chords || []).forEach((c) => {
+        const pill = el('span', 'lab-chord-pill');
+        pill.textContent = c.chord || c.name || '';
+        if (c.roman) {
+          const rom = el('span', 'chord-roman', `(${c.roman})`);
+          pill.appendChild(rom);
+        }
+        progBox.appendChild(pill);
+      });
+    }
+
+    labState.lastChords = p.chords || [];
+    labState.lastBpm = tel.bpm || state.sampleBpm || 120;
+    labState.lastKey = tel.master_key || state.sampleKey || 'C';
+    labState.lastScale = tel.scale_mode || 'Major';
+
+    bridge('reaper.showChordDocker', {
+      show: true,
+      bpm: labState.lastBpm,
+      masterKey: labState.lastKey,
+      scaleMode: labState.lastScale,
+      itemPosition: labState.itemPosition || 0.0,
+      chords: p.chords || []
+    }).catch(() => {});
+  } else if (d.job === 'stem') {
+    if (chordSec) chordSec.classList.add('hidden');
+    if (genSec) genSec.classList.add('hidden');
+    if (stemSec) stemSec.classList.remove('hidden');
+
+    labState.lastStems = d.files || [];
+    labState.lastZipPath = d.zipPath || null;
+    const zipBtn = $('#btnLabOpenZip');
+    if (zipBtn) zipBtn.classList.toggle('hidden', !d.zipPath);
+
+    const lanes = $('#labStemLanes');
+    if (lanes) {
+      lanes.innerHTML = '';
+      const STEM_COLORS = {
+        vocals: '#FF6B2C', drums: '#55A5FF', bass: '#EAB308', other: '#35D07F'
+      };
+      (d.files || []).forEach((f) => {
+        const lane = el('div', 'lab-stem-lane');
+        const badge = el('div', 'stem-badge', f.name.toUpperCase());
+        const lowerName = f.name.toLowerCase();
+        badge.style.background = STEM_COLORS[lowerName] || '#888';
+        lane.appendChild(badge);
+
+        const miniWave = el('div', 'stem-wave-mini', `${f.name.toUpperCase()} · ${f.path.split(/[\\/]/).pop()}`);
+        lane.appendChild(miniWave);
+
+        const ctrls = el('div', 'stem-ctrls');
+        const btnPlayStem = el('button', 'btn-solo-mute', '▶');
+        btnPlayStem.title = tr('browser.ctx.preview') || 'Play';
+        btnPlayStem.onclick = () => playFile(f.path);
+        ctrls.appendChild(btnPlayStem);
+
+        const btnInsert = el('button', 'btn-mini-accent', tr('lab.stems.insertTrack'));
+        btnInsert.onclick = () => insertMedia(f.path);
+        ctrls.appendChild(btnInsert);
+
+        const dragHandle = el('span', 'stem-drag-handle', '✥ ' + tr('player.dragTip'));
+        armOleDrag(dragHandle, { path: f.path, isDir: false });
+        ctrls.appendChild(dragHandle);
+
+        lane.appendChild(ctrls);
+        lanes.appendChild(lane);
+      });
+    }
+
+    // Auto-create folder/group dropdown track in REAPER directly below original item and mute original item
+    bridge('reaper.insertStemsToFolder', {
+      originalPath: labState.file || '',
+      itemPosition: labState.itemPosition || 0.0,
+      itemLength: labState.itemLength || 0.0,
+      stems: d.files || []
+    }).then((res) => {
+      if (res && res.ok !== false) {
+        toast(tr('lab.stemsInserted') || 'Đã tạo group và chèn Stems vào REAPER');
+      }
+    }).catch((err) => {
+      console.warn('reaper.insertStemsToFolder failed:', err);
+    });
+  } else {
+    if (stemSec) stemSec.classList.add('hidden');
+    if (chordSec) chordSec.classList.add('hidden');
+    if (genSec) {
+      genSec.classList.remove('hidden');
+      genSec.innerHTML = '';
+      const card = el('div', 'result-card');
+      if (d.job === 'analyze') {
+        const p = d.payload || {};
+        card.appendChild(el('h4', '', 'BPM & Key Telemetry'));
+        card.appendChild(el('div', 'kbd-line', `BPM: ${p.bpm} · Key: ${p.master_key} ${p.scale_mode || ''} · ${p.duration}s`));
+      } else if (d.job === 'denoise') {
+        card.appendChild(el('h4', '', 'Audio đã lọc Noise'));
+        (d.files || []).forEach((f) => {
+          const row = el('div', 'stem-row');
+          armOleDrag(row, { path: f.path, isDir: false });
+          row.appendChild(el('span', 'sn', f.name));
+          const ins = el('a', '', '+ vào project');
+          ins.onclick = () => insertMedia(f.path);
+          row.appendChild(ins);
+          card.appendChild(row);
+        });
+      }
+      genSec.appendChild(card);
+    }
+  }
+}
+
+// ============ Agent (Phase 5 — SPEC §5.4) ============
+// Chat + tool cards + inline confirmation. All logic lives in C++
+// (bridge/src/AgentBridge.cpp); this file only renders agent.* events.
+const agentState = { busy: false, mode: 1, cards: new Map(), cfg: null, provider: 'anthropic' };
+
+function agentChat() { return $('#chat'); }
+function agentScroll() { const c = agentChat(); if (c) c.scrollTop = c.scrollHeight; }
+function agentSay(text, cls = 'bot') {
+  const b = el('div', 'bubble ' + cls, text);
+  agentChat().appendChild(b);
+  agentScroll();
+  return b;
+}
+function agentFmtArgs(a) {
+  try {
+    const s = JSON.stringify(a ?? {}, null, 1);
+    return s.length > 700 ? s.slice(0, 700) + '…' : s;
+  } catch { return ''; }
+}
+function agentToolCard(d) {
+  const key = d.id || ('h' + agentState.cards.size);
+  let card = agentState.cards.get(key);
+  if (!card) {
+    card = el('div', 'agent-tool risk-' + (d.risk || 'read'));
+    const head = el('div', 'agent-tool-head');
+    head.appendChild(el('span', 'agent-tool-icon', d.risk === 'danger' ? '⚠' : '🛠'));
+    head.appendChild(el('span', 'agent-tool-name', d.tool || ''));
+    if (d.risk) head.appendChild(el('span', 'agent-tool-risk', tr('agent.risk.' + d.risk)));
+    head.appendChild(el('span', 'agent-tool-state', ''));
+    card.appendChild(head);
+    const args = agentFmtArgs(d.args);
+    if (args && args !== '{}') card.appendChild(el('pre', 'agent-tool-args', args));
+    agentChat().appendChild(card);
+    agentState.cards.set(key, card);
+  }
+  agentScroll();
+  return card;
+}
+function agentSetCardState(card, key, cls = '') {
+  const s = card.querySelector('.agent-tool-state');
+  if (!s) return;
+  s.textContent = tr(key);
+  s.className = 'agent-tool-state ' + cls;
+}
+function agentConfirm(d) {
+  const card = agentToolCard(d);
+  agentSetCardState(card, 'agent.tool.waiting', 'warn');
+  card.classList.add('pending');
+  const row = el('div', 'agent-tool-actions');
+  const ok = el('button', 'accent', tr('agent.allow'));
+  const no = el('button', '', tr('agent.deny'));
+  const answer = (approved) => {
+    row.remove();
+    card.classList.remove('pending');
+    agentSetCardState(card, approved ? 'agent.tool.running' : 'agent.tool.denied', approved ? '' : 'err');
+    bridge('agent.confirm', { id: d.id, approved }).catch(() => {});
+  };
+  ok.onclick = () => answer(true);
+  no.onclick = () => answer(false);
+  row.append(ok, no);
+  card.appendChild(row);
+  agentScroll();
+}
+function agentToolResult(d) {
+  const card = agentToolCard(d);
+  card.querySelector('.agent-tool-actions')?.remove();
+  card.classList.remove('pending');
+  if (d.denied) agentSetCardState(card, 'agent.tool.denied', 'err');
+  else if (d.ok) agentSetCardState(card, 'agent.tool.done', 'ok');
+  else agentSetCardState(card, 'agent.tool.failed', 'err');
+  const err = d.result && d.result.error;
+  if (!d.ok && err && !d.denied) card.appendChild(el('div', 'agent-tool-err', String(err)));
+}
+function agentSetBusy(b) {
+  agentState.busy = !!b;
+  $('#agentStatus')?.classList.toggle('hidden', !agentState.busy);
+  const send = $('#btnSend');
+  if (send) send.disabled = agentState.busy;
+  const clr = $('#btnAgentClear');
+  if (clr) clr.disabled = agentState.busy;
+}
+function agentErrorText(d) {
+  if (d.code === 'config') return tr('agent.err.config');
+  if (d.code === 'steps') return tr('agent.err.steps');
+  return tr('agent.err.prefix') + (d.message || '');
+}
+function agentApplyMode(mode) {
+  agentState.mode = mode;
+  $$('#agentMode button').forEach((x) => x.classList.toggle('on', Number(x.dataset.mode) === mode));
+}
+function agentApplyConfig(c) {
+  agentState.cfg = c || {};
+  if (typeof c?.mode === 'number') agentApplyMode(c.mode);
+  const lbl = $('#agentModelLabel');
+  if (lbl) lbl.textContent = c?.model || '';
+  $('#agentSetupNote')?.classList.toggle('hidden', !!c?.hasKey && !!c?.baseUrl);
+  if (typeof c?.busy === 'boolean') agentSetBusy(c.busy);
+}
+async function agentRefreshConfig() {
+  try { agentApplyConfig(await bridge('agent.config')); } catch { /* bridge offline */ }
+  return agentState.cfg;
+}
+// ---- Live streaming (agent.thinking / agent.delta) ----
+// Thinking streams into a collapsible box, answer text into a live bubble;
+// agent.message then finalizes that bubble with the full text.
+agentState.live = { think: null, thinkBody: null, bubble: null, text: '' };
+function agentEndThinking() {
+  const t = agentState.live.think;
+  if (t && t.classList.contains('live')) {
+    t.classList.remove('live');
+    const s = t.querySelector('summary');
+    if (s) s.textContent = tr('agent.thought');
+    t.open = false;
+  }
+}
+function agentLiveReset(partial = false) {
+  agentEndThinking();
+  const b = agentState.live.bubble;
+  if (b) {
+    b.classList.remove('streaming');
+    if (partial) b.classList.add('partial');
+  }
+  agentState.live = { think: null, thinkBody: null, bubble: null, text: '' };
+}
+function agentThinkingDelta(text) {
+  const L = agentState.live;
+  if (L.bubble) agentLiveReset(); // new reasoning after text: start a fresh block
+  const live = agentState.live;
+  if (!live.think) {
+    const det = el('details', 'agent-think live');
+    det.open = true;
+    det.appendChild(el('summary', '', tr('agent.thinkingLive')));
+    live.thinkBody = el('div', 'agent-think-body', '');
+    det.appendChild(live.thinkBody);
+    agentChat().appendChild(det);
+    live.think = det;
+  }
+  live.thinkBody.textContent += text || '';
+  live.thinkBody.scrollTop = live.thinkBody.scrollHeight;
+  agentScroll();
+}
+function agentTextDelta(text) {
+  agentEndThinking();
+  const L = agentState.live;
+  if (!L.bubble) { L.bubble = agentSay('', 'bot streaming'); L.text = ''; }
+  L.text += text || '';
+  L.bubble.textContent = L.text;
+  agentScroll();
+}
+function agentFinalMessage(d) {
+  const L = agentState.live;
+  if (L.bubble) {
+    if (d.text) L.bubble.textContent = d.text;
+    else if (!L.text) L.bubble.remove();
+  } else if (d.text) {
+    agentSay(d.text, 'bot');
+  }
+  agentLiveReset();
+}
+function handleAgentEvent(event, d) {
+  d = d || {};
+  switch (event) {
+    case 'agent.state':
+      if (!d.busy) agentLiveReset();
+      agentSetBusy(d.busy);
+      break;
+    case 'agent.thinking': agentThinkingDelta(d.text); break;
+    case 'agent.delta': agentTextDelta(d.text); break;
+    case 'agent.message': agentFinalMessage(d); break;
+    case 'agent.confirmRequest': agentLiveReset(); agentConfirm(d); break;
+    case 'agent.toolCall': agentLiveReset(); agentSetCardState(agentToolCard(d), 'agent.tool.running'); break;
+    case 'agent.toolResult': agentToolResult(d); break;
+    case 'agent.error':
+      agentLiveReset(true);
+      agentSay(agentErrorText(d), 'bot err');
+      if (d.code === 'config') $('#agentSetupNote')?.classList.remove('hidden');
+      break;
+    case 'agent.cancelled':
+      agentLiveReset(true);
+      agentSay(tr('agent.cancelled'), 'bot note');
+      break;
+    case 'agent.models': agentFillModels(d); break;
+    default: break;
+  }
+}
+async function agentLoadHistory() {
+  let items = [];
+  try { items = (await bridge('agent.history')) || []; } catch { items = []; }
+  agentChat().innerHTML = '';
+  agentState.cards.clear();
+  agentLiveReset();
+  if (!items.length) { agentSay(tr('agent.greeting')); return; }
+  items.forEach((m) => {
+    if (m.role === 'tool') agentSetCardState(agentToolCard({ tool: m.tool, args: m.args }), 'agent.tool.done', 'ok');
+    else agentSay(m.text || '', m.role === 'user' ? 'user' : 'bot');
+  });
+}
+async function agentSend() {
+  const inp = $('#chatInput');
+  const text = inp.value.trim();
+  if (!text || agentState.busy) return;
+  agentSay(text, 'user');
+  inp.value = '';
+  if (!hasWebView) { setTimeout(() => agentSay(tr('agent.preview'), 'bot note'), 300); return; }
+  agentSetBusy(true);
+  try {
+    await bridge('agent.send', { text });
+  } catch (e) {
+    agentSetBusy(false);
+    agentSay(tr('agent.err.prefix') + (e.message || e), 'bot err');
+  }
+}
+
+// ---- Settings › Agent AI ----
+function agentFillModels(d) {
+  const sel = $('#agentModelSel');
+  const msg = $('#agentModelsMsg');
+  if (!sel) return;
+  const cur = sel.value || agentState.cfg?.model || '';
+  const list = (d && d.models) || [];
+  if (d && d.error) { if (msg) msg.textContent = tr('agent.set.modelsErr') + d.error; }
+  else if (msg) msg.textContent = '';
+  if (!list.length) return;
+  sel.innerHTML = '';
+  const ids = new Set();
+  list.forEach((m) => {
+    if (!m.id || ids.has(m.id)) return;
+    ids.add(m.id);
+    const o = el('option', '', m.name && m.name !== m.id ? `${m.name} — ${m.id}` : m.id);
+    o.value = m.id;
+    sel.appendChild(o);
+  });
+  if (cur && !ids.has(cur)) { const o = el('option', '', cur); o.value = cur; sel.prepend(o); }
+  sel.value = cur || list[0].id;
+}
+function agentSetProvider(p) {
+  agentState.provider = p || 'anthropic';
+  $$('#optAgentProvider .setting-chip').forEach((c) => c.classList.toggle('active', c.dataset.val === agentState.provider));
+}
+async function agentLoadSettings() {
+  const c = (await agentRefreshConfig()) || {};
+  agentSetProvider(c.provider);
+  const base = $('#agentBaseUrl');
+  if (base) base.value = c.baseUrl || '';
+  const key = $('#agentApiKey');
+  if (key) key.value = '';
+  const ks = $('#agentKeyStatus');
+  if (ks) ks.textContent = c.hasKey ? `${tr('agent.set.keyFrom')}${c.keyMasked || ''} (${c.keySource || ''})` : tr('agent.set.keyNone');
+  const sel = $('#agentModelSel');
+  if (sel && c.model && !Array.from(sel.options).some((o) => o.value === c.model)) {
+    const o = el('option', '', c.model); o.value = c.model; sel.prepend(o);
+  }
+  if (sel && c.model) sel.value = c.model;
+}
+async function agentSaveSettings(extra = {}) {
+  const args = {
+    provider: agentState.provider,
+    baseUrl: ($('#agentBaseUrl')?.value || '').trim(),
+    model: $('#agentModelSel')?.value || '',
+    ...extra
+  };
+  const key = ($('#agentApiKey')?.value || '').trim();
+  if (key && !('apiKey' in extra)) args.apiKey = key;
+  try {
+    await bridge('agent.setConfig', args);
+    toast(tr('agent.set.saved'));
+  } catch (e) { toast(tr('agent.err.prefix') + (e.message || e)); }
+  await agentLoadSettings();
+}
+function initAgentSettings() {
+  $$('#optAgentProvider .setting-chip').forEach((c) => { c.onclick = (e) => { e.stopPropagation(); agentSetProvider(c.dataset.val); }; });
+  const btnModels = $('#btnAgentModels');
+  if (btnModels) btnModels.onclick = (e) => {
+    e.stopPropagation();
+    const msg = $('#agentModelsMsg');
+    if (msg) msg.textContent = tr('agent.set.loading');
+    // Persist URL/key first so the fetch uses what the user just typed.
+    agentSaveSettings().then(() => bridge('agent.models').catch(() => {}));
+  };
+  const btnSave = $('#btnAgentSave');
+  if (btnSave) btnSave.onclick = (e) => { e.stopPropagation(); agentSaveSettings(); };
+  const btnClr = $('#btnAgentClearKey');
+  if (btnClr) btnClr.onclick = (e) => { e.stopPropagation(); agentSaveSettings({ apiKey: '' }); };
+  $('.settings-tab-btn[data-tab="agent"]')?.addEventListener('click', () => { agentLoadSettings(); });
+  $('#btnSettings')?.addEventListener('click', () => { agentLoadSettings(); });
+}
+
+function initAgent() {
+  $('#btnSend').onclick = agentSend;
+  $('#chatInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); agentSend(); }
+  });
+  $$('#agentMode button').forEach((b) => {
+    b.onclick = () => {
+      const mode = Number(b.dataset.mode);
+      agentApplyMode(mode);
+      bridge('agent.setMode', { mode }).catch(() => {});
+    };
+  });
+  const cancel = $('#btnAgentCancel');
+  if (cancel) cancel.onclick = () => bridge('agent.cancel').catch(() => {});
+  const clr = $('#btnAgentClear');
+  if (clr) clr.onclick = async () => {
+    if (agentState.busy) return;
+    try { await bridge('agent.clear'); } catch { /* ignore */ }
+    agentChat().innerHTML = '';
+    agentState.cards.clear();
+    agentSay(tr('agent.cleared'), 'bot note');
+  };
+  initAgentSettings();
+  if (!hasWebView) { agentSay(tr('agent.greeting')); agentSay(tr('agent.preview'), 'bot note'); return; }
+  agentRefreshConfig();
+  agentLoadHistory();
 }
 
 // ============ Drag & Drop (preview/mock only) ============
@@ -4394,7 +5215,10 @@ async function boot() {
   const winDrag = $('#winDragRegion');
   if (winDrag) {
     winDrag.addEventListener('mousedown', (e) => {
-      if (e.button === 0 && !state.docked) bridge('window.startDrag');
+      if (e.button === 0 && !state.docked) {
+        e.preventDefault();
+        bridge('window.startDrag');
+      }
     });
   }
 

@@ -7,7 +7,9 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace reals::net {
@@ -19,6 +21,55 @@ struct Response {
     std::map<std::string, std::string> headers;
 };
 
+// Cross-thread cancellation for an in-flight request. cancel() may be called
+// from any thread: it marks the token and runs the transport's abort hook
+// (WinHTTP: closes the request handle, which unblocks a pending read).
+// The hook runs under the token mutex, so disarm() returning guarantees the
+// hook either completed or will never run.
+class CancelToken {
+public:
+    void cancel() {
+        const std::lock_guard lock(m_mutex);
+        if (m_cancelled)
+            return;
+        m_cancelled = true;
+        if (m_abort) {
+            m_abort();
+            m_abort = nullptr;
+            m_aborted = true;
+        }
+    }
+    [[nodiscard]] bool isCancelled() const {
+        const std::lock_guard lock(m_mutex);
+        return m_cancelled;
+    }
+    // Installs the abort hook. Returns false (hook not installed) when the
+    // token is already cancelled.
+    bool arm(std::function<void()> abortFn) {
+        const std::lock_guard lock(m_mutex);
+        if (m_cancelled)
+            return false;
+        m_abort = std::move(abortFn);
+        m_aborted = false;
+        return true;
+    }
+    // Removes the hook. Returns true when the hook already ran (the transport
+    // resource it owned is gone and must not be released again).
+    bool disarm() {
+        const std::lock_guard lock(m_mutex);
+        m_abort = nullptr;
+        const bool aborted = m_aborted;
+        m_aborted = false;
+        return aborted;
+    }
+
+private:
+    mutable std::mutex m_mutex;
+    bool m_cancelled = false;
+    bool m_aborted = false;
+    std::function<void()> m_abort;
+};
+
 struct Request {
     std::string method = "GET";
     std::string url;
@@ -26,6 +77,13 @@ struct Request {
     std::string body;
     // Progress callback: receives bytes downloaded so far / total (0 if unknown).
     std::function<bool(size_t, size_t)> onProgress; // return false to cancel
+    // Streaming body sink (e.g. SSE). When set and the status is 2xx, each
+    // received chunk is passed here instead of being accumulated in
+    // Response::body. Return false to stop reading (error = "cancelled").
+    // Non-2xx bodies are still accumulated so callers can show the error.
+    std::function<bool(const char*, size_t)> onData;
+    // Optional cancel token; cancel() aborts the request from another thread.
+    std::shared_ptr<CancelToken> cancel;
 };
 
 class HttpClient {

@@ -63,6 +63,15 @@ struct IHostActions {
     virtual double projectTempo() const = 0;
     // Toggle play/stop in host DAW transport.
     virtual void togglePlay() = 0;
+    // Explicit transport control for the Spacebar preview cycle.
+    virtual void startTransport() { togglePlay(); }
+    // Phase-aware overload: hosts that can move the stopped DAW cursor should
+    // align it to the already-audible preview before starting transport.
+    virtual void startTransport(double startPositionSeconds) {
+        (void)startPositionSeconds;
+        startTransport();
+    }
+    virtual void stopTransport() { togglePlay(); }
     // Query current host DAW transport (play state, playhead position in seconds & beats, tempo)
     virtual HostTransport hostTransport() const { return {}; }
 
@@ -78,12 +87,47 @@ struct IHostActions {
     virtual float hostPreviewRms() const { return 0.0f; }
     virtual void setHostPreviewVolume(double vol) { (void)vol; }
     virtual void setHostPreviewPosition(double posSeconds) { (void)posSeconds; }
+    // Soft variant for the phase-sync timer: re-aligns the preview position
+    // WITHOUT resetting the DSP pipeline (no dead-air gap). Default falls
+    // back to the hard seek for shells without a DSP preview source.
+    virtual void setHostPreviewPositionSoft(double posSeconds) { setHostPreviewPosition(posSeconds); }
     virtual void setHostPreviewPositionFraction(double frac) { (void)frac; }
+    virtual void setHostPreviewPositionFractionSoft(double frac) { setHostPreviewPositionFraction(frac); }
     virtual void setHostPreviewLoop(bool loop) { (void)loop; }
     virtual void setHostPreviewTimeRatio(double ratio) { (void)ratio; }
+    // Refresh the native preview's musical loop grid when BPM metadata arrives
+    // after playback has already started.
+    virtual void setHostPreviewLoopBoundary(double loopBeats, double sampleBpm) {
+        (void)loopBeats;
+        (void)sampleBpm;
+    }
     virtual void setHostPreviewPitchSemitones(double semitones) { (void)semitones; }
     virtual double hostPreviewTimeRatio() const { return 1.0; }
     virtual double hostPreviewPitchSemitones() const { return 0.0; }
+    virtual std::string getSelectedMediaItemPath() { return ""; }
+    virtual double getSelectedMediaItemPosition() { return 0.0; }
+    virtual double getSelectedMediaItemLength() { return 0.0; }
+    virtual bool insertChordTrack(const std::string& progressionJson) {
+        (void)progressionJson;
+        return false;
+    }
+    virtual void showChordDocker(bool show, const std::string& chordDataJson = "") {
+        (void)show;
+        (void)chordDataJson;
+    }
+    virtual bool insertStemsToFolder(const std::string& stemsJson) {
+        (void)stemsJson;
+        return false;
+    }
+
+    // Agent (P5): generic executor for one tool call. Always invoked on the
+    // host/UI thread (Bridge marshals it). argsJson is a JSON object; returns
+    // {"ok":true,"data":...} or {"ok":false,"error":"..."}. Hosts wrap
+    // mutating tools in an undo block. Default: no host tools available.
+    virtual std::string executeAgentTool(const std::string& tool, const std::string& argsJson) {
+        (void)argsJson;
+        return std::string("{\"ok\":false,\"error\":\"tool not supported by this host: ") + tool + "\"}";
+    }
 };
 
 class Bridge {

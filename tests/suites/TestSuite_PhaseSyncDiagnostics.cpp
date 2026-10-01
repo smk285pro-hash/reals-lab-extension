@@ -224,6 +224,9 @@ TEST(PhaseSyncDiagnostics, D3_DspMode_StartFractionExactBeatAlignment) {
 //     do có 0.8s tail) -> Phải snap đúng 16 beats và loopBoundaryFrames = 352800.
 // ---------------------------------------------------------------------------
 TEST(PhaseSyncDiagnostics, D4_LoopWithReverbTail_SnapsToExactBarAndNominalLoopFrames) {
+    auto& engine = reals::audio::Engine::instance();
+    const int previousTargetSampleRate = engine.targetSampleRate();
+    engine.setTargetSampleRate(44100);
     BridgeTestHarness harness(120.0);
     // 4 bars @ 120 BPM = 16 beats = 8.0s. Thêm 0.8s reverb tail = 8.8s (17.6 beats raw)
     const std::string path = writeLoopWav("loop_4bars_with_tail_120bpm.wav", 17.6, 120.0);
@@ -238,8 +241,9 @@ TEST(PhaseSyncDiagnostics, D4_LoopWithReverbTail_SnapsToExactBarAndNominalLoopFr
     EXPECT_NEAR(res["data"].value("startFraction", 0.0), 0.5, 0.02);
 
     // Engine loopBoundaryFrames must equal 16 beats * 60 / 120 * 44100 = 352800 frames
-    EXPECT_EQ(reals::audio::Engine::instance().loopBoundaryFrames(), 352800ull);
+    EXPECT_EQ(engine.loopBoundaryFrames(), 352800ull);
     harness.call("audio.stop", json::object());
+    engine.setTargetSampleRate(previousTargetSampleRate);
 }
 
 // ---------------------------------------------------------------------------

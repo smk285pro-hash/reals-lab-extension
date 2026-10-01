@@ -74,38 +74,175 @@
       </section>
 
       <!-- AUDIO LAB -->
-      <section class="pane pane-scroll" id="pane-audioLab">
-        <div class="lab-file" id="labFile">
-          <span class="muted" data-i18n="lab.noFile">Chưa chọn file — chọn trong Browser (click phải → Gửi Audio Lab)</span>
+      <section class="pane pane-lab-studio" id="pane-audioLab">
+        <!-- TOP DECK: ACTIVE MEDIA INGEST & CONTROLS -->
+        <div class="lab-top-deck" id="labDropDeck">
+          <div class="lab-file-info" id="labFileInfo">
+            <span class="lab-file-icon">🎵</span>
+            <div class="lab-file-meta-wrap">
+              <div id="labFileName" class="lab-file-name" data-i18n="lab.noFile">Chưa chọn file — kéo thả hoặc chọn từ DAW</div>
+              <div id="labFilePath" class="lab-file-path muted"></div>
+            </div>
+          </div>
+          <div class="lab-ingest-actions">
+            <button id="btnLabFetchDaw" class="btn-lab-ingest" data-i18n-title="lab.btnFetchDaw" title="Lấy từ Item DAW">
+              <span>⚡</span> <span data-i18n="lab.btnFetchDaw">Lấy từ Item DAW</span>
+            </button>
+            <button id="btnLabBrowse" class="btn-lab-ingest" data-i18n-title="lab.btnBrowse" title="Chọn file...">
+              <span>📂</span> <span data-i18n="lab.btnBrowse">Chọn file...</span>
+            </button>
+            <input type="file" id="labFileInput" accept="audio/*" style="display:none">
+          </div>
         </div>
-        <div class="lab-grid" id="labGrid">
-          <button class="lab-tool" data-job="stem"><b data-i18n="browser.lab.stem">Tách Stem</b><span data-i18n="lab.sub.stem">vocal · drum · bass · other</span></button>
-          <button class="lab-tool" data-job="denoise"><b data-i18n="browser.lab.denoise">Lọc Noise</b><span data-i18n="lab.sub.denoise">làm sạch audio</span></button>
-          <button class="lab-tool" data-job="keychord"><b data-i18n="browser.lab.keychord">Key &amp; Hợp âm</b><span data-i18n="lab.sub.keychord">phát hiện + MIDI</span></button>
-          <button class="lab-tool" data-job="analyze"><b data-i18n="browser.lab.tempo">Tempo &amp; Key</b><span data-i18n="lab.sub.tempo">phát hiện nhanh</span></button>
+
+        <!-- ACTION RIBBON: 36PX COMPACT SEGMENTED TOOLBAR (DESIGN.md §21) -->
+        <div class="lab-ribbon-bar">
+          <div class="lab-ribbon" id="labRibbon">
+            <button class="lab-ribbon-btn active" data-job="stem">
+              <span class="ribbon-icon">🎛️</span>
+              <span class="ribbon-text" data-i18n="lab.ribbon.stem">Tách Stems</span>
+            </button>
+            <button class="lab-ribbon-btn" data-job="denoise">
+              <span class="ribbon-icon">🔇</span>
+              <span class="ribbon-text" data-i18n="lab.ribbon.denoise">Lọc Noise</span>
+            </button>
+            <button class="lab-ribbon-btn" data-job="keychord">
+              <span class="ribbon-icon">🎼</span>
+              <span class="ribbon-text" data-i18n="lab.ribbon.chords">Dò Hợp Âm &amp; Key</span>
+            </button>
+            <button class="lab-ribbon-btn" data-job="analyze">
+              <span class="ribbon-icon">⚡</span>
+              <span class="ribbon-text" data-i18n="lab.ribbon.analyze">BPM &amp; Key</span>
+            </button>
+          </div>
+          <button id="btnLabExecute" class="btn-lab-exec">
+            <span id="labExecSpinner" class="lab-spinner hidden">⚡</span>
+            <span id="labExecText" data-i18n="lab.action.process">Bắt đầu Xử lý</span>
+          </button>
         </div>
-        <div id="labProgress" class="hidden">
-          <div class="lab-progress-bar"><div id="labProgressFill"></div></div>
-          <div id="labProgressText" class="muted"></div>
+
+        <!-- MAIN STUDIO CANVAS -->
+        <div class="lab-studio-canvas" id="labStudioCanvas">
+          <!-- AUDIO TRANSPORT BAR -->
+          <div class="lab-transport-bar">
+            <button id="btnLabPlay" class="flat" title="Play/Pause">▶</button>
+            <button id="btnLabLoop" class="flat" data-i18n-title="browser.loop" title="Loop">🔁</button>
+            <span id="labTimeDisplay" class="lab-time-text">0.0 / 0.0s</span>
+            <div class="lab-wave-wrap">
+              <canvas id="labMasterWave" height="34"></canvas>
+            </div>
+            <div class="lab-vol-wrap">
+              <span class="vol-icon">🔊</span>
+              <input type="range" id="labMasterVol" min="0" max="1" step="0.01" value="1.0" title="Volume">
+            </div>
+          </div>
+
+          <!-- DYNAMIC WORKSPACE SECTIONS -->
+          <!-- 1. STEM MIXER (Demucs 4-Stems) -->
+          <div id="labStemSection" class="lab-section hidden">
+            <div class="lab-section-header">
+              <div class="lab-sec-title">
+                <span data-i18n="lab.stems.title">Bộ trộn Stems (Demucs v4)</span>
+                <span class="badge pro">AI SERVERLESS GPU</span>
+              </div>
+              <div class="lab-sec-actions">
+                <button id="btnLabInsertAllStems" class="btn-mini-accent" data-i18n="lab.stems.insertAll">Chèn tất cả Stems vào REAPER</button>
+                <button id="btnLabOpenZip" class="btn-mini-ghost hidden" data-i18n="lab.stems.zip">Mở thư mục ZIP</button>
+              </div>
+            </div>
+            <div id="labStemLanes" class="lab-stem-lanes"></div>
+          </div>
+
+          <!-- 2. REALS CHORD TRACK STUDIO CARD -->
+          <div id="labChordSection" class="lab-section hidden">
+            <div class="lab-section-header">
+              <div class="lab-sec-title">
+                <span data-i18n="lab.chords.title">Dò Hợp Âm &amp; Key (AI Engine)</span>
+                <span class="badge pro">HARMONIC DSP</span>
+              </div>
+              <div class="lab-sec-actions">
+                <button id="btnOpenTopChordDocker" class="btn-mini-accent" title="Hiện thanh Chord Track trên đỉnh DAW">
+                  <span>📌</span> <span data-i18n="lab.chords.openDocker">Hiện trên Dock DAW (Top)</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="lab-chord-card">
+              <div class="lab-chord-meta-row">
+                <div class="lab-chord-badge-box">
+                  <span class="lab-badge-label">KEY</span>
+                  <span id="labChordKeyBadge" class="lab-badge-val">--</span>
+                </div>
+                <div class="lab-chord-badge-box">
+                  <span class="lab-badge-label">BPM</span>
+                  <span id="labChordBpmBadge" class="lab-badge-val">--</span>
+                </div>
+                <div class="lab-chord-badge-box">
+                  <span class="lab-badge-label">HỢP ÂM</span>
+                  <span id="labChordCountBadge" class="lab-badge-val">0</span>
+                </div>
+              </div>
+
+              <div class="lab-chord-progression-preview" id="labChordProgPreview"></div>
+
+              <div class="lab-chord-actions-row">
+                <button id="btnInsertChordMidi" class="btn-lab-card-action">
+                  <span>🎹</span> <span data-i18n="lab.chords.insertMidi">Chèn Track MIDI vào REAPER</span>
+                </button>
+                <button id="btnToggleChordDocker" class="btn-lab-card-action secondary">
+                  <span>🖥️</span> <span data-i18n="lab.chords.toggleDocker">Bật / Tắt Dock Chord Track</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. BPM & KEY / DENOISE RESULT CARDS -->
+          <div id="labGeneralResult" class="lab-section hidden"></div>
+
+          <!-- EMPTY PLACEHOLDER -->
+          <div id="labEmptyPlaceholder" class="lab-empty-state">
+            <div class="lab-empty-icon">🧪</div>
+            <div class="lab-empty-title" data-i18n="lab.dropHere">Thả file audio vào đây hoặc chọn từ DAW</div>
+            <div class="lab-empty-sub" data-i18n="lab.jobs">Tách stem · Lọc noise · Key &amp; hợp âm · Tempo · Xuất MIDI</div>
+          </div>
         </div>
-        <div id="labResults"></div>
-        <div class="stub-note" data-i18n="lab.apiLive">API thật: analyze · chords · separate · denoise (smk285pro Modal)</div>
+
+        <!-- BOTTOM TELEMETRY BAR -->
+        <div class="lab-bottom-bar" id="labBottomBar">
+          <div id="labProgressLine" class="lab-progress-line"></div>
+          <div class="lab-status-wrap">
+            <span id="labStatusIndicator" class="lab-dot ready"></span>
+            <span id="labStatusText" class="lab-status-text" data-i18n="lab.status.ready">Sẵn sàng</span>
+          </div>
+          <div class="lab-telemetry-right">
+            <span class="telemetry-badge">🟢 Modal GPU T4 (Live)</span>
+          </div>
+        </div>
       </section>
 
       <!-- AGENT -->
       <section class="pane" id="pane-agent">
-        <div class="section-title" data-i18n="agent.modes">CHẾ ĐỘ PHÉP QUYỀN</div>
+        <div class="agent-head">
+          <div class="section-title" data-i18n="agent.modes">CHẾ ĐỘ PHÉP QUYỀN</div>
+          <span class="agent-model-label" id="agentModelLabel"></span>
+          <button class="icon-btn" id="btnAgentClear" data-i18n-title="agent.clear" title="Xóa hội thoại">🗑</button>
+        </div>
         <div class="agent-mode" id="agentMode">
-          <button data-i18n="agent.mode1">Hỏi tất cả</button>
-          <button class="on" data-i18n="agent.mode2">Chỉ hỏi nguy hiểm</button>
-          <button data-i18n="agent.mode3">Toàn quyền</button>
+          <button data-mode="0" data-i18n="agent.mode1">Hỏi tất cả</button>
+          <button data-mode="1" class="on" data-i18n="agent.mode2">Chỉ hỏi nguy hiểm</button>
+          <button data-mode="2" data-i18n="agent.mode3">Toàn quyền</button>
         </div>
         <div class="chat" id="chat"></div>
+        <div class="agent-status hidden" id="agentStatus">
+          <span class="agent-dots"><i></i><i></i><i></i></span>
+          <span data-i18n="agent.thinking">Agent đang xử lý...</span>
+          <button id="btnAgentCancel" class="agent-stop" data-i18n="agent.stop">Dừng</button>
+        </div>
         <div class="agent-input">
           <input id="chatInput" data-i18n-ph="agent.hint" placeholder="Ra lệnh cho agent... (VD: lọc noise all track audio)">
           <button id="btnSend" class="send">➤</button>
         </div>
-        <div class="stub-note" data-i18n="agent.apiStub">Phase 5 — cần API LLM từ server RealS</div>
+        <div class="agent-setup-note hidden" id="agentSetupNote" data-i18n="agent.err.config">Chưa cấu hình API — mở Cài đặt › Agent AI để nhập Base URL và API key.</div>
       </section>
 
       <!-- BROWSER -->
@@ -414,12 +551,38 @@
               <div class="ph-sub" data-i18n="stem.placeholderDesc">Tách Vocals, Drums, Bass, Instruments chuẩn xác bằng AI tích hợp trực tiếp trong REAPER.</div>
             </div>
           </div>
-          <!-- TAB 5: AGENT AI (PLACEHOLDER) -->
+          <!-- TAB 5: AGENT AI (P5) -->
           <div id="tab-agent" class="settings-tab-pane">
-            <div class="settings-placeholder">
-              <div class="ph-icon">🤖</div>
-              <div class="ph-title" data-i18n="agent.comingSoon">Agent AI — Sắp ra mắt</div>
-              <div class="ph-sub" data-i18n="agent.placeholderDesc">Trợ lý AI tự động hóa chỉnh sửa, định tuyến và sáng tác thông minh trong DAW.</div>
+            <div class="setting-group">
+              <label class="setting-lbl" data-i18n="agent.set.provider">Chuẩn API</label>
+              <div class="setting-btn-group" id="optAgentProvider">
+                <button class="setting-chip active" data-val="anthropic" data-i18n="agent.set.provAnthropic">Anthropic</button>
+                <button class="setting-chip" data-val="openai" data-i18n="agent.set.provOpenai">OpenAI tương thích</button>
+              </div>
+            </div>
+            <div class="setting-group">
+              <label class="setting-lbl" for="agentBaseUrl" data-i18n="agent.set.baseUrl">Địa chỉ API (Base URL)</label>
+              <input id="agentBaseUrl" class="agent-field" spellcheck="false" placeholder="https://api.anthropic.com">
+            </div>
+            <div class="setting-group">
+              <label class="setting-lbl" for="agentApiKey" data-i18n="agent.set.apiKey">API key</label>
+              <div class="agent-field-row">
+                <input id="agentApiKey" class="agent-field" type="password" autocomplete="off" spellcheck="false" data-i18n-ph="agent.set.keyPh" placeholder="Để trống = giữ key hiện tại">
+                <button id="btnAgentClearKey" class="setting-chip" data-i18n="agent.set.clearKey">Xóa key</button>
+              </div>
+              <div id="agentKeyStatus" class="agent-field-hint"></div>
+            </div>
+            <div class="setting-group">
+              <label class="setting-lbl" for="agentModelSel" data-i18n="agent.set.model">Model</label>
+              <div class="agent-field-row">
+                <select id="agentModelSel" class="agent-field"></select>
+                <button id="btnAgentModels" class="setting-chip" data-i18n="agent.set.loadModels">Tải danh sách model</button>
+              </div>
+              <div id="agentModelsMsg" class="agent-field-hint"></div>
+            </div>
+            <div class="setting-group">
+              <button id="btnAgentSave" class="setting-chip active" data-i18n="agent.set.save">Lưu</button>
+              <div class="agent-field-hint" data-i18n="agent.set.note">API key chỉ lưu trên máy này (config.json trong thư mục dữ liệu RealsLab), không đưa vào mã nguồn.</div>
             </div>
           </div>
         </div>

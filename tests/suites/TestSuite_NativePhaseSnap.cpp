@@ -108,7 +108,7 @@ TEST(NativePhaseSnap, N2_TailedLoop_PassesLoopBeatsAndNominalFramesToHost) {
 // ---------------------------------------------------------------------------
 // N3 (bug #3). Live re-phase: start a native preview with Sync OFF, then enable
 //      Sync while the DAW transports. The preview must be re-seeked to the
-//      current bar phase via setHostPreviewPositionFraction. The old gate
+//      current bar phase in nominal-loop seconds. The old gate
 //      (eng.isPlaying()) is always false on the native path, so nothing fired.
 // ---------------------------------------------------------------------------
 TEST(NativePhaseSnap, N3_LiveRephase_OnNativePreview_SeeksToBarPhase) {
@@ -130,9 +130,9 @@ TEST(NativePhaseSnap, N3_LiveRephase_OnNativePreview_SeeksToBarPhase) {
         {"enabled", true}, {"bpm", 120.0f}, {"sampleBpm", 120.0f}, {"path", path}});
     EXPECT_TRUE(syncRes.value("ok", false));
 
-    const auto fracs = harness.host().previewFractionCalls();
-    EXPECT_TRUE(!fracs.empty());
-    EXPECT_NEAR(fracs.back(), 0.25, 0.02);
+    const auto positions = harness.host().previewPositionCalls();
+    EXPECT_TRUE(!positions.empty());
+    EXPECT_NEAR(positions.back(), 2.0, 0.02);
 
     harness.call("audio.stop", json::object());
 }
@@ -221,6 +221,8 @@ TEST(NativePhaseSnap, N6_TransportSeek_WhilePlaying_RephasesPreviewAudioAndState
 
     // First call initializes transport tracking
     EXPECT_FALSE(harness.bridge().updatePhaseSnapFromHostTransport());
+    const size_t fractionCallsBeforeSeek = harness.host().previewFractionCalls().size();
+    const size_t positionCallsBeforeSeek = harness.host().previewPositionCalls().size();
 
     // User clicks Bar 4 (Beat 12) in REAPER timeline: transport jumps from beat 8 to 12
     harness.host().setHostTransport(1, 6.0, 12.0, 120.0);
@@ -228,13 +230,13 @@ TEST(NativePhaseSnap, N6_TransportSeek_WhilePlaying_RephasesPreviewAudioAndState
     // Phase snap must detect the discontinuity and re-align
     EXPECT_TRUE(harness.bridge().updatePhaseSnapFromHostTransport());
 
-    const auto fracs = harness.host().previewFractionCalls();
-    EXPECT_TRUE(!fracs.empty());
-    // Beat 12 in 16-beat loop = fraction 0.75
-    EXPECT_NEAR(fracs.back(), 0.75, 0.02);
+    // Timer re-phase uses the nominal-loop position in seconds exactly once.
+    // A second fraction seek would reinterpret 0.75 against the full file
+    // duration and overwrite the correct 6.0-second position on tailed loops.
+    EXPECT_EQ(harness.host().previewFractionCalls().size(), fractionCallsBeforeSeek);
 
     const auto posCalls = harness.host().previewPositionCalls();
-    EXPECT_TRUE(!posCalls.empty());
+    EXPECT_EQ(posCalls.size(), positionCallsBeforeSeek + 1);
     // 0.75 * 8.0s nominal loop = 6.0s
     EXPECT_NEAR(posCalls.back(), 6.0, 0.1);
 
@@ -261,15 +263,16 @@ TEST(NativePhaseSnap, N7_TransportLoopWrap_RephasesPreview) {
     EXPECT_TRUE(res.value("ok", false));
 
     EXPECT_FALSE(harness.bridge().updatePhaseSnapFromHostTransport());
+    const size_t positionCallsBeforeWrap = harness.host().previewPositionCalls().size();
 
     // REAPER loops back to beat 0.0
     harness.host().setHostTransport(1, 0.0, 0.0, 120.0);
 
     EXPECT_TRUE(harness.bridge().updatePhaseSnapFromHostTransport());
 
-    const auto fracs = harness.host().previewFractionCalls();
-    EXPECT_TRUE(!fracs.empty());
-    EXPECT_NEAR(fracs.back(), 0.0, 0.02);
+    const auto posCalls = harness.host().previewPositionCalls();
+    EXPECT_EQ(posCalls.size(), positionCallsBeforeWrap + 1);
+    EXPECT_NEAR(posCalls.back(), 0.0, 0.02);
 
     harness.call("audio.stop", json::object());
 }
@@ -358,6 +361,176 @@ TEST(NativePhaseSnap, N10_Spacebar_ReaperPlayToggle_StopsPreviewAndTogglesDAW) {
     EXPECT_FALSE(harness.host().isHostPreviewPlaying());
     // Host transport MUST have been toggled
     EXPECT_TRUE(harness.host().hostPlayToggled());
+}
+
+// ---------------------------------------------------------------------------
+// N11. Re-applying the same sync state must be idempotent. The UI can echo an
+//      audio.syncState update back to the bridge; seeking again would create a
+//      needless phase jump even though path, BPM, and ratio did not change.
+// ---------------------------------------------------------------------------
+TEST(NativePhaseSnap, N11_ReapplySameSyncConfig_DoesNotRephase) {
+    BridgeTestHarness harness(120.0);
+    harness.host().setNativePreviewEnabled(true);
+    const std::string path = writeNativeLoopWav("native_idempotent_sync_16beats.wav", 16.0, 120.0);
+    harness.host().setHostTransport(1, 2.0, 4.0, 120.0);
+
+    auto playRes = harness.call("audio.play", {
+        {"path", path}, {"syncBpm", true}, {"sampleBpm", 120.0f}, {"loop", true}});
+    EXPECT_TRUE(playRes.value("ok", false));
+
+    const size_t positionsBefore = harness.host().previewPositionCalls().size();
+    const size_t boundariesBefore = harness.host().previewLoopBoundaryCalls().size();
+
+    auto syncRes = harness.call("audio.setSyncBpm", {
+        {"enabled", true}, {"bpm", 120.0f}, {"sampleBpm", 120.0f}, {"path", path}});
+    EXPECT_TRUE(syncRes.value("ok", false));
+    EXPECT_EQ(harness.host().previewPositionCalls().size(), positionsBefore);
+    EXPECT_EQ(harness.host().previewLoopBoundaryCalls().size(), boundariesBefore);
+
+    harness.call("audio.stop", json::object());
+}
+
+// ---------------------------------------------------------------------------
+// N12. When project tempo changes during native playback, bar quantization must
+//      still use the raw source duration. previewDurationSeconds is already in
+//      output-time space at the old ratio and would misclassify this 16-beat
+//      loop as 24 beats when changing the project from 80 to 140 BPM.
+// ---------------------------------------------------------------------------
+TEST(NativePhaseSnap, N12_ProjectTempoChange_UsesRawDurationForLoopGrid) {
+    BridgeTestHarness harness(80.0);
+    harness.host().setNativePreviewEnabled(true);
+    const std::string path = writeNativeLoopWav("native_tempo_change_16beats.wav", 16.0, 120.0);
+    harness.host().setHostTransport(1, 6.0, 8.0, 80.0);
+
+    auto playRes = harness.call("audio.play", {
+        {"path", path}, {"syncBpm", true}, {"bpm", 80.0f},
+        {"sampleBpm", 120.0f}, {"loop", true}});
+    EXPECT_TRUE(playRes.value("ok", false));
+
+    harness.host().setHostTransport(1, 3.428571, 8.0, 140.0);
+    auto syncRes = harness.call("audio.setSyncBpm", {
+        {"enabled", true}, {"bpm", 140.0f}, {"sampleBpm", 120.0f}, {"path", path}});
+    EXPECT_TRUE(syncRes.value("ok", false));
+
+    const auto boundaries = harness.host().previewLoopBoundaryCalls();
+    EXPECT_TRUE(!boundaries.empty());
+    EXPECT_NEAR(boundaries.back().first, 16.0, 0.01);
+    EXPECT_NEAR(boundaries.back().second, 120.0, 0.01);
+
+    const auto positions = harness.host().previewPositionCalls();
+    EXPECT_TRUE(!positions.empty());
+    EXPECT_NEAR(positions.back(), 8.0 * 60.0 / 140.0, 0.02);
+
+    const auto state = json::parse(harness.audioStateJson());
+    EXPECT_NEAR(state["data"].value("duration", 0.0), 16.0 * 60.0 / 140.0, 0.02);
+
+    harness.call("audio.stop", json::object());
+}
+
+// ---------------------------------------------------------------------------
+// N13. Spacebar start transition: when preview is already playing at a
+// stopped DAW cursor, a large correction on the first stopped -> playing
+// snapshot must hard-seek the DSP pipeline. A soft seek would retain old
+// élastique lookahead audio and leave the two starts audibly offset.
+// ---------------------------------------------------------------------------
+TEST(NativePhaseSnap, N13_SpacebarStart_DoesNotDoubleApplyBlockLatency) {
+    BridgeTestHarness harness(120.0);
+    harness.host().setNativePreviewEnabled(true);
+    const std::string path = writeNativeLoopWav("native_space_start_latency.wav", 16.0, 120.0);
+
+    reals::bridge::HostTransport stopped;
+    stopped.playState = 0;
+    stopped.playPosition = 4.0;
+    stopped.fullBeats = 8.0;
+    stopped.bpm = 120.0;
+    stopped.beatsPerMeasure = 4;
+    stopped.denom = 4;
+    stopped.blockLatencySeconds = 0.02;
+    harness.host().setHostTransport(stopped);
+
+    auto playRes = harness.call("audio.play", {
+        {"path", path}, {"syncBpm", true}, {"sampleBpm", 120.0f}, {"loop", true}});
+    EXPECT_TRUE(playRes.value("ok", false));
+    EXPECT_NEAR(harness.host().lastPreviewCall().startPosSeconds, 4.0, 0.02);
+
+    // Simulate the preview running ahead while the user waits before pressing
+    // Space. This is the real-world case where a soft seek cannot catch up.
+    harness.host().setHostPreviewPosition(4.60);
+
+    // Establish the stopped baseline before the Spacebar transport transition.
+    EXPECT_FALSE(harness.bridge().updatePhaseSnapFromHostTransport());
+    const size_t positionCallsBefore = harness.host().previewPositionCalls().size();
+    const size_t softCallsBefore = harness.host().previewSoftPositionCalls().size();
+
+    // Spacebar starts the DAW from the same cursor. A 20 ms host block must not
+    // be added on top of this transition anchor.
+    stopped.playState = 1;
+    harness.host().setHostTransport(stopped);
+    EXPECT_TRUE(harness.bridge().updatePhaseSnapFromHostTransport());
+
+    const auto positions = harness.host().previewPositionCalls();
+    EXPECT_EQ(positions.size(), positionCallsBefore + 1);
+    EXPECT_NEAR(positions.back(), 4.0, 0.01);
+    EXPECT_EQ(harness.host().previewSoftPositionCalls().size(), softCallsBefore);
+
+    harness.call("audio.stop", json::object());
+}
+
+TEST(NativePhaseSnap, N14_SpaceStart_DoesNotRewindPreAlignedPreview) {
+    BridgeTestHarness harness(120.0);
+    harness.host().setNativePreviewEnabled(true);
+    const auto path = writeNativeLoopWav("native_space_pre_align.wav", 16.0, 120.0);
+    harness.host().setHostTransport(0, 4.0, 8.0, 120.0);
+    EXPECT_TRUE(harness.call("audio.play", {
+        {"path", path}, {"syncBpm", true}, {"sampleBpm", 120.0f}, {"loop", true}}).value("ok", false));
+    // Let the audible preview run for several seconds before Space.
+    harness.host().setHostPreviewPosition(7.6);
+    EXPECT_TRUE(harness.call("reaper.dawPlay", json::object()).value("ok", false));
+    EXPECT_NEAR(harness.host().previewPositionAtTransportStart(), 7.6, 0.0001);
+
+    // Runtime reproduction: preview has rendered 24 ms while the first
+    // transport snapshot still reports the phase-aware start cursor.
+    harness.host().setHostPreviewPosition(7.624);
+    harness.host().setHostTransport(1, 7.6, 15.2, 120.0);
+    const auto count = harness.host().previewPositionCalls().size();
+    EXPECT_FALSE(harness.bridge().updatePhaseSnapFromHostTransport());
+    EXPECT_EQ(harness.host().previewPositionCalls().size(), count);
+
+    // The one-shot suppression must not suppress a subsequent real DAW seek.
+    harness.host().setHostTransport(1, 6.0, 12.0, 120.0);
+    EXPECT_TRUE(harness.bridge().updatePhaseSnapFromHostTransport());
+    EXPECT_EQ(harness.host().previewPositionCalls().size(), count + 1);
+}
+
+TEST(NativePhaseSnap, N15_SpaceStart_LargeErrorDefersToCallbackHandshake) {
+    BridgeTestHarness harness(120.0);
+    harness.host().setNativePreviewEnabled(true);
+    const auto path = writeNativeLoopWav("native_space_fallback.wav", 16.0, 120.0);
+    harness.host().setHostTransport(0, 4.0, 8.0, 120.0);
+    harness.call("audio.play", {
+        {"path", path}, {"syncBpm", true}, {"sampleBpm", 120.0f}, {"loop", true}});
+    harness.call("reaper.dawPlay", json::object());
+    harness.host().setHostPreviewPosition(4.6);
+    harness.host().setHostTransport(1, 4.0, 8.0, 120.0);
+    const auto hardCount = harness.host().previewPositionCalls().size();
+    const auto softCount = harness.host().previewSoftPositionCalls().size();
+    EXPECT_FALSE(harness.bridge().updatePhaseSnapFromHostTransport());
+    EXPECT_EQ(harness.host().previewPositionCalls().size(), hardCount);
+    EXPECT_EQ(harness.host().previewSoftPositionCalls().size(), softCount);
+}
+
+TEST(NativePhaseSnap, N16_SpaceStart_WithoutSyncDoesNotSeek) {
+    BridgeTestHarness harness(120.0);
+    harness.host().setNativePreviewEnabled(true);
+    const auto path = writeNativeLoopWav("native_space_unsynced.wav", 16.0, 120.0);
+    harness.host().setHostTransport(0, 4.0, 8.0, 120.0);
+    harness.call("audio.play", {
+        {"path", path}, {"syncBpm", false}, {"sampleBpm", 120.0f}, {"loop", true}});
+    harness.host().setHostPreviewPosition(4.6);
+    const auto count = harness.host().previewPositionCalls().size();
+    harness.call("reaper.dawPlay", json::object());
+    EXPECT_NEAR(harness.host().previewPositionAtTransportStart(), 4.6, 0.0001);
+    EXPECT_EQ(harness.host().previewPositionCalls().size(), count);
 }
 
 } // namespace reals::test

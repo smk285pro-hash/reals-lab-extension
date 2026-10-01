@@ -109,6 +109,11 @@
   - **Thanh phân cách Dọc (Tree ↔ File List)**: Nằm giữa Cây thư mục và Danh sách File. Cho phép rê chuột vào vạch phân cách kéo qua trái/phải để tùy chỉnh độ rộng của cây thư mục theo ý muốn (có giới hạn min/max an toàn).
   - **Thanh phân cách Ngang (Browser Body ↔ Preview Player)**: Nằm giữa khu vực danh sách file và khu vực trình phát preview phía dưới. Cho phép rê chuột kéo lên/xuống để mở rộng hoặc thu gọn chiều cao của sóng âm và vùng player.
   - Tự động lưu và phục hồi kích thước đã kéo (`treeWidth`, `previewHeight`) vào cấu hình hệ thống khi mở lại extension.
+- **Tự động tạo Folder/Group xổ xuống và chèn Stems kèm Mute item gốc trong REAPER (2026-09-25)**:
+  - **Tự động tạo Folder Track (`I_FOLDERDEPTH = 1`)**: Ngay khi quá trình tách stem hoàn tất trên serverless GPU và tải về `%APPDATA%/RealsLab/lab/`, hệ thống tự động chèn một Track Folder (`[Tên bài] (Stems)`) màu tím chuyên nghiệp (`#8B5CF6`) ngay phía dưới track của item gốc.
+  - **Chèn 4 Child Tracks Stems với màu sắc nhận diện chuẩn**: Tạo 4 track con tương ứng (`Vocals` - Cam `#FF6B2C`, `Drums` - Xanh dương `#55A5FF`, `Bass` - Vàng `#EAB308`, `Other` - Xanh lá `#35D07F`) nằm trọn bên trong Folder, đóng folder ở track cuối cùng (`I_FOLDERDEPTH = -1`).
+  - **Khớp chính xác Timeline & Mute item gốc**: Mỗi stem item được căn chỉnh vị trí bắt đầu (`D_POSITION`), độ dài (`D_LENGTH`), offset và playrate khớp 100% với item gốc. Đồng thời item gốc lập tức được tắt tiếng (`B_MUTE = 1.0`, `UpdateItemInProject`) để tránh va chạm âm thanh khi playback trong DAW.
+  - **Hiển thị trực quan trong Audio Lab**: Vùng `#labStemSection` và `#labStemLanes` tự động hiển thị đầy đủ 4 lane stems với nút Play nghe thử nhanh, nút chèn lẻ từng track, badge màu sắc và tay nắm kéo thả OLE drag vào REAPER.
 - **Cơ chế Quét & Phân tích AI Thư mục chủ động (Manual Folder Scan Trigger) (2026-08-27)**:
   - **Menu chuột phải trực quan trên thư mục**: Bổ sung tùy chọn `⚡ Quét & Phân tích AI` vào menu chuột phải (context menu) của thư mục trên Cây thư mục (Tree), Danh sách file (Files list) và Thư mục gốc (Roots).
   - **Thanh trạng thái tiến độ thời gian thực (`#scannerBar`)**: Khi bấm quét, một thanh tiến độ hiện đại xuất hiện ngay trên danh sách file với biểu tượng nhấp nháy `⚡`, hiển thị rõ: số file đã xử lý / tổng số file (`124/450`), số file mới đã thêm, tên file đang phân tích theo thời gian thực và thanh % tiến độ trực quan.
@@ -696,3 +701,215 @@ Audit tìm thấy ~25 lỗi (9 nghiêm trọng), đã sửa hết, build zero-wa
   8. **Báo Lỗi Ảo "Không đọc được file audio" & Standalone BPM trong Loops (2026-09-04)**:
       - Khi audio đang phát bình thường và vẽ sóng âm mà UI vẫn hiện popup "Không đọc được file audio": nguyên nhân gốc là do gọi nhầm hàm `renderFiles()` (không tồn tại trong code $\rightarrow$ ném `ReferenceError`) thay vì `paintFromRaw(true)`. Khối `catch` của `playFile` bắt phải lỗi này và bắn toast `toast.decodeFail`.
       - Khắc phục: Đổi sang `paintFromRaw(true)` và chỉ bắn toast `toast.decodeFail` khi `!state.playing`. Đồng thời hỗ trợ đọc BPM dạng số đứng một mình trong tên loop (như `07 Drum Loop Claps 120.wav`) ở cả JS và `BackgroundScanner`.
+- **[P1.28] Triệt Tiêu Lag Click Preview & Lỗi "Mọi Sample Hiện 120 BPM" (2026-09-04)**:
+  - **Triệu chứng**: (1) Click vào sample bị lag một hồi lâu mới ra tiếng; (2) Đa số sample hiển thị 120 BPM dù tempo thật khác (VD 128).
+  - **Nguyên nhân gốc rễ**:
+    1. **Heavy detect chặn UI thread**: `audio.play` handler gọi `detectKeyForPath()` (bất điều kiện) và `detectBpmForPath()` (khi thiếu BPM) ngay trên UI thread. Nếu file chưa có metadata trong DB/tên file, mỗi hàm **decode tới 30s audio + chạy FFT/ACF đồng bộ** → click phải chờ 0.5–3s trước khi file kịp mở phát.
+    2. **Fake `sampleBpm = projectBpm`**: Khi Sync bật mà BPM không detect được, code gán `sampleBpm = projectBpm` (ratio = 1.0, không stretch) rồi trả `detectedBpm` về UI → UI hiển thị **BPM của project như là BPM của sample**. Project đang 120 → mọi sample detect hỏng đều "hiện 120".
+    3. **Fallback `ratio = projectBpm / 120`** trong `audio.setSyncBpm`: sample chưa biết BPM bị ép coi như 120 BPM, stretch sai nhịp thay vì giữ nguyên tốc.
+  - **Khắc phục triệt để**:
+    1. **Tách Fast/Heavy**: `detectBpmForPathFast` / `detectKeyForPathFast` chỉ đọc tên file + DB (0 decode, an toàn UI thread). Bản Heavy `detectBpmForPath` / `detectKeyForPath` (decode 30s + TempoDetector/KeyDetector) chỉ dành cho background worker.
+    2. **Worker `spawnMetaDetection`**: khi `audio.play`/`audio.setSyncBpm`/`audio.getSampleMeta`/`reaper.insert`/`reaper.insertMany`/`browser.beginDrag` thiếu BPM/key → spawn tracked worker chạy Heavy detect nền (dedup theo path qua `pendingDetect`), xong đẩy event **`audio.detected`** `{path, bpm, key}` về UI + tự lưu DB.
+    3. **Phát NGAY không chờ AI**: `audio.play` phát tức thời với metadata nhanh có sẵn; sample chưa biết BPM phát ở tốc độ gốc (ratio 1.0). Khi `audio.detected` tới, UI cập nhật badge BPM/Key + nếu Sync đang bật và sample đang phát → tự gọi `audio.setSyncBpm` lại (live re-phase sẵn có) để sample snap đúng tempo thật mà không cần click lại.
+    4. **Xóa sạch đường gán BPM giả**: bỏ `sampleBpm = projectBpm` trong `audio.play` và bỏ fallback `projectBpm/120` trong `audio.setSyncBpm` — không bao giờ hiển thị/nhét BPM không phải của sample.
+  - **Bài học**: (1) UI thread không bao giờ được decode audio — mọi detect nặng phải qua worker + event; (2) không bao giờ gán giá trị "đoán mò" vào trường metadata (detectedBpm) — UNKNOWN phải là UNKNOWN để UI/render quyết định fallback; (3) ưu tiên phát audio trước, nâng chất lượng metadata sau (progressive enhancement).
+  - **Kiểm thử**: Build zero-warning MSVC C++20. Full suite **399/401 PASS** (2 fail còn lại pre-existing trên baseline, không liên quan).
+- **[P1.29] Xóa Bỏ Genre DSP + Vector Tìm Kiếm CLAP (Tìm tương tự / Ngữ nghĩa) (2026-09-04)**:
+  - **Quyết định**: Chủ repo xác nhận tính năng tìm kiếm tìm sai loạn → xóa sạch cả tính năng.
+  - **Nguyên nhân rễ (phát hiện khi audit)**: Repo **không hề có file `.onnx` nào** (`tempo_cnn`, `clap_audio`, `clap_text`... đều không tồn tại). `ClapEmbedder` chạy fallback "hand-projected": audio nén thành mel/chroma ở dim 0–99, text nén bằng keyword + xxhash ở dim riêng — **hai hệ tọa độ không liên quan** → cosine similarity ngẫu nhiên, kết quả "Tìm sample tương tự" và search ngữ nghĩa vô nghĩa. Genre DSP đoán từ spectral ratio cũng sai thường xuyên.
+  - **Đã xóa**:
+    1. `BackgroundScanner`: bỏ CLAP embedding + genre timbre classification khỏi `analyzeAudioRealWaveform` (chỉ còn Key + BPM DSP) → quét AI nhanh hơn đáng kể (không còn DCT 512-dim/mel/chroma trên từng file).
+    2. Bridge: xóa commands `ai.searchSemantic`, `search.findSimilar`/`ai.findSimilar`/`browser.findSimilar`; `ai.analyzeFile` chỉ còn tempo + key.
+    3. Hybrid search (`runSearch`): `enableSemantic = false` vĩnh viễn — kết quả chỉ từ syntax tokens + text match trên DB metadata thật.
+    4. UI: menu chuột phải "🔍 Tìm sample tương tự", banner tương tự, badge % khớp, CSS, i18n keys, mock commands.
+  - **Giữ lại** (core vẫn build): `SemanticSearch`, `ClapEmbedder`, `GenreClassifier`, `MoodClassifier` làm thư viện tham chiếu + tests unit trực tiếp — không còn bất kỳ đường runtime nào gọi tới.
+  - **Search còn lại**: `/fav`, `/bpm:min-max`, `/key:Am`, `/camelot:8A`, `/genre:...`, `/mood:...` (từ DB thật) + free-text match tên file/thư mục.
+- **[P1.29b] Hotfix: List File Rỗng Sau Khi Xóa Tính Năng Tương Tự (2026-09-05)**:
+  - **Nguyên nhân**: Việc xóa tính năng "Tìm tương tự" còn sót 1 lệnh gọi `paintSimilarBanner()` trong `paintFromRaw()` (ui-web/app.js) trong khi hàm đã bị xóa → **JS ReferenceError ngay lúc render danh sách file** → toàn bộ list trắng, trông như "mất hết sample". Store + DB không hề mất dữ liệu.
+  - **Fix**: Gỡ lệnh gọi sót. Kết quả verify bằng `rg`: 0 tham chiếu similar còn lại. Build pass, DLL deploy lại.
+  - **Bài học**: Khi xóa một hàm UI, phải grep toàn bộ call-site (kể cả trong hàm render lớn như `paintFromRaw`) — syntax check (`node --check`) không bắt được ReferenceError runtime kiểu này.
+- **[P1.30] Nâng Cấp Quyết Định BPM Cho Sample Khó (Vocal Bed / Pads / Sample Chay) (2026-09-05)**:
+  - **Bối cảnh**: Sample `01-Chichovite Kone SYNC VOX - 5A - Cm.wav` (vocal a cappella 16.9s, tên file có Key nhưng không BPM) vẫn thiếu BPM sau khi quét. DB thống kê 17,436/31,355 sample chưa có BPM (6,224 file dài ≥2s). Nhiều file có BPM trong tên (`DS_MDH2_125_...`) vẫn 0 do dữ liệu scan đời trước.
+  - **3 nâng cấp trong `BackgroundScanner`**:
+    1. **Tăng cửa sổ nghe 8s → 30s**: vocal bed thường có intro dài không beat — 8s đầu có thể không đủ onset để đo nhịp.
+    2. **Đổi thứ tự pipeline**: `parseFilenameMusicMetadata` (ground truth) chạy **TRƯỚC** DSP → genre/one-shot/BPM/Key từ tên file lấp sẵn, DSP chỉ bù phần thiếu → skip toàn bộ decode/FFT cho one-shot và file có metadata → quét nhanh hơn đáng kể.
+    3. **Fallback Duration-Bars Heuristic**: khi TempoDetector không tự tin (confidence < 0.35), suy BPM từ độ dài file — sample EDM/vocal hầu như luôn được cut đúng số bar nguyên, nên `bars × 4 × 60 / duration` rơi sát BPM nguyên. Danh sách bar chuẩn {1,2,3,4,8,9,12,16,24,32}, yêu cầu sai lệch với BPM nguyên ≤ 1.0, tie-break prior log-normal quanh 120 BPM với trọng số 0.7 (chống alias double-time: loop 8-bar 15.4s là 125 BPM phổ biến chứ không phải 187 BPM hiếm). Chỉ áp dụng file ≥ 3s, không phải one-shot, không phải unpitched.
+  - **Ví dụ xác minh**: 16.875s cut 9 bars → 128.0 BPM chính xác (khớp tempo pack Sound Mafia Slap House 127-128). Test synthetic 8/10 (2 MISS là dữ liệu giả định sai, không phải bug).
+  - **Lưu ý an toàn**: heuristic chỉ chạy khi DSP từ chối quyết định — không bao giờ ghi đè BPM từ tên file hay từ DSP tự tin; sai số ±1-2 BPM có thể xảy ra với sample chay cắt lửng.
+- **[P1.30b] Scanner Chỉ Nhận Audio PCM — Bỏ Hẳn MIDI/SFZ/REX Khỏi Database (2026-09-05)**:
+  - **Quyết định chủ repo**: Chỉ phân tích file audio thật; MIDI và file instrument/loop metadata không ghi vào DB. Phân tích chỉ gồm tempo + key.
+  - **Thay đổi**: `BackgroundScanner::isSupportedAudioExtension` loại bỏ `mid`, `midi`, `sfz`, `rex`, `rx2` — chỉ còn PCM audio: wav/wave/mp3/flac/ogg/oga/aiff/aif/wma/m4a/aac/opus/w64/caf.
+  - **Phạm vi phân tích mỗi file** (giữ nguyên từ P1.30): BPM (filename → TempoDetector 30s → duration-bars fallback), Key (filename → KeyDetector chromagram), duration/sampleRate/channels. Genre chỉ dùng nội bộ để nhận diện one-shot, không hiển thị badge.
+  - **Sự cố DB trong phiên**: `library.db` cũ (31,355 rows) mất do script cleanup Python tạo file mới đè lên khi DB không tồn tại (thời điểm đó REAPER chưa mở). Đã build lại cả Debug + Release zero-warning; người dùng quét lại toàn bộ với bản Release mới (nhanh hơn đáng kể vì bỏ embedding + skip MIDI).
+- **[P1.30c] One-shot Không Bị Gán Tempo (Trệt Đảm Từ Mọi Nguồn) (2026-09-05)**:
+  - **Bằng chứng từ DB thực**: `SMSH_Bass_Shot_08_B.wav` (bass one-shot 1.85s) bị DSP gán 97.5 BPM; `VEDM Bassdrum 081.wav` (0.25s) bị nhầm index `081` thành 81 BPM; `067 A.wav` (0.48s) bị nhầm index `067` thành 67 BPM.
+  - **Nguyên nhân**: (1) flag one-shot từ tên file ("Shot"/"Hit") chỉ chặn gán BPM từ tên, KHÔNG chặn DSP TempoDetector; (2) token "bassdrum" không nằm trong danh sách kick → genre rỗng → không bị coi là unpitched; (3) số index zero-padded (067, 081) rơi vào regex "số standalone 60-200".
+  - **Fix**:
+    1. `analyzeAudioRealWaveform`: thêm gate `isOneShotName` (token "oneshot"/"shot"/"hit" qua `splitTokens`) — chặn DSP TempoDetector + duration-bars fallback cho mọi one-shot. Key detection vẫn chạy (bass shot vẫn cần biết tone).
+    2. Thêm `bassdrum`, `bassdrums`, `kickdrum` vào danh sách token Kick.
+    3. Priority-2 standalone BPM bỏ qua số có số 0 ở đầu (`067`, `081` = index, không bao giờ là BPM). Explicit tag "90BPM" từ pack vẫn được tin (ground truth — fill ngắn được cắt để sync đúng tempo đó).
+  - **Kết quả**: one-shot (shot/hit/oneshot, kick/clap/snare/hat/percussion ngắn, bassdrum) không bao giờ có BPM từ DSP hay heuristic — chỉ nhận BPM khi pack tag explicit trong tên file.
+- **[P1.30d] AIFF Bỏ Qua DSP — Chỉ Metadata Từ Tên File (2026-09-05)**:
+  - **Quyết định chủ repo**: file `.aif`/`.aiff` bỏ qua phân tích DSP (tempo + key), chỉ đọc metadata từ tên file (BPM/Key/Camelot/category) + probe header (duration/sampleRate/channels).
+  - **Lý do**: miniaudio decoder không hỗ trợ AIFF ổn định; pack audio hay dùng AIFF thường tag tempo/key trong tên file sẵn.
+  - **Genre Vocal vs Bass**: nhận diện qua token tên file (`vocal/vox/acapella/choir...` → Vocal; `bass/808/sub/subbass/reese/synthbass` → Bass) + fallback tên thư mục. Không còn DSP đoán timbre (đã gỡ P1.29 vì sai). Tên file không gợi ý → genre rỗng.
+- **[P1.30e] Click Sample Thiếu Metadata → Phân Tích Ngay Tại Chỗ (2026-09-05)**:
+  - **Yêu cầu chủ repo**: click vào sample nào chưa có BPM/key thì phân tích luôn sample đó (nền, không block).
+  - **Trạng thái có sẵn**: cơ chế đã tồn tại từ P1.28 (`spawnMetaDetection` + event `audio.detected` + live re-apply Sync).
+  - **Đồng bộ 2 lỗ hổng click-detect với scanner**:
+    1. **One-shot gate**: `Bridge::detectBpmForPath` (heavy) thêm `isOneShotFilename()` — one-shot tên "Shot"/"Hit"/"Oneshot" không bao giờ bị DSP đo tempo lúc click (trước đây chỉ scanner chặn, click-detect vẫn đo → gán bậy).
+    2. **Duration-bars fallback**: đẩy heuristic thành `TempoDetector::detectFromDuration()` (core, dùng chung); `Engine::detectBpm` gọi khi file decode trọn vẹn (totalRead < kMaxFrames — tránh bar count sai do window cắt cụt) → vocal/pad kiểu "Chichovite" click là có BPM ngay (16.875s → 128), không cần đợi quét all.
+  - **Cập nhật test** `ScannerSuite.SupportedAudioExtensions` theo contract mới: MIDI/sfz/rex/rx2 = false, aif = true. Kết quả **399/401 PASS** (baseline).
+- **[P1.31] Chẩn Đoán "Preview Cao Hơn Vài Semitone" & Khóa Cứng Élastique 3 Pro Cho Preview (2026-09-05)**:
+  - **Chẩn đoán bằng log thực** (`%APPDATA%\RealsLab\reals_ext.log`): `DspPreviewSource DSP #0: ratio=0.967742 pitch=0.000000` → preview KHÔNG hề bị dịch pitch. Cảm giác "cao hơn 1 semitone" thực chất là **Sync BPM đang bật** kéo sample 124 BPM về 120 project (ratio 0.968) — tempo stretch làm đổi cả timbre/pitch perception nhẹ. Tắt Sync BPM nếu muốn nghe tốc độ gốc.
+  - **Bug thật tìm thấy khi audit**: `DspPreviewSource` gọi `SetQualityParameter(-1)` = "Project Default" — nghĩa là thuật toán preview **phụ thuộc Preferences → Project Settings → Pitch shifter mode của user REAPER** (có thể là SoundTouch/ReaReaRea/Rubber Band... thay vì élastique Pro) → chất lượng và tông preview thay đổi tùy máy. P1.11 đã khóa cứng cho engine-side processor nhưng DspPreviewSource bị sót.
+  - **Fix**: thêm `elastiqueProQualityParam()` — quét `EnumPitchShiftModes` tìm mode có tên chứa `"3.3.3 Pro"`, trả `(mode<<16)+0` (Normal); fallback -1 chỉ khi API không có. Xóa đoạn enumerate toàn bộ modes chỉ để log spam.
+  - **Bài học**: khi log DSP, luôn chụp cả ratio lẫn pitch — từ đó phân biệt ngay "pitch shift thật" (pitch≠0) với "tempo stretch" (ratio≠1). `SetQualityParameter(-1)` trong plugin dựa vào cài đặt user là nguồn biến động ẩn — phải khóa cứng mode cụ thể.
+- **[P1.32] Spacebar Preview Cycle — Play Cả Hai / Stop Cả Hai (2026-09-05)**:
+  - **Quyết định chủ repo**: thay quy tắc cũ "Space = chỉ điều khiển DAW, ngắt preview ngay" (P1.16/P1.22) bằng **chu kỳ preview**:
+    1. **Click sample** = chu kỳ bắt đầu (preview phát).
+    2. **Space #1** khi preview phát + DAW đang đứng im → **DAW play cùng lúc, preview chạy tiếp** (audition sample trên bản phối).
+    3. **Space #2** khi cả hai đang phát → **dừng cả preview lẫn DAW** — kết thúc chu kỳ.
+    4. Không preview đang chạy trong Reals Lab → Space = toggle DAW thuần như cũ.
+  - **Triển khai**:
+    1. Bridge: lệnh mới `reaper.transportState` (trả `{playing, bpm, previewPlaying}`), `reaper.dawPlay` (Main_OnCommand 1007), `reaper.dawStop` (stopHostPreview + eng.stop + Main_OnCommand 1016).
+    2. `IHostActions::startTransport/stopTransport` (mặc định no-op cho standalone).
+    3. **Guard `g_previewCycleGuard`**: `startTransport/stopTransport` set flag quanh `Main_OnCommand` → `commandHook`/`commandHookV1` thấy transport command của Reals Lab thì **không** ngắt preview (đúng mục đích chu kỳ), consume flag 1 lần. Transport command từ user/REAPER vẫn ngắt preview như cũ (P1.16 giữ nguyên cho các phím ngoài chu kỳ).
+    4. `ui-web/app.js`: `onBrowserKey` Space → async query `reaper.transportState` để biết DAW đang phát hay không, rồi chọn nhánh chu kỳ; chống race bằng `_spaceSeq` (Space bấm dồn chỉ xử lý lần cuối).
+  - **Kết quả**: build zero-warning Debug+Release, **399/401 PASS** (baseline), DLL deploy.
+- **[P1.33] Trüy "Preview Bị Pít Lên" — 2 Bug Thật Từ Log Thực (2026-09-05)**:
+  - **Báo cáo chủ repo**: tiếng preview nghe "pít lên một tý" (sharp) so với bản gốc, không sync tempo không set tone.
+  - **Bug 1 — `.reapeaks` bị phát như audio**: log chụp được `audio.play launched REAPER native preview for: ...\peaks\Bpm140_DrumFill02.wav.reapeaks`. Đó là **file cache waveform nhị phân của REAPER**, không phải audio — decode ra toàn nhiễu chipmunk méo tông. Nó lọt vào browser qua đường **search crawler** (`BrowserModel::search` không lọc extension khi `audioOnly=false`) rồi bị click phát.
+    - **Fix**: (a) `isAudioExtRaw` bỏ `sfz/rex/rx2`, (b) `isIgnoredDir` thêm `peaks` (thư mục cache REAPER), (c) `buildListing` skip mọi file đuôi `.reapeaks` tường minh.
+  - **Bug 2 — Pitch kẹt từ file trước**: `playFile` khi KHÔNG khóa key vẫn lấy `initialPitchShift = state.pitchSemitones || 0` → pitch cũ (+3st/-1st trong log) dính vào mọi file sau, và response `d.pitchSemitones` tự feed lại state → vòng lặp stale. Log: `pitchSemitones=-5.000000` trên `Bass_Reese.wav`, `+3.000000` trên `Brannco_Dog_Days_Fill.wav` dù user không set tone.
+    - **Fix**: khi `!isUserTargetKeyLocked` → `initialPitchShift = 0` và reset `state.pitchSemitones = 0` — mọi preview mới luôn bắt đầu ở pitch gốc; chỉ pitch-shift khi user chủ động khóa target note (CRIT-KEY-LOCK không đổi).
+  - **Bài học**: (1) log phải chụp đường dẫn đầy đủ của file đang phát — từ đó bắt được file rác `.reapeaks`; (2) state dùng chung giữa các file (pitch) phải được reset có chủ đích khi ngữ cảnh đổi (không khóa key), nếu không sẽ tự lan truyền qua response/event loop.
+- **[P1.34] Seamless Loop Wrap Trên Đường Élastique — Triệt Tiêu Dead-Air Giữa Các Vòng Loop (2026-09-05)**:
+  - **Triệu chứng (chủ repo báo sau P1.32)**: preview sample vocal `01-Chichovite Kone SYNC VOX - 5A - Cm.wav` phát hết 1 vòng rồi **không loop lại ngay** — trống tiếng một nhịp rồi mới phát lại → trật khúc so với DAW.
+  - **Nguyên nhân gốc (2 chỗ rút cạn pipeline élastique tại loop-wrap)**:
+    1. **Seek-detect nhầm wrap là seek**: REAPER wrap `curpos` về 0 → `block->time_s` nhảy ngược > 20ms → code gọi `m_shifter->Reset()` — **xả sạch lookahead buffer** của élastique (pro-grade có lookahead lớn) → phải nạp + prime lại từ đầu → dead-air.
+    2. **EOF path flush + break**: source đọc hết data → `FlushSamples()` + break thay vì wrap vị trí đọc về 0 và tiếp tục nạp → cùng hậu quả.
+  - **Fix (`DspPreviewSource::GetSamples`)**:
+    1. Phân biệt **loop-wrap** với **user seek thật**: wrap = loop active + `expectedTime >= 75% loop length` + nhảy ngược + về đầu. Wrap → cập nhật `m_rawTimePos` nhưng **GIỮ pipeline** (không Reset).
+    2. Khi `m_eofReached` + loop active → wrap `m_rawTimePos = 0`, clear EOF, **tiếp tục feed** (fall-through). Chỉ Flush+break khi KHÔNG loop (phát hết file một lần).
+  - Cập nhật test `AdversarialHardening.Verification_Browser_MIDI_Audio_ParityAndFastAsciiLower` theo contract extension mới (sfz/rex/rx2/reapeaks = false). Kết quả **399/401 PASS** (baseline).
+  - **Bài học**: pipeline time-stretch realtime (élastique/SoundTouch) là một "lò phản ứng" có lookahead — mọi đường code chạm EOF/wrap phải bảo toàn pipeline; Reset() chỉ dành cho seek thật của user. Test loop cần nghe nhiều vòng liên tiếp chứ không chỉ 1 vòng.
+- **[P1.34b] Loop Wrap Vẫn Kẹt — Thêm Bộ Log Chẩn Đoán Wrap (2026-09-05)**:
+  - **Triệu chứng còn lại**: preview sample 16.9s vẫn kẹt một nhịp trước khi loop lại.
+  - **Nghi phạm còn lại (chờ log xác định)**:
+    1. **Chưa restart REAPER** — DLL mới deploy atomic nhưng REAPER chạy code cũ đến khi khởi động lại.
+    2. **Underrun đầu loop**: REAPER pooled decoder không đáp ứng được cú nhảy ngược đột ngột (time_s → 0) → trả `samples_out = 0` vài block → élastique cạn → gap. Đã thêm nhánh retry (không đánh dấu EOF khi loop active + rawPos gần đầu).
+    3. **Phase-timer re-seek**: `updatePhaseSnapFromHostTransport` re-seek preview khi DAW wrap/seek → `setHostPreviewPosition` → curpos nhảy → seek-detect Reset. Chỉ xảy ra khi DAW đang play.
+  - **Bộ log chẩn đoán** (`%APPDATA%\RealsLab\reals_ext.log`): `LOOP WRAP (pipeline kept)` / `SEEK (elastique reset)` / `LOOP-HEAD UNDERRUN` / `TAIL EOF — wrapped rawPos` — lần test tới nhìn log là biết chính xác wrap đi qua nhánh nào.
+- **[P1.34c] Log Xác Định Thủ Phạm: Jitter 21ms Gây Reset Élastique + Soft Seek Cho Phase Timer (2026-09-05)**:
+  - **Log thực từ chủ repo chốt án**: `LOOP WRAP (pipeline kept)` + `TAIL EOF — wrapped rawPos` hoạt động đúng (P1.34 thành công). Kẻ gây kẹt là: `SEEK (elastique reset) expected=14.624000 got=14.602666` — **nhảy đúng 21ms** (jitter điều phối block của REAPER / re-align nhỏ của phase timer) vượt ngưỡng 20ms → Reset toàn bộ élastique → dead-air giữa loop.
+  - **Fix 1 — Tách ngưỡng reposition và reset**: reposition raw-read vẫn kích hoạt > 20ms, nhưng **Reset élastique chỉ khi jump > 0.35s** (seek thật). Jitter/repair nhỏ → pipeline chảy tiếp, content nhảy nhẹ do élastique tự hấp thụ.
+  - **Fix 2 — Soft seek cho phase timer**: `IHostActions::setHostPreviewPositionSoft/FractionSoft` — `updatePhaseSnapFromHostTransport` re-align preview theo DAW qua soft seek (`armSoftSeek()` → lần nhảy kế tiếp bỏ qua Reset). `audio.seek` của user vẫn hard seek (sạch buffer, chấp nhận prime ngắn).
+  - **Phát hiện thêm**: DB đang giữ BPM stale (105) cho sample thực tế 128 BPM từ bản detect cũ — ratio 120/105 = 1.142857 làm nominal loop (16s output = 18.29s raw) vượt độ dài file (17.1s) → TAIL EOF giữa vòng. Chờ chạy lại Quét lại toàn bộ (P1.30 forceRescan) để làm mới metadata.
+- **[P1.34d] Root Cause Cuối Cùng: UserPlugins Bị Đè Bằng DLL DEBUG — Deploy Giờ Chỉ Nhận Release (2026-09-05)**:
+  - **Chủ repo đoán đúng**: UserPlugins luôn chứa **DLL Debug (10MB)** vì mỗi phiên làm việc build Release (deploy) rồi build Debug để chạy test → POST_BUILD deploy **đè bằng bản Debug**.
+  - **Hậu quả**: élastique 3 Pro + toàn bộ DSP preview chạy **chưa tối ưu trong REAPER** → không render kịp realtime → **underrun giữa loop** (đúng triệu chứng "phát hết vòng rồi kẹt một nhịp mới loop lại") + jitter block 21-29ms trong log (đã từng bị nhầm là seek). Các lần fix pipeline phía trước đều đúng nhưng bị che khuất bởi bản Debug chậm.
+  - **Bằng chứng log**: `LOOP WRAP (pipeline kept)` + `TAIL EOF wrapped` hoạt động đúng ngay cả trên Debug → khi chạy Release sẽ mượt. "SEEK 21ms" giữa chừng là jitter render, ngưỡng reset 0.35s (P1.34c) đã vô hiệu hóa chúng.
+  - **Fix**: guard `$<CONFIG> == 'Release'` trong POST_BUILD deploy (Debug build không bao giờ chạm UserPlugins). Deploy thủ công bản Release vào UserPlugins (file bị REAPER lock → rename-swap). Dọn file `.old` rác.
+  - **Bài học kinh nghiệm**: nếu dự án build nhiều config trong cùng phiên, mọi script POST_BUILD deploy-artifact PHẢI chặn theo config — nếu không artifact Debug sẽ đè lên artifact Release một cách âm thầm. Khi nghi ngờ hiệu năng runtime, hãy so sánh kích thước DLL đã deploy với DLL đã build (Debug thường lớn gấp 2+ lần).
+- **[P1.35] Chốt Sát Root Cause Loop Kẹt Khi Sync+DAW: BPM Stale → Nominal Loop Vượt Độ Dài File (2026-09-05)**:
+  - **Clue quyết định của chủ repo**: Sync BPM + loop **chạy riêng lẻ trong app thì bình thường**; chỉ **khi play sync cùng DAW** mới kẹt. Log đối chiếu: `SEEK expected=4.545 got=14.489` (timer kéo preview lùi 10s — dấu hiệu UI khởi tạo lại preview sau dead-air), chuỗi `expected=-1.000000` (instance MỚI) lặp lại.
+  - **Chuỗi khổ nạn**: DB giữ BPM stale 105 (bản detect shaky của vocal) trong khi bar-cut thật là 128 → Sync ratio = 120/105 = 1.142857 → nominal loop output 16s cần **18.29s raw** nhưng file chỉ 17.1s → **mỗi vòng hụt data giữa vòng** → TAIL EOF → dead-air → UI timer thấy preview chết → spawn instance mới bắt đầu giữa file (phase-sync) → lặp vô hạn. Riêng lẻ (ratio 1.0) vòng loop khớp đúng độ dài file → không bao giờ hụt.
+  - **Fix 1 — Self-healing loop cap (`DspPreviewSource`)**: lần đầu TAIL EOF ghi lại `m_effectiveRawEnd` (điểm data kết thúc THẬT); `GetLength()` clamp loop vào `effRaw/r` từ đó → các vòng sau wrap đúng chỗ data kết thúc, không bao giờ hụt giữa vòng nữa (tự hồi phục trong 1 vòng).
+  - **Fix 2 — Cross-validate BPM (scanner)**: khi TempoDetector confidence < 0.6 và kết quả lệch > 3 BPM so với bars fallback → **bars cut thắng** (vocal bed bị lừa sang half/double peak rất thường xuyên; file cắt theo bar là ground truth hình học).
+  - Deploy guard xác nhận hoạt động: build Debug xong UserPlugins vẫn giữ DLL Release (4347392 bytes).
+- **[P1.36] Đồng Bộ Preview Với DAW Qua Sample-Rate Thật + Lifecycle Native (2026-09-08)**:
+  - **Bằng chứng từ log + render probe**: sample 44.1 kHz phát trên host 48 kHz bị seek theo frame 44.1 kHz sau khi buffer đã đổi sang 48 kHz (điểm phase sớm khoảng 46 ms ở ca log thực). Đường fallback còn dùng time-stretch WSOLA để đổi sample rate, khiến tone 440 Hz thành khoảng 480 Hz ở 44.1 → 48 kHz.
+  - **Fix Engine**: đổi sample grid bằng `soundtouch::RateTransposer` + anti-alias filter, giữ sample-rate conversion tách khỏi tempo/pitch DSP; scale cả nominal loop boundary và initial seek sang output sample rate. Kết quả probe: 44.1↔48/96 kHz đều giữ 440/880 Hz và start cursor đúng output frame.
+  - **Fix Bridge phase**: phase timer chỉ soft-seek một lần theo giây của nominal loop; bỏ lần fraction-seek thứ hai vốn ghi đè bằng full-file duration. `audio.setSyncBpm` bỏ re-phase khi path/BPM/ratio không đổi; khi BPM thật đến muộn thì cập nhật native loop boundary + output duration, bù đúng host block latency rồi mới soft-seek.
+  - **Fix native lifecycle**: tách `registrationActive` khỏi `isPlaying`. EOF chỉ kết thúc trạng thái âm thanh; mọi play/stop/transport cleanup vẫn gọi `StopPreview` nếu preview còn đăng ký. `PlayPreviewEx` chạy ngoài `reg.cs`; launch thất bại dọn source ngay trước khi fallback.
+  - **Kiểm thử**: Debug build pass. `EngineRateConversion` 4/4, `NativePhaseSnap` 10/10, `PhaseSyncDiagnostics` 13/13. Test mới render waveform thật ở 44.1/48/96 kHz, đo cao độ stereo/mono, start phase, transient và 3 vòng loop; APPDATA test được cô lập khỏi dữ liệu thật.
+  - **Bài học**: sample-rate conversion và musical time-stretch là hai phép biến đổi khác nhau; phase fraction chỉ đúng khi đi cùng đúng duration reference; trạng thái “đang phát ra tiếng” không thể thay cho trạng thái “đã đăng ký resource với host”.
+- **[P1.36a] Giữ Native Preview Sống Qua Zero-Frame Ở Loop Boundary (2026-09-08)**:
+  - **Triệu chứng**: sau khi deploy P1.36, preview loop không quay lại ở một số sample (đặc biệt bypass ratio 1.0); REAPER dừng registration ngay trước lần cursor wrap kế tiếp.
+  - **Nguyên nhân gốc**: `DspPreviewSource` đánh dấu mọi lần `PCM_source::GetSamples()` trả `samples_out == 0` là EOF. Ở loop boundary, REAPER có thể trả một block rỗng tạm thời trong lúc rewind cursor. Lifecycle mới thấy `m_streamFinished` rồi gọi `StopPreview`, nên biến một underrun tạm thành stop thật.
+  - **Fix**: chỉ coi zero-frame là terminal khi `loop=false`; `isHostPreviewPlaying()` và `hostPreviewPositionFraction()` cũng không cleanup khi registration đang loop. Các vòng DSP trước đó vẫn giữ nhánh wrap pipeline.
+  - **Kiểm tra**: build Release + deploy lại, chạy targeted sync tests; cần restart REAPER để xác nhận audio loop thực tế.
+- **[P1.36b] Giữ Pha Chính Xác Sau Native DSP Loop Wrap (2026-09-08)**:
+  - **Triệu chứng**: preview đã loop lại được nhưng transient của vòng sau lệch nhẹ so với vòng đầu và nhịp DAW.
+  - **Nguyên nhân gốc từ log runtime**: élastique đã đọc trước phần đầu vòng kế tiếp vào lookahead trước khi cursor host wrap. Nhánh wrap cũ lại gán raw feeder về `block->time_s * ratio`, làm phần đầu đó bị nạp lần hai. Với file có reverb tail/encoder padding, feeder còn có thể đọc quá musical boundary; callback host cũng có thể yêu cầu trọn block vượt qua output boundary.
+  - **Fix**: raw feeder chạy liên tục theo modulo musical loop và không rewind khi host wrap; host wrap luôn thắng cờ soft-seek trùng/stale. Mỗi raw read và output callback được cắt đúng frame còn lại đến nominal boundary, nên tail không lọt vào chu kỳ mới và block cũ không nhận frame của chu kỳ kế tiếp. Logic frame-boundary dùng chung nằm trong `audio::PreviewLoopCursor` và không allocate/lock trên audio thread.
+  - **Kiểm tra**: Release build + deploy pass; `PreviewLoopCursor` 4/4, `EngineRateConversion` 4/4, `NativePhaseSnap` 12/12, `PhaseSyncDiagnostics` 13/13. Full suite pass 406/407; lỗi còn lại là test fresh-install đọc root có sẵn trong APPDATA, không thuộc audio/loop.
+  - **Bài học**: host timeline cursor và raw DSP feeder cursor là hai miền thời gian khác nhau. Với DSP có lookahead, không được rewind feeder chỉ vì host cursor vừa wrap; cả input lẫn output phải dừng đúng musical frame boundary.
+- **[P1.36c] Cách Ly Trạng Thái Khi Đổi Browser Store (2026-09-15)**:
+  - **Triệu chứng**: test `BridgeRPC_RootsCommandOnFreshInstall` đôi lúc thấy một root từ `%APPDATA%/RealsLab` dù harness đã cấp store tạm mới.
+  - **Nguyên nhân**: `BrowserModel::setStorePath()` gọi `loadStore()` nhưng `loadStore()` không xóa state hiện tại trước khi đọc file mới; store không tồn tại để lại roots/metadata của store cũ trong memory.
+  - **Fix**: `loadStore()` reset favorites, recents, tags, roots và listing cache trước khi mở file; mỗi store path giờ có trạng thái độc lập.
+  - **Kiểm tra**: test fresh-install pass; full suite chạy lại sau build Release.
+  - **Bài học**: mọi thao tác đổi persistence scope phải thay thế toàn bộ state trong memory, kể cả khi file đích chưa tồn tại hoặc parse lỗi.
+- **[P1.36d] Spacebar Start Không Cộng Trễ Hai Lần (2026-09-15)**:
+  - **Triệu chứng**: preview đang phát, DAW đứng yên, nhấn Space để chạy cả hai thì transient lệch nhẹ; nếu DAW đã chạy trước rồi mới click preview thì không lệch.
+  - **Nguyên nhân gốc**: lần timer đầu tiên nhận chuyển trạng thái stopped → playing bị coi như một discontinuity playback thông thường và cộng thêm `blockLatencySeconds`. Preview đã được neo theo cursor lúc stopped, nên block đầu tiên sau Space bị advance thêm một block audio.
+  - **Fix**: `Bridge::updatePhaseSnapFromHostTransport()` chỉ cộng latency cho các discontinuity khi DAW đã ở trạng thái playing trước đó; chuyển stopped → playing dùng đúng cursor phase một lần.
+  - **Kiểm tra**: thêm regression `NativePhaseSnap.N13_SpacebarStart_DoesNotDoubleApplyBlockLatency`; cần build/deploy Release và test lại thao tác Space trong REAPER.
+  - **Bài học**: latency compensation phụ thuộc loại transition; không áp dụng công thức steady-state cho block đầu tiên của transport start.
+- **[P1.36e] Spacebar Start Không Giữ Lookahead Cũ (2026-09-16)**:
+  - **Triệu chứng**: sau khi bỏ double block-latency, Space vẫn còn lệch khi preview đã chạy trước một lúc rồi mới khởi động DAW.
+  - **Nguyên nhân gốc**: timer dùng `SOFT SEEK` cho cú sửa pha lớn (log thực: `expected=0.584s got=0.000s`). Soft seek cố ý giữ lookahead của élastique, nên audio cũ tiếp tục phát trong lúc host cursor đã về pha mới.
+  - **Fix**: ở transition stopped → playing, nếu sai số pha vượt 50 ms thì dùng một hard seek để reset pipeline; các re-align nhỏ trong playback liên tục vẫn dùng soft seek.
+  - **Kiểm tra**: `NativePhaseSnap.N13_SpacebarStart_DoesNotDoubleApplyBlockLatency` ghi riêng soft/hard seek và pass; cần build/deploy Release và test lại Space trong REAPER.
+
+- **[P1.36f] Preserve Non-looping Preview on Space Start (2026-09-16)**:
+  - **Evidence**: runtime audio.play has `loop=false`; subtracting block latency before modulo maps beat 0/128 to `7.997333s` in an `8.0s` file. The finite source has only one block left. RAF extrapolation can also dispatch `audio.stop` at that position. A generic stop log does not establish an asynchronous command-hook fault.
+  - **Fix**: resolve the nominal phase first; wrap negative compensated phase only for looping previews. Clamp non-looping starts to zero, preserving compensation within a phrase. RAF only animates the cursor and waits for host `audio.state` to confirm EOF; it cannot issue an audio stop.
+  - **Verification**: `SpaceStartPlayback` 5/5 covers non-looping downbeats at 0/128, looping starts, 90-to-120 BPM stretch, tailed mid-phrase playback, and repeated cycles with nonzero block latency. `NativePhaseSnap` 16/16 and full C++ suite 423/423 pass. These host simulations verify lifecycle and cursor policy, not measured audible phase against live REAPER.
+  - **Lesson**: finite playback must not be treated as a periodic loop when compensating latency. Timer cursor differences are not DAC latency measurements. The existing raw/output duration inconsistency between shell events is separate; retain interpolation behavior until that contract is normalized across both shells.
+
+## [P2.00] Audio Lab Evolution, REAPER DAW Context Menu & Chord Track Engine (2026-09-24)
+- **Modal Serverless GPU Deployment**:
+  - Khôi phục và deploy thành công backend AI Audio Lab lên Modal Serverless (`smk285pro--ai-audio-lab-fastapi-web.modal.run`) hỗ trợ GPU T4, API FastAPI (`/api/health`, `/api/lab/analyze`, `/api/lab/chords`, `/api/lab/separate`, `/api/lab/denoise`).
+  - Khắc phục lỗi charmap UTF-8 khi chạy `modal deploy` trên Windows console.
+- **Tương tác Media Item REAPER DAW (Option A — hookcustommenu)**:
+  - Triển khai hook chính thức `plugin_register("hookcustommenu")` bắt menu `"Media item context"`.
+  - Bổ sung menu con popup `"🎵 Reals Lab"` chứa 4 action: *Gửi vào Audio Lab*, *Tách Stems*, *Dò Hợp Âm & Tạo Chord Track*, *Lọc Noise*.
+  - Đăng ký action ID qua `gaccel` vào Action List của REAPER.
+  - Khi kích hoạt, REAPER plugin lấy media file path của take đang active, mở cửa sổ Reals Lab và bắn notification `lab.itemSelected` sang WebView2.
+  - Đảm bảo an toàn 100% cho mouse modifier bản địa của REAPER (không dùng global mouse hook `WH_MOUSE_LL`).
+- **Engine Hợp Âm Native C++20 (`core/src/lab/ChordEngine.cpp` & `ChordEngine.h`)**:
+  - Kế thừa và chuẩn hóa công thức hòa âm từ `Reals Chord v1`, loại bỏ hoàn toàn các lỗi phụ thuộc Lua và JUCE bị cấm theo `SPEC.md`.
+  - Phân tích cú pháp hợp âm mở rộng (Major, Minor, 7th, maj7, m7, dim, aug, sus2, sus4, add9).
+  - Sinh mảng MIDI note byte chuẩn xác theo từng octave, tính toán beat-grid snapping khớp với tempo project REAPER.
+  - Test suite `TestSuite_ChordEngine.cpp` kiểm thử 100% pass 3/3 test suites.
+- **Tạo Chord Track vào Timeline REAPER (`IHostActions::insertChordTrack`)**:
+  - Tự động tạo/tìm track `"Chord Track"`, chèn MIDI item tương ứng với timeline.
+  - Ghi MIDI note events (`MIDI_InsertNote`) và text events Sysex (`MIDI_InsertTextSysexEvt`) hiển thị tên hợp âm trên ruler item.
+  - Bọc trọn vẹn trong `Undo_BeginBlock2` và `Undo_EndBlock2` để người dùng hoàn tác (Ctrl+Z) tức thì.
+- **Thiết kế lại Giao diện Audio Lab theo Chuẩn Studio Chuyên Nghiệp (`ui-web/`)**:
+  - Loại bỏ hoàn toàn lưới nút to 2x2 kiểu web gây rối mắt.
+  - Chuyển sang mô hình 3-Tier Studio Deck theo `DESIGN.md`:
+    1. **Top Ingest Deck**: Capsule file đang mở kèm nút *"Lấy từ Item DAW"* (`btnLabFetchDaw`) và kéo thả file trực tiếp.
+    2. **Action Ribbon (36px)**: Toolbar dạng phân đoạn nhỏ gọn (`[🎛️ Tách Stem]`, `[🔇 Lọc Noise]`, `[🎼 Dò Hợp Âm]`, `[⚡ BPM & Key]`) kèm nút chính *"Bắt đầu Xử lý"*.
+    3. **Interactive Studio Canvas**: Transport bar với waveform master canvas, bộ trộn 4-Stem (Vocals, Drums, Bass, Other) có Solo/Mute/Volume và OLE drag handle kéo trực tiếp vào DAW, dải timeline hợp âm trực quan (Chord Progression) kèm phân tích bậc La Mã (Roman numerals) và bộ tổng hợp Web Audio auditioning nghe thử hợp âm ngay khi click.
+    4. **Bottom Telemetry Bar**: Thanh tiến trình vi mô (micro progress line), trạng thái kết nối Modal Serverless GPU trực tiếp.
+  - Toàn bộ UI string được bản địa hóa qua `strings_vi.json` và `strings_en.json` (zero hardcode).
+
+## [P5.00] Agent AI — Bản Đầu Tiên Chạy Thật (2026-10-01)
+- **Quyết định**: Client gọi thẳng endpoint tương thích Anthropic (`/v1/messages`) qua `net::HttpClient` — tạm thời dùng proxy `https://prx.akitao.com` thay cho API LLM của server RealS (chưa có). Hỗ trợ thêm chuẩn OpenAI (`/v1/chat/completions`) bằng `agentProvider="openai"`. Khi server RealS có API thì chỉ đổi `agentBaseUrl`.
+- **Model mặc định cho máy dev**: `claude-opus-4-8[1m]` (mạnh nhất trong danh sách `/v1/models` của proxy, đã test tool-use OK). Mặc định trong code khi không cấu hình: `claude-sonnet-4-6`.
+- **Bảo mật key**: API key KHÔNG nằm trong repo. Thứ tự ưu tiên: `config.json` (`agentApiKey`, thư mục dữ liệu RealsLab) → biến môi trường `ANTHROPIC_API_KEY`. `agent.config` chỉ trả key đã che (`keyMasked`). `config.getAll` không trả key.
+- **Kiến trúc**:
+  - `core/agent/` (thuần C++, test được): `LlmClient` (Anthropic + OpenAI, transport inject được), `ToolRegistry` (51 tool định nghĩa dạng DATA JSON + mức rủi ro read/write/danger — sau này tải từ server bằng `loadJson/loadFile`), `AgentSession` (vòng lặp tool-use tối đa 24 bước, chờ xác nhận, hủy, lưu lịch sử `agent_history.json`).
+  - `bridge/src/AgentBridge.*`: lệnh `agent.*`, chạy LLM trên thread riêng, mọi tool REAPER được marshal về main thread qua hàng đợi do `drainEvents()` (timer ~30ms) bơm.
+  - `extension/src/ReaperAgent*.cpp`: executor REAPER chung `IHostActions::executeAgentTool(tool, argsJson)`; mỗi tool ghi bọc trong Undo block để Ctrl+Z được.
+- **Phân quyền**: Hỏi tất cả = xác nhận mọi tool ghi/nguy hiểm; Chỉ hỏi nguy hiểm (mặc định) = chỉ xác nhận tool danger (xóa track/item/FX, chạy action, record...); Toàn quyền = không hỏi. Tool không có trong registry bị coi là danger. `agentAllowedTools` (CSV) giới hạn danh sách tool.
+- **Việc còn lại**: tool catalog từ server, tái sinh `EmbeddedAssets.cpp` cho bản Release sau khi đổi `ui-web/`.
+
+## [P5.01] Agent AI — Streaming, Thinking, Nút Dừng (2026-10-01)
+- **Streaming**: `LlmClient` gửi `stream:true`; `core/agent/LlmStream.*` (`SseParser`, `AnthropicStream`, `OpenAiStream`) ghép SSE thành `LlmReply` và đẩy delta. `AgentSession` gộp delta mỗi ~40ms → event `agent.delta {text}` (câu trả lời) và `agent.thinking {text}` (suy nghĩ); `agent.message` vẫn gửi toàn văn để chốt bubble. Endpoint không trả SSE → tự đọc JSON thường.
+- **Thinking**: bật mặc định (`agentThinking`, `agentThinkingBudget`=4000, tối thiểu 1024; `max_tokens` tự nâng ≥ budget+2048). Proxy `prx.akitao.com` KHÔNG gửi `signature` cho block thinking → thinking chỉ để hiển thị, không gửi lại; chỉ block có chữ ký (API Anthropic thật) mới được replay.
+- **Nút Dừng**: `net::CancelToken` (HttpClient.h) — `cancel()` đóng handle WinHTTP từ thread UI, request đang stream dừng ngay (~10ms khi test proxy thật). `Request::onData` nhận body theo chunk. Hủy giữ lại phần chữ đã stream trong lịch sử (kèm `(stopped)`), event `agent.cancelled {partial}`.
+- **Phát hiện proxy**: `prx.akitao.com` trả **502 Cloudflare cho mọi request chứa block `tool_result`** (mọi model, stream hay không). Giải pháp: `agentToolProtocol` = `auto` (mặc định) thử native, gặp 400/5xx thì gửi lại một lần với lịch sử mã hóa dạng text `<tool_call>`/`<tool_result>` và nhớ endpoint đó trong phiên; `native`/`text` để ép chế độ. Model vẫn gọi tool bằng tool_use thật. Đã test vòng lặp 3 bước (get_project_info → set_tempo → trả lời) với proxy thật.
+- **Test**: TestSuite_Agent 23 test (SSE cắt chunk tùy ý, ghép block, OpenAI stream, thinking params, chuyển giao thức text, fallback 502, delta event, hủy giữa stream, CancelToken).
+
+## [P5.02] Agent AI — Hiểu Reals Lab + Kết Quả Audio Lab Thật (2026-10-01)
+- **Vấn đề (test thực tế)**: agent chạy keychord xong trả lời "REAPER không có chord track, dùng marker" — sai, vì Reals Lab tự hiện Chord Track dock khi keychord xong. Nguyên nhân: system prompt không mô tả Reals Lab, `audio_lab_job` chỉ trả `queued` nên model không biết kết quả.
+- **System prompt** mô tả Reals Lab: các tab, 4 job Audio Lab, Chord Track riêng của Reals (dock trên cùng REAPER + track MIDI `CHORD TRACK`), stem tự chèn folder + mute bản gốc, denoise không tự chèn. Cấm nói REAPER không có chord track.
+- **`audio_lab_job` chờ kết quả** (mặc định `wait=true`, hủy được bằng nút Dừng, timeout 5 phút analyze/keychord, 11 phút stem/denoise) và trả tóm tắt thật: key/scale/BPM, progression + danh sách hợp âm có thời gian, file stem/denoise, việc Reals đã tự làm. Nhận `position`/`length` của item → event UI `lab.agentJob` để tab Audio Lab nhận job như người dùng bấm (dock/stem đặt đúng vị trí item).
+- **Tool mới**: `get_lab_result` (read — kết quả gần nhất, kể cả job người dùng tự chạy), `chord_track` (write — show/hide dock, `insert_midi` tạo track CHORD TRACK; dùng kết quả keychord gần nhất hoặc progression truyền vào).
+- **Ngữ cảnh động**: `AgentSession::setContextProvider` — đầu mỗi lượt gắn trạng thái Audio Lab hiện tại (kết quả gần nhất, job đang chạy) vào system prompt.
+- **Bridge**: `SharedState::setLabObserver` chuyển `lab.result`/`lab.error` cho `AgentBridge::onLabEvent` (gỡ trước khi hủy agent).

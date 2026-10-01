@@ -81,7 +81,12 @@ void Log::write(LogLevel level, std::string_view tag, std::string_view message) 
 #endif
 
     char timeBuf[32];
-    std::strftime(timeBuf, sizeof(timeBuf), "%H:%M:%S", &tm);
+    const auto micros = std::chrono::duration_cast<std::chrono::microseconds>(
+        now.time_since_epoch()).count() % 1000000;
+    char secondsBuf[16];
+    std::strftime(secondsBuf, sizeof(secondsBuf), "%H:%M:%S", &tm);
+    std::snprintf(timeBuf, sizeof(timeBuf), "%s.%06lld", secondsBuf,
+                  static_cast<long long>(micros));
 
     char lineBuf[2048];
     std::snprintf(lineBuf, sizeof(lineBuf), "[%s] [%s] [%.*s] %.*s",

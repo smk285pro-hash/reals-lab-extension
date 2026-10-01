@@ -505,4 +505,35 @@ TempoResult TempoDetector::detectAlgorithmic(const float* pcm, size_t frames, in
     return detectAlgorithmicCore(buildContext(pcm, frames, sampleRate));
 }
 
+float TempoDetector::detectFromDuration(double durationSec) {
+    if (durationSec < 3.0) {
+        return 0.0f;
+    }
+    static constexpr double kBars[] = {1.0, 2.0, 3.0, 4.0, 8.0, 9.0, 12.0, 16.0, 24.0, 32.0};
+    double bestScore = 1e9;
+    double bestBpm = 0.0;
+    for (const double bars : kBars) {
+        // 4 beats per bar: bpm = bars*4*60/duration. A 16.875s file cut to
+        // 9 bars yields exactly 128.0 BPM.
+        const double bpm = (bars * 4.0 * 60.0) / durationSec;
+        if (bpm < 60.0 || bpm > 190.0) {
+            continue;
+        }
+        const double rounded = std::round(bpm);
+        const double err = std::abs(bpm - rounded);
+        if (err > 1.0) {
+            continue; // not a clean integer tempo — likely a wrong bar count
+        }
+        // Tie-break toward common tempos (log-normal prior around 120 BPM).
+        // Weight 0.7 rejects double-time aliases: a 15.4s 8-bar loop is
+        // 125 BPM (common) not 187 BPM (12 bars, rare).
+        const double score = err + 0.7 * std::abs(std::log2(bpm / 120.0));
+        if (score < bestScore) {
+            bestScore = score;
+            bestBpm = rounded;
+        }
+    }
+    return static_cast<float>(bestBpm);
+}
+
 }  // namespace reals::ai

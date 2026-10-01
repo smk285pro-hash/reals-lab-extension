@@ -1,8 +1,6 @@
 #include "reals/scanner/BackgroundScanner.h"
 #include "reals/ai/KeyDetector.h"
 #include "reals/ai/TempoDetector.h"
-#include "reals/ai/FeatureExtractor.h"
-#include "reals/ai/ClapEmbedder.h"
 #include "reals/audio/Engine.h"
 #include "reals/platform/Path.h"
 #include "reals/platform/System.h"
@@ -13,6 +11,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <regex>
 
@@ -137,7 +136,7 @@ void BackgroundScanner::parseFilenameMusicMetadata(const std::string& filename, 
         category = "Clap";
     } else if (hasToken({"hihat", "hihats", "hat", "hats", "openhat", "closedhat", "cymbal", "cymbals", "ride", "crash"})) {
         category = "Hi-Hat";
-    } else if (hasToken({"kick", "kicks"})) {
+    } else if (hasToken({"kick", "kicks", "bassdrum", "bassdrums", "kickdrum"})) {
         category = "Kick";
     } else if (hasToken({"snare", "snares", "rim", "rimshot"})) {
         category = "Snare";
@@ -209,7 +208,9 @@ void BackgroundScanner::parseFilenameMusicMetadata(const std::string& filename, 
     }
 
     // 3. Extract BPM with strict token priority
-    // Priority 1: Explicit BPM/tempo token like "124BPM", "128 BPM", "BPM128", "tempo 125"
+    // Priority 1: Explicit BPM/tempo tag ("124BPM", "128 BPM", "BPM128", "tempo 125")
+    // is pack-author ground truth and is trusted even on very short files
+    // (one-beat fills tagged 90 BPM are meant to sync at that tempo).
     bool foundExplicitBpm = false;
     static const std::regex explicitBpmRe1(R"((\d{2,3}(?:\.\d+)?)\s*(?:bpm|tempo)(?:[\s_\-\.\)\]\+\,]|$))", std::regex_constants::icase);
     static const std::regex explicitBpmRe2(R"((?:bpm|tempo)[_\s-]*(\d{2,3}(?:\.\d+)?))", std::regex_constants::icase);
@@ -250,6 +251,10 @@ void BackgroundScanner::parseFilenameMusicMetadata(const std::string& filename, 
             std::smatch m;
             if (std::regex_match(t, m, standaloneNumRegex)) {
                 try {
+                    // Zero-padded numbers ("067", "081") are file indices, never BPM.
+                    if (t.size() > 1 && t[0] == '0') {
+                        continue;
+                    }
                     double val = std::stod(m[1].str());
                     if (val >= 60.0 && val <= 200.0) {
                         rec.bpm = val;
@@ -333,8 +338,21 @@ void BackgroundScanner::parseFilenameMusicMetadata(const std::string& filename, 
 
 namespace {
 
-void analyzeAudioRealWaveform(const std::string& filePath, db::SampleRecord& rec, std::vector<float>& outEmbedding) {
-    constexpr ma_uint64 kMaxFrames = 44100 * 8;
+void analyzeAudioRealWaveform(const std::string& filePath, db::SampleRecord& rec) {
+    // AIFF files: miniaudio's built-in decoder has no AIFF demuxer on some
+    // builds and the packs tag tempo/key in the filename anyway — metadata
+    // from the filename is the ONLY source for .aif/.aiff (key detection also
+    // skipped to keep the format rule simple and predictable).
+    {
+        const std::string lowerP = toLower(filePath);
+        if (lowerP.size() > 5 && (lowerP.ends_with(".aif") || lowerP.ends_with(".aiff"))) {
+            return;
+        }
+    }
+    // Decode up to 30s: long vocal beds / pads often have sparse intros — an
+    // 8s window can miss the rhythmic section entirely (vocal loop 16.9s with
+    // beatless first 8s => tempo detector starves for onsets).
+    constexpr ma_uint64 kMaxFrames = 44100 * 30;
     ma_decoder_config cfg = ma_decoder_config_init(ma_format_f32, 1, 0);
     ma_decoder dec{};
 #ifdef _WIN32
@@ -349,7 +367,7 @@ void analyzeAudioRealWaveform(const std::string& filePath, db::SampleRecord& rec
 
     const int sr = dec.outputSampleRate > 0 ? dec.outputSampleRate : 44100;
     std::vector<float> pcm;
-    pcm.reserve(static_cast<size_t>(std::min<ma_uint64>(kMaxFrames, 44100 * 4)));
+    pcm.reserve(static_cast<size_t>(std::min<ma_uint64>(kMaxFrames, 44100 * 10)));
     std::vector<float> chunk(4096);
     ma_uint64 totalRead = 0;
     while (totalRead < kMaxFrames) {
@@ -357,7 +375,7 @@ void analyzeAudioRealWaveform(const std::string& filePath, db::SampleRecord& rec
         ma_uint64 framesRead = 0;
         ma_result r = ma_decoder_read_pcm_frames(&dec, chunk.data(), framesToRead, &framesRead);
         if (r != MA_SUCCESS || framesRead == 0) break;
-        pcm.insert(pcm.end(), chunk.begin(), chunk.begin() + framesRead);
+        pcm.insert(pcm.end(), chunk.begin(), chunk.begin() + static_cast<std::ptrdiff_t>(framesRead));
         totalRead += framesRead;
     }
     ma_decoder_uninit(&dec);
@@ -368,6 +386,21 @@ void analyzeAudioRealWaveform(const std::string& filePath, db::SampleRecord& rec
 
     const bool isUnpitched = (rec.genre == "Clap" || rec.genre == "Hi-Hat" || rec.genre == "Kick" ||
                               rec.genre == "Snare" || rec.genre == "Percussion" || rec.genre == "FX");
+
+    // One-shot detection from filename tokens (mirrors the parser's rule):
+    // "Shot"/"Hit"/"Oneshot" files are single attacks with no musical tempo —
+    // they must never receive a BPM from the DSP or the duration-bars guess.
+    bool isOneShotName = false;
+    {
+        const auto tokens = splitTokens(toLower(rec.filename));
+        for (const auto& t : tokens) {
+            if (t == "oneshot" || t == "oneshots" || t == "shot" || t == "shots" ||
+                t == "hit" || t == "hits") {
+                isOneShotName = true;
+                break;
+            }
+        }
+    }
 
     // 1. Real DSP Key Detection (EDMA + Temperley + Krumhansl Chromagram)
     // CRIT-KEY-PRESERVE: NEVER overwrite keyRoot if already extracted accurately from filename!
@@ -382,37 +415,49 @@ void analyzeAudioRealWaveform(const std::string& filePath, db::SampleRecord& rec
 
     // 2. Real DSP Tempo & BPM Detection (Onset envelope + autocorrelation)
     // CRIT-BPM-PRESERVE: NEVER overwrite bpm if already extracted accurately from filename or if unpitched one-shot!
-    if (rec.bpm <= 0.0 && !isUnpitched) {
-        auto tempoRes = ai::TempoDetector::detect(pcm.data(), pcm.size(), sr);
-        if (tempoRes.confidence >= 0.35f && tempoRes.bpm >= 45.0f && tempoRes.bpm <= 220.0f) {
+    if (rec.bpm > 0.0 || isUnpitched || isOneShotName) {
+        return;
+    }
+    auto tempoRes = ai::TempoDetector::detect(pcm.data(), pcm.size(), sr);
+    if (tempoRes.confidence >= 0.35f && tempoRes.bpm >= 45.0f && tempoRes.bpm <= 220.0f) {
+        // Cross-validate against the duration-bars estimate: sung vocal beds
+        // regularly lure the onset/ACF detector to a shaky half/double/wrong
+        // peak (e.g. 105 for a 9-bar 128 BPM cut) while the bar-cut heuristic
+        // lands on a clean integer. When they clearly disagree and the ACF
+        // confidence is not overwhelming, the bar-cut ground wins.
+        const float barsBpm = ai::TempoDetector::detectFromDuration(rec.durationSec);
+        if (barsBpm > 0.0f && tempoRes.confidence < 0.6f &&
+            std::abs(barsBpm - tempoRes.bpm) > 3.0f) {
+            rec.bpm = barsBpm;
+        } else {
             rec.bpm = tempoRes.bpm;
         }
+        return;
     }
 
-    // 3. Real DSP Spectral Feature Analysis & Timbre Classification
-    auto metrics = ai::FeatureExtractor::computeMetrics(pcm, sr);
-    if (rec.genre.empty()) {
-        if (metrics.bassRatio > 0.45f && metrics.spectralCentroid < 650.0f) {
-            rec.genre = "Bass";
-        } else if (metrics.highRatio > 0.40f && metrics.zeroCrossingRate > 0.12f) {
-            rec.genre = "Hi-Hat";
-        } else if (metrics.bassRatio > 0.30f && metrics.peak > 0.4f && metrics.spectralCentroid < 1200.0f && rec.durationSec < 1.5) {
-            rec.genre = "Kick";
-        } else if (metrics.highRatio > 0.20f && metrics.zeroCrossingRate > 0.06f && rec.durationSec < 1.8) {
-            rec.genre = "Snare";
-        }
+    // 3. Duration-bars fallback: vocal beds / pads / sung phrases are almost
+    // always cut to an exact number of bars, so bars*60/duration lands very
+    // close to an integer BPM. Example: a 16.875s vocal at the pack tempo of
+    // 128 BPM spans 9.00 bars. Only used when the onset/ACF detector cannot
+    // decide and the file is long enough to carry a musical tempo.
+    // (One-shots and unpitched material can never reach this point — the
+    // isOneShotName/isUnpitched gate above already returned.)
+    const float barsBpm = ai::TempoDetector::detectFromDuration(rec.durationSec);
+    if (barsBpm > 0.0f) {
+        rec.bpm = barsBpm;
     }
-
-    // 4. Real CLAP 512-dimensional Acoustic/Semantic Vector Embedding
-    outEmbedding = ai::ClapEmbedder::embedAudio(pcm.data(), pcm.size(), sr);
 }
 
 } // namespace
 
 bool BackgroundScanner::isSupportedAudioExtension(std::string_view filename) {
+    // PCM audio formats ONLY. MIDI (mid/midi) and instrument/loop metadata
+    // files (sfz, rex, rx2) carry no waveform — they are skipped entirely and
+    // never written to the database. The scanner indexes tempo/key for real
+    // audio files only.
     static const std::unordered_set<std::string> kExtensions = {
         "wav", "wave", "mp3", "flac", "ogg", "oga", "aiff", "aif", "wma",
-        "m4a", "aac", "opus", "mid", "midi", "w64", "caf", "sfz", "rex", "rx2"
+        "m4a", "aac", "opus", "w64", "caf"
     };
 
     const size_t dot = filename.find_last_of('.');
@@ -812,7 +857,6 @@ void BackgroundScanner::workerThreadFunc(ScanOptions options) {
             rec.modifiedTime = modTime;
             rec.hash = hash;
 
-            std::vector<float> embedding;
             if (options.extractAudioInfo) {
                 try {
                     const auto info = audio::Engine::probeFile(filePath);
@@ -823,32 +867,23 @@ void BackgroundScanner::workerThreadFunc(ScanOptions options) {
                 } catch (...) {
                 }
 
+                // Filename metadata FIRST: it is ground truth. Populating genre
+                // (one-shot unpitched detection) and bpm/key before the DSP pass
+                // lets analyzeAudioRealWaveform skip all heavy work for files
+                // that already carry their tempo/key in the name.
+                parseFilenameMusicMetadata(filename, filePath, rec);
+
                 try {
-                    analyzeAudioRealWaveform(filePath, rec, embedding);
+                    analyzeAudioRealWaveform(filePath, rec);
                 } catch (...) {
                 }
-            }
-
-            parseFilenameMusicMetadata(filename, filePath, rec);
-
-            if (!embedding.empty()) {
-                rec.aiAnalyzed = true;
+            } else {
+                parseFilenameMusicMetadata(filename, filePath, rec);
             }
 
             const int64_t id = m_db.upsertSample(rec);
             if (id > 0) {
                 rec.id = id;
-                if (!embedding.empty()) {
-                    db::AnalysisRecord an;
-                    an.sampleId = id;
-                    an.tempoConfidence = rec.bpm > 0.0 ? 0.8 : 0.0;
-                    an.keyConfidence = !rec.keyRoot.empty() ? 0.8 : 0.0;
-                    if (!rec.genre.empty()) an.genreTags.push_back(rec.genre);
-                    if (!rec.mood.empty()) an.moodTags.push_back(rec.mood);
-                    an.embedding = std::move(embedding);
-                    an.analyzedAt = modTime;
-                    m_db.updateAnalysis(id, an);
-                }
 
                 SampleCallback scb;
                 {

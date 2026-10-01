@@ -350,7 +350,15 @@ TEST(ScannerSuite, SupportedAudioExtensions) {
     EXPECT_TRUE(BackgroundScanner::isSupportedAudioExtension("synth.flac"));
     EXPECT_TRUE(BackgroundScanner::isSupportedAudioExtension("loop.mp3"));
     EXPECT_TRUE(BackgroundScanner::isSupportedAudioExtension("ambient.aiff"));
-    EXPECT_TRUE(BackgroundScanner::isSupportedAudioExtension("midi.mid"));
+    EXPECT_TRUE(BackgroundScanner::isSupportedAudioExtension("piano.aif"));
+
+    // MIDI and instrument/loop metadata files carry no waveform — the scanner
+    // indexes real audio only and never writes them to the database.
+    EXPECT_FALSE(BackgroundScanner::isSupportedAudioExtension("midi.mid"));
+    EXPECT_FALSE(BackgroundScanner::isSupportedAudioExtension("song.midi"));
+    EXPECT_FALSE(BackgroundScanner::isSupportedAudioExtension("instrument.sfz"));
+    EXPECT_FALSE(BackgroundScanner::isSupportedAudioExtension("loop.rex"));
+    EXPECT_FALSE(BackgroundScanner::isSupportedAudioExtension("loop.rx2"));
 
     EXPECT_FALSE(BackgroundScanner::isSupportedAudioExtension("document.txt"));
     EXPECT_FALSE(BackgroundScanner::isSupportedAudioExtension("image.png"));

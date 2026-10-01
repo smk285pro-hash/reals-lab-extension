@@ -99,7 +99,9 @@ bool crackUrl(const std::string& url, UrlParts& out) {
 
 void readResponse(HINTERNET hRequest, Response& res,
                   const std::function<bool(size_t, size_t)>& onProgress,
-                  std::ostream* sink = nullptr) {
+                  std::ostream* sink = nullptr,
+                  const std::function<bool(const char*, size_t)>* onData = nullptr,
+                  const CancelToken* cancel = nullptr) {
     DWORD status = 0, statusSize = sizeof(status);
     WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
                         WINHTTP_HEADER_NAME_BY_INDEX, &status, &statusSize,
@@ -123,22 +125,45 @@ void readResponse(HINTERNET hRequest, Response& res,
         WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_CONTENT_LENGTH | WINHTTP_QUERY_FLAG_NUMBER,
                             WINHTTP_HEADER_NAME_BY_INDEX, &totalKnown, &totalSize,
                             WINHTTP_NO_HEADER_INDEX);
+    if (hasTotal)
+        res.headers["Content-Length"] = std::to_string(totalKnown);
+
+    // Stream chunks to the caller only for successful responses; error bodies
+    // are small and are kept whole for diagnostics.
+    const bool streamBody =
+        onData && *onData && res.statusCode >= 200 && res.statusCode < 300;
 
     size_t received = 0;
     DWORD avail = 0;
     for (;;) {
-        if (!WinHttpQueryDataAvailable(hRequest, &avail) || avail == 0)
+        if (cancel && cancel->isCancelled()) {
+            res.error = "cancelled";
+            return;
+        }
+        if (!WinHttpQueryDataAvailable(hRequest, &avail)) {
+            res.error = "response read failed";
+            return;
+        }
+        if (avail == 0)
             break;
         std::string chunk(avail, '\0');
         DWORD read = 0;
-        if (!WinHttpReadData(hRequest, chunk.data(), avail, &read))
-            break;
+        if (!WinHttpReadData(hRequest, chunk.data(), avail, &read)) {
+            res.error = "response read failed";
+            return;
+        }
         if (read > 0) {
             received += read;
-            if (sink)
+            if (sink) {
                 sink->write(chunk.data(), static_cast<std::streamsize>(read));
-            else
+            } else if (streamBody) {
+                if (!(*onData)(chunk.data(), static_cast<size_t>(read))) {
+                    res.error = "cancelled";
+                    return;
+                }
+            } else {
                 res.body.append(chunk, 0, read);
+            }
         }
         if (onProgress && !onProgress(received, hasTotal ? totalKnown : 0)) {
             res.error = "cancelled";
@@ -149,6 +174,9 @@ void readResponse(HINTERNET hRequest, Response& res,
             return;
         }
     }
+    if (hasTotal && received != static_cast<size_t>(totalKnown))
+        res.error = "truncated response: expected " + std::to_string(totalKnown) +
+                    " bytes, received " + std::to_string(received);
 }
 
 } // namespace
@@ -229,21 +257,39 @@ Response HttpClient::send(const Request& req) {
         WINHTTP_DEFAULT_ACCEPT_TYPES, up.https ? WINHTTP_FLAG_SECURE : 0);
 
     if (hRequest) {
-        const std::string& body = req.body;
-        BOOL sent =
-            WinHttpSendRequest(hRequest, headers.c_str(), static_cast<DWORD>(headers.size()),
-                               WINHTTP_NO_REQUEST_DATA, 0, static_cast<DWORD>(body.size()), 0);
-        if (sent && !body.empty()) {
-            DWORD written = 0;
-            sent = WinHttpWriteData(hRequest, body.data(), static_cast<DWORD>(body.size()),
-                                    &written) &&
-                   written == body.size();
+        // Cancellation: closing the request handle from another thread makes
+        // any blocking WinHTTP call on it fail promptly.
+        CancelToken* token = req.cancel.get();
+        bool armed = false;
+        if (token)
+            armed = token->arm([hRequest] { WinHttpCloseHandle(hRequest); });
+        const bool cancelledEarly = token && !armed;
+
+        BOOL sent = FALSE;
+        if (!cancelledEarly) {
+            const std::string& body = req.body;
+            sent = WinHttpSendRequest(hRequest, headers.c_str(),
+                                      static_cast<DWORD>(headers.size()),
+                                      WINHTTP_NO_REQUEST_DATA, 0,
+                                      static_cast<DWORD>(body.size()), 0);
+            if (sent && !body.empty()) {
+                DWORD written = 0;
+                sent = WinHttpWriteData(hRequest, body.data(), static_cast<DWORD>(body.size()),
+                                        &written) &&
+                       written == body.size();
+            }
+            if (sent && WinHttpReceiveResponse(hRequest, nullptr))
+                readResponse(hRequest, res, req.onProgress, nullptr,
+                             req.onData ? &req.onData : nullptr, token);
+            else if (res.error.empty())
+                res.error = "request failed";
         }
-        if (sent && WinHttpReceiveResponse(hRequest, nullptr))
-            readResponse(hRequest, res, req.onProgress);
-        else if (res.error.empty())
-            res.error = "request failed";
-        WinHttpCloseHandle(hRequest);
+
+        const bool aborted = armed && token->disarm();
+        if (cancelledEarly || aborted || (token && token->isCancelled()))
+            res.error = "cancelled";
+        if (!aborted)
+            WinHttpCloseHandle(hRequest);
     } else {
         res.error = "open request failed";
     }
@@ -291,15 +337,23 @@ long HttpClient::downloadToFile(const std::string& url, const std::string& destP
                 // through the ANSI code page on Windows and break Vietnamese
                 // destination folders.
                 const fs::path dest = platform::u8path(destPath);
+                const fs::path part = fs::path(dest.native() + L".part");
                 const fs::path parent = dest.parent_path();
                 if (!parent.empty())
                     fs::create_directories(parent, ec);
-                std::ofstream out(dest, std::ios::binary);
+                std::ofstream out(part, std::ios::binary | std::ios::trunc);
                 if (out) {
                     Response res;
                     readResponse(hRequest, res, onProgress, &out);
                     out.flush();
-                    status = (res.error.empty() && out.good()) ? res.statusCode : 0;
+                    const bool complete = res.error.empty() && out.good();
+                    out.close();
+                    if (complete) {
+                        fs::remove(dest, ec);
+                        ec.clear();
+                        fs::rename(part, dest, ec);
+                        status = ec ? 0 : res.statusCode;
+                    }
                 }
             } else {
                 status = static_cast<long>(statusDw);

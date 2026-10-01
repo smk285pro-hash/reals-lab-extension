@@ -11,9 +11,15 @@ target_link_libraries(reals_shell_win PUBLIC reals_bridge)
 target_link_libraries(reals_shell_win PUBLIC "${REALS_WEBVIEW2_DIR}/x64/WebView2LoaderStatic.lib" ole32 uuid shell32)
 target_compile_definitions(reals_shell_win PUBLIC _CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
 
-add_library(reaper_realslab SHARED src/reaper_plugin.cpp res/resource.rc)
+add_library(reaper_realslab SHARED
+    src/reaper_plugin.cpp
+    src/ReaperAgentApi.cpp
+    src/ReaperAgentRead.cpp
+    src/ReaperAgentWrite.cpp
+    src/ReaperAgentTools.cpp
+    res/resource.rc)
 target_include_directories(reaper_realslab PRIVATE ${REALS_SDK_DIR} res ${miniaudio_SOURCE_DIR})
-target_link_libraries(reaper_realslab PRIVATE reals_shell_win reals_bridge reals_core dwmapi)
+target_link_libraries(reaper_realslab PRIVATE reals_shell_win reals_bridge reals_core dwmapi gdi32)
 target_compile_definitions(reaper_realslab PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_definitions(reaper_realslab PRIVATE
     REALS_UI_WEB_DIR_W=L\"${CMAKE_CURRENT_SOURCE_DIR}/../ui-web\")
@@ -23,9 +29,14 @@ if (MSVC)
 endif()
 
 if (WIN32)
+    # Deploy to %APPDATA%/REAPER/UserPlugins ONLY for Release builds.
+    # Debug DLLs must never reach the live REAPER install: the unoptimized
+    # élastique/SoundTouch DSP cannot render realtime -> audible underruns
+    # (loop stalls) and general sluggishness. Building Debug for tests kept
+    # overwriting the deployed Release DLL before this guard existed.
     add_custom_command(TARGET reaper_realslab POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "$ENV{APPDATA}/REAPER/UserPlugins"
-        COMMAND powershell -NoProfile -ExecutionPolicy Bypass -Command "\"Get-ChildItem '$ENV{APPDATA}/REAPER/UserPlugins/$<TARGET_FILE_NAME:reaper_realslab>*.old' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue; if (Test-Path '$ENV{APPDATA}/REAPER/UserPlugins/$<TARGET_FILE_NAME:reaper_realslab>') { Move-Item -Force '$ENV{APPDATA}/REAPER/UserPlugins/$<TARGET_FILE_NAME:reaper_realslab>' ('$ENV{APPDATA}/REAPER/UserPlugins/$<TARGET_FILE_NAME:reaper_realslab>.' + (Get-Random) + '.old') -ErrorAction SilentlyContinue }; Copy-Item -Force '$<TARGET_FILE:reaper_realslab>' '$ENV{APPDATA}/REAPER/UserPlugins/$<TARGET_FILE_NAME:reaper_realslab>'\""
-        COMMENT "Deploying reaper_realslab.dll to %APPDATA%/REAPER/UserPlugins"
+        COMMAND powershell -NoProfile -ExecutionPolicy Bypass -Command "\"if ('$<CONFIG>' -ne 'Release') { exit 0 }; Get-ChildItem '$ENV{APPDATA}/REAPER/UserPlugins/$<TARGET_FILE_NAME:reaper_realslab>*.old' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue; if (Test-Path '$ENV{APPDATA}/REAPER/UserPlugins/$<TARGET_FILE_NAME:reaper_realslab>') { Move-Item -Force '$ENV{APPDATA}/REAPER/UserPlugins/$<TARGET_FILE_NAME:reaper_realslab>' ('$ENV{APPDATA}/REAPER/UserPlugins/$<TARGET_FILE_NAME:reaper_realslab>.' + (Get-Random) + '.old') -ErrorAction SilentlyContinue }; Copy-Item -Force '$<TARGET_FILE:reaper_realslab>' '$ENV{APPDATA}/REAPER/UserPlugins/$<TARGET_FILE_NAME:reaper_realslab>'\""
+        COMMENT "Deploying reaper_realslab.dll (Release only) to %APPDATA%/REAPER/UserPlugins"
     )
 endif()

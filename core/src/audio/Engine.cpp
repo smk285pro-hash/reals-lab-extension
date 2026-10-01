@@ -4,6 +4,7 @@
 #include "reals/ai/KeyDetector.h"
 #include "reals/ai/TempoDetector.h"
 #include "reals/util/Log.h"
+#include <RateTransposer.h>
 
 #include <algorithm>
 #include <atomic>
@@ -574,10 +575,8 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
     const int nativeSr = m_impl->track.sampleRate > 0 ? m_impl->track.sampleRate : targetSr;
     const int channels = 2; // Always decode & buffer as stereo float32 to prevent mono/stereo downsample artifacts
 
-    // Decode at NATIVE sample rate (0 = keep file's original rate).
-    // Resampling is handled by SoundTouch / élastique with high-quality
-    // WSOLA + sinc filtering instead of miniaudio's linear interpolation
-    // which caused audible high-frequency roll-off and aliasing.
+    // Decode at the source rate, then convert the sample grid independently
+    // of musical tempo/pitch processing below.
     ma_decoder_config decConfig = ma_decoder_config_init(
         ma_format_f32,
         static_cast<ma_uint32>(channels),
@@ -612,38 +611,32 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
     }
     ma_decoder_uninit(&localDec);
 
-    // ---- High-quality offline resample (native → device rate) ----
-    // When the file's native sample rate differs from the host device rate,
-    // resample using SoundTouch's WSOLA + 64-tap sinc anti-aliasing filter
-    // instead of miniaudio's linear interpolation (which caused audible
-    // high-frequency roll-off and a "compressed" sound).
+    // Rate conversion must interpolate the waveform, not time-stretch it.
+    // WSOLA preserves cycles per input frame, which shifts audible pitch when
+    // those frames are subsequently played at a different sample rate.
     if (nativeSr != targetSr && nativeSr > 0 && targetSr > 0 && !tempPcm.empty()) {
         LOG_INFO(kTag, "playFile: resampling " + std::to_string(nativeSr) + " → " + std::to_string(targetSr) + " Hz via SoundTouch sinc AA filter");
-        // SoundTouch tempo: output_frames = input_frames / tempo
-        // To produce more frames (e.g. 44100 → 48000): tempo < 1.0
-        // tempo = nativeSr / targetSr = 44100/48000 ≈ 0.919
-        const float resampleRatio = static_cast<float>(nativeSr) / static_cast<float>(targetSr);
-
-        SoundTouchProcessor resampler(nativeSr, channels, false);
-        resampler.setTimeRatio(resampleRatio);
-        resampler.setPitchSemitones(0.0f); // Pure rate conversion, no pitch change
+        soundtouch::RateTransposer resampler;
+        resampler.setChannels(channels);
+        resampler.setRate(static_cast<double>(nativeSr) / targetSr);
+        resampler.enableAAFilter(true);
+        resampler.clear();
 
         const size_t totalNativeFrames = tempPcm.size() / static_cast<size_t>(channels);
-        // output_frames ≈ input_frames / tempo = input_frames * (targetSr / nativeSr)
-        const size_t estOutputFrames = static_cast<size_t>(
-            static_cast<double>(totalNativeFrames) * static_cast<double>(targetSr) / static_cast<double>(nativeSr)) + 4096;
+        const size_t outputFrames = static_cast<size_t>(std::llround(
+            static_cast<double>(totalNativeFrames) * targetSr / nativeSr));
 
         std::vector<float> resampledPcm;
-        resampledPcm.reserve(estOutputFrames * static_cast<size_t>(channels));
+        resampledPcm.reserve(outputFrames * static_cast<size_t>(channels));
 
         constexpr size_t kFeedChunk = 2048;
-        std::vector<float> outChunk(kFeedChunk * 2 * static_cast<size_t>(channels)); // generous output buffer
+        std::vector<float> outChunk(kFeedChunk * static_cast<size_t>(channels));
         size_t inputPos = 0;
 
         while (inputPos < totalNativeFrames) {
             const size_t remaining = totalNativeFrames - inputPos;
             const size_t toFeed = std::min(kFeedChunk, remaining);
-            resampler.putSamples(&tempPcm[inputPos * static_cast<size_t>(channels)], toFeed);
+            resampler.putSamples(&tempPcm[inputPos * static_cast<size_t>(channels)], static_cast<unsigned int>(toFeed));
             inputPos += toFeed;
 
             // Drain all available output
@@ -654,13 +647,15 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
             }
         }
 
-        // Flush remaining samples from the processor pipeline
-        resampler.flush();
-        while (true) {
-            const size_t received = resampler.receiveSamples(outChunk.data(), kFeedChunk);
-            if (received == 0) break;
+        // Drain the finite FIR/interpolation tail with silence; trim padding
+        // back to the exact output duration so loop boundaries cannot drift.
+        const std::vector<float> padding(kFeedChunk * static_cast<size_t>(channels), 0.0f);
+        while (resampledPcm.size() / static_cast<size_t>(channels) < outputFrames) {
+            resampler.putSamples(padding.data(), static_cast<unsigned int>(kFeedChunk));
+            const size_t received = resampler.receiveSamples(outChunk.data(), static_cast<unsigned int>(kFeedChunk));
             resampledPcm.insert(resampledPcm.end(), outChunk.data(), outChunk.data() + received * static_cast<size_t>(channels));
         }
+        resampledPcm.resize(outputFrames * static_cast<size_t>(channels));
 
         LOG_INFO(kTag, "playFile: resampled " + std::to_string(totalNativeFrames) + " → " + std::to_string(resampledPcm.size() / static_cast<size_t>(channels)) + " frames");
         tempPcm = std::move(resampledPcm);
@@ -727,8 +722,8 @@ bool Engine::playFile(const std::string& path, const bool loop, const double sta
     }
 
     const ma_uint64 totalF = m_impl->dspSource.totalFrames.load(std::memory_order_relaxed);
-    const ma_uint64 refFrames = (nominalLoopFrames > 0 && nominalLoopFrames <= totalF)
-        ? nominalLoopFrames
+    const ma_uint64 refFrames = (scaledLoopBoundary > 0 && scaledLoopBoundary <= totalF)
+        ? scaledLoopBoundary
         : totalF;
 
     const ma_uint64 startFrame = (refFrames > 0 && clampedFraction > 0.0)
@@ -934,9 +929,20 @@ float Engine::detectBpm(const std::string& path) {
     if (pcm.size() < 4096)
         return 0.0f;
     auto res = ai::TempoDetector::detect(pcm.data(), pcm.size(), sr);
-    if (res.confidence < 0.25f || res.bpm < 40.0f || res.bpm > 250.0f)
-        return 0.0f;
-    return res.bpm;
+    if (res.confidence >= 0.25f && res.bpm >= 40.0f && res.bpm <= 250.0f)
+        return res.bpm;
+
+    // Duration-bars fallback: vocal beds / pads are cut to exact bar counts,
+    // so bars*4*60/duration lands near an integer BPM. Only when the file was
+    // fully decoded (totalRead < kMaxFrames) so the duration is exact — a
+    // clipped 30s window would compute a wrong bar count.
+    if (totalRead < kMaxFrames) {
+        const double decodedSec = static_cast<double>(totalRead) / static_cast<double>(sr);
+        const float barsBpm = ai::TempoDetector::detectFromDuration(decodedSec);
+        if (barsBpm > 0.0f)
+            return barsBpm;
+    }
+    return 0.0f;
 }
 
 std::string Engine::detectKey(const std::string& path) {

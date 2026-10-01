@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -143,6 +144,28 @@ public:
         return m_hostPlayToggled;
     }
 
+    void startTransport() override {
+        std::lock_guard lock(m_mutex);
+        m_previewPositionAtTransportStart = m_previewPosSeconds;
+        m_hostPlayToggled = !m_hostPlayToggled;
+    }
+
+    void startTransport(double startPositionSeconds) override {
+        std::lock_guard lock(m_mutex);
+        m_previewPositionAtTransportStart = m_previewPosSeconds;
+        m_hostPlayToggled = !m_hostPlayToggled;
+        m_hostTransport.playPosition = std::max(0.0, startPositionSeconds);
+        if (m_hostTransport.bpm > 30.0) {
+            m_hostTransport.fullBeats =
+                m_hostTransport.playPosition * m_hostTransport.bpm / 60.0;
+        }
+    }
+
+    double previewPositionAtTransportStart() const {
+        std::lock_guard lock(m_mutex);
+        return m_previewPositionAtTransportStart;
+    }
+
     void setHostPlayToggled(bool val) {
         std::lock_guard lock(m_mutex);
         m_hostPlayToggled = val;
@@ -221,9 +244,25 @@ public:
         m_previewPosSeconds = std::max(0.0, posSeconds);
     }
 
+    void setHostPreviewPositionSoft(double posSeconds) override {
+        std::lock_guard lock(m_mutex);
+        m_previewSoftPositionCalls.push_back(posSeconds);
+        m_previewPositionCalls.push_back(posSeconds);
+        m_previewPosSeconds = std::max(0.0, posSeconds);
+    }
+
     void setHostPreviewTimeRatio(double ratio) override {
         std::lock_guard lock(m_mutex);
         m_previewTimeRatio = ratio;
+    }
+
+    void setHostPreviewLoopBoundary(double loopBeats, double sampleBpm) override {
+        std::lock_guard lock(m_mutex);
+        m_previewLoopBoundaryCalls.emplace_back(loopBeats, sampleBpm);
+        m_previewLoopBeats = loopBeats;
+        if (loopBeats > 0.0 && sampleBpm > 30.0 && m_previewTimeRatio > 0.01) {
+            m_previewDurationSeconds = loopBeats * 60.0 / (sampleBpm * m_previewTimeRatio);
+        }
     }
 
     void setHostPreviewPitchSemitones(double semitones) override {
@@ -258,9 +297,21 @@ public:
         std::lock_guard lock(m_mutex);
         return m_previewPositionCalls;
     }
+    [[nodiscard]] std::vector<double> previewSoftPositionCalls() const {
+        std::lock_guard lock(m_mutex);
+        return m_previewSoftPositionCalls;
+    }
+    [[nodiscard]] std::vector<std::pair<double, double>> previewLoopBoundaryCalls() const {
+        std::lock_guard lock(m_mutex);
+        return m_previewLoopBoundaryCalls;
+    }
     [[nodiscard]] bool previewPlaying() const {
         std::lock_guard lock(m_mutex);
         return m_previewPlaying;
+    }
+    [[nodiscard]] double previewPositionSeconds() const {
+        std::lock_guard lock(m_mutex);
+        return m_previewPosSeconds;
     }
     void setPreviewSimulatedDuration(double sec) {
         std::lock_guard lock(m_mutex);
@@ -276,6 +327,8 @@ public:
         std::lock_guard lock(m_mutex);
         m_previewCalls.clear();
         m_previewFractionCalls.clear();
+        m_previewPositionCalls.clear();
+        m_previewLoopBoundaryCalls.clear();
         m_previewPlaying = false;
         m_previewPath.clear();
         m_previewPosSeconds = 0.0;
@@ -339,6 +392,8 @@ public:
         m_extStatePersist.clear();
         m_previewCalls.clear();
         m_previewFractionCalls.clear();
+        m_previewPositionCalls.clear();
+        m_previewLoopBoundaryCalls.clear();
         m_previewPlaying = false;
         m_previewPath.clear();
         m_previewPosSeconds = 0.0;
@@ -386,6 +441,7 @@ private:
     bool m_windowMaximized = false;
     bool m_dragStarted = false;
     bool m_hostPlayToggled = false;
+    double m_previewPositionAtTransportStart = -1.0;
     std::string m_resizedEdge;
     std::vector<MediaInsertRecord> m_insertedMedia;
     std::vector<double> m_insertedPlayrates;
@@ -404,6 +460,8 @@ private:
     std::vector<HostPreviewRecord> m_previewCalls;
     std::vector<double> m_previewFractionCalls;
     std::vector<double> m_previewPositionCalls;
+    std::vector<double> m_previewSoftPositionCalls;
+    std::vector<std::pair<double, double>> m_previewLoopBoundaryCalls;
     bool m_previewPlaying = false;
     std::string m_previewPath;
     bool m_previewLoop = false;

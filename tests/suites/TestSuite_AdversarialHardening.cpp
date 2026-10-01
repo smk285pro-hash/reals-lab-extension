@@ -475,9 +475,11 @@ TEST(AdversarialHardening, Benchmark_Browser_Recursive2000FilesWalkAndSortUnder3
 
 TEST(AdversarialHardening, Verification_Browser_MIDI_Audio_ParityAndFastAsciiLower) {
     // 1. Audio and MIDI extensions parity check
+    // (sfz/rex/rx2 removed: instrument/loop metadata, not decodable audio —
+    // same contract as BackgroundScanner::isSupportedAudioExtension)
     const std::vector<std::string> audioExtensions = {
         "wav", "wave", "mp3", "flac", "ogg", "oga", "aiff", "aif", "wma", "m4a", "aac", "opus",
-        "mid", "midi", "w64", "caf", "sfz", "rex", "rx2"
+        "mid", "midi", "w64", "caf"
     };
 
     for (const auto& ext : audioExtensions) {
@@ -487,6 +489,14 @@ TEST(AdversarialHardening, Verification_Browser_MIDI_Audio_ParityAndFastAsciiLow
         std::string upperExt = ext;
         for (char& c : upperExt) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
         EXPECT_TRUE(reals::browser::BrowserModel::isAudioExt("sample." + upperExt));
+    }
+
+    // Non-playable formats must never be indexed as audio
+    const std::vector<std::string> nonPlayable = {
+        "sfz", "rex", "rx2", "reapeaks"
+    };
+    for (const auto& ext : nonPlayable) {
+        EXPECT_FALSE(reals::browser::BrowserModel::isAudioExt("sample." + ext));
     }
 
     // Media extensions that are video/project (isMediaExt=true, isAudioExt=false)

@@ -1,6 +1,14 @@
 # Reals Lab — SPEC (Từ 0 đến Full)
 
-> Phiên bản: 1.2 · Ngày: 2026-08-25 · Tham khảo: `PLAN.md` (ý tưởng), `DESIGN.md` (design system)
+> Phiên bản: 1.6 · Ngày: 2026-10-01 · Tham khảo: `PLAN.md` (ý tưởng), `DESIGN.md` (design system)
+>
+> **v1.6 — Agent P5 (bản đầu)**: `core/agent/` (LlmClient Anthropic/OpenAI-compatible, ToolRegistry 51 tool dạng data + risk read/write/danger, AgentSession tool-use loop ≤24 bước), `bridge/src/AgentBridge` (lệnh/event `agent.*`, LLM chạy thread nền, tool REAPER marshal về main thread qua `drainEvents`), `IHostActions::executeAgentTool(tool, argsJson)` (executor generic, mọi tool ghi bọc Undo). Tạm gọi thẳng endpoint tương thích Anthropic (cấu hình `agentBaseUrl`/`agentApiKey`/`agentModel`, fallback env `ANTHROPIC_*`) cho đến khi có §4.4 trên server RealS.
+>
+> **v1.5 — Preview phase/sample-rate contract**: The core/standalone preview path resamples decoded PCM onto the host output sample-rate with `RateTransposer`, independently from musical time-stretch and pitch; the native REAPER path keeps the same output-frame contract through the host source API. Loop boundaries and initial seeks use that output frame grid. Native phase re-alignment performs one soft seek in nominal-loop seconds; repeated `audio.setSyncBpm` calls are idempotent when path/BPM/ratio are unchanged. Late BPM metadata refreshes the native loop boundary and output duration before a latency-compensated soft seek. Native preview registration is tracked separately from audible playback so EOF and failed launches always release host resources.
+>
+> **v1.4 — Gỡ tìm kiếm semantic/CLAP**: Xóa sạch tính năng "Tìm sample tương tự" + search ngữ nghĩa (vector CLAP là fake — không có model .onnx, audio/text embedding không cùng không gian vector → cosine vô nghĩa). Scanner chỉ còn Key + BPM DSP. Search: syntax tokens + text match trên DB.
+>
+> **v1.3 — Preview zero-lag & metadata thật**: `audio.play` chỉ chạy fast-detect (filename + DB) trên UI thread — heavy TempoDetector/KeyDetector chuyển sang background worker `spawnMetaDetection`, kết quả đẩy qua event `audio.detected` `{path, bpm, key}`; UI re-apply Sync live. Xóa fake `sampleBpm = projectBpm` và fallback `projectBpm/120` — không bao giờ hiển thị BPM không phải của sample.
 >
 > **v1.2 — Hardening pass**: audit toàn dự án, sửa ~25 bug. `net::HttpClient` có implementation thật (WinHTTP) — LabApi chạy qua nó; lab job workers được track + join; base URL Audio Lab cấu hình được (`labApiBaseUrl`); bridge thêm `fs.addRoot/removeRoot`, `fs.list` nhận sort, `browser.tags` trả full map, `audio.setLoop` hoạt động, alias `lab.tempo/lab.midi`. Version app: **0.2.0**.
 >
@@ -75,12 +83,17 @@ core KHÔNG được biết gì về WebView/REAPER/GLFW. UI (HTML) KHÔNG gọi
 | fs | `fs.roots`, `fs.addRoot`, `fs.removeRoot`, `fs.dropPaths`, `fs.subdirs`, `fs.list` (sort: 0 tên/1 size/2 ngày), `fs.invalidate`, `fs.watch` | list có cache; `fs.list` trả cả folder (`isDir`); `fs.watch` → event `fs.changed`; drop Explorer → `fs.dropPaths` + event `fs.rootsChanged` |
 | browser | `browser.search` (async: `{pending,gen}` + event `browser.searchResult`), `browser.favorites/recents/addRecent/toggleFavorite/clearRecents`, `browser.tag`, `browser.tags` (có path → per-path; không path → full map), `browser.beginDrag` (Cơ chế A: kéo file gốc 0ms lag, queue sync playrate/pitch cho REAPER native take stretch & grid alignment) | search recursive trên worker, hủy được |
 | browser | `browser.rename`, `browser.delete` | trả `ok:false` + error khi fail (UI phải catch); UTF-8 path |
-| audio | `audio.play/stop/setLoop/setVolume/probe/seek/setPitchShift/setSyncBpm/setOriginalKey/detectBpm` | `audio.play` tự động tính `startFraction` đồng bộ pha DAW playhead (FL Studio Cloud style); probe header-only; seek 0..1; pitchShift ±12st; sync via timeRatio |
+| audio | `audio.play/stop/setLoop/setVolume/probe/seek/setPitchShift/setSyncBpm/setOriginalKey/detectBpm` | `audio.play` tự động tính `startFraction` đồng bộ pha DAW playhead (FL Studio Cloud style); core/standalone preview đổi PCM sang output sample-rate bằng `RateTransposer` trước khi áp dụng timeRatio/pitch, còn native REAPER dùng host source resampling với cùng output-frame contract; loop boundary + initial seek dùng output frame grid; phase timer dùng một soft seek theo giây của nominal loop; probe header-only; seek 0..1; pitchShift ±12st; sync via timeRatio; detect BPM/key trên UI thread chỉ dùng fast sources (filename + DB) — heavy detect chạy background worker, trả kết quả qua event `audio.detected` |
 | lab | `lab.analyze/keychord/stem/denoise` (+alias `lab.tempo`→analyze, `lab.midi`→keychord) | chạy background thread, đẩy event `lab.progress/result/error`; poll 2s, timeout ~10 phút |
-| reaper | `reaper.insert`, `reaper.insertMany`, `reaper.reveal`, `reaper.lab`, `reaper.tempo` | insert mode 1 = new track, bọc Undo; tempo = `Master_GetTempo` |
+| reaper | `reaper.insert`, `reaper.insertMany`, `reaper.reveal`, `reaper.lab`, `reaper.tempo`, `reaper.transportState`, `reaper.dawPlay`, `reaper.dawStop` | insert mode 1 = new track, bọc Undo; tempo = `Master_GetTempo`; transportState = `{playing,bpm,previewPlaying}`; dawPlay/dawStop = Spacebar preview cycle (guard flag chống ngắt preview nhầm) |
 | window | `window.hide`, `window.minimize` | |
+| agent | `agent.send {text}`, `agent.cancel`, `agent.confirm {id, approved}`, `agent.setMode {mode 0/1/2}`, `agent.config`, `agent.setConfig {provider, baseUrl, model, apiKey}`, `agent.models`, `agent.history`, `agent.clear`, `agent.tools` | `agent.send` trả ngay (`busy` nếu đang chạy), kết quả qua event; `agent.config` chỉ trả key đã che (`keyMasked`, `keySource`); `agent.models` async → event `agent.models` |
 
-Events push từ C++: `toast`, `audio.state` (30Hz khi playing + 1 frame cuối khi dừng), `lab.progress`, `lab.result`, `lab.error`, `browser.searchResult` `{gen, results}`, `fs.changed` `{path}`, `fs.rootsChanged` `{added:[{name,path}]}`, `fs.dropHover` `{on:bool}`.
+Events push từ C++: `toast`, `audio.state` (30Hz khi playing + 1 frame cuối khi dừng), `audio.detected` `{path, bpm, key}` (background BPM/key detect xong), `lab.progress`, `lab.result`, `lab.error`, `browser.searchResult` `{gen, results}`, `fs.changed` `{path}`, `fs.rootsChanged` `{added:[{name,path}]}`, `fs.dropHover` `{on:bool}`, `agent.state` `{busy}`, `agent.message` `{role, text}`, `agent.toolCall` / `agent.confirmRequest` `{id, tool, args, risk}`, `agent.toolResult` `{id, tool, ok, denied, result}`, `agent.error` `{message, code: config|llm|steps}`, `agent.cancelled` `{partial}`, `agent.delta` `{text}` (chữ trả lời đang stream, gộp ~40ms), `agent.thinking` `{text}` (suy nghĩ đang stream, chỉ hiển thị), `agent.models` `{models:[{id,name}], error?}`.
+
+**Preview sync contract (v1.5)**: `IHostActions::setHostPreviewLoopBoundary(loopBeats, sampleBpm)` cập nhật lại musical loop của native host preview khi metadata đến sau lúc phát. `setHostPreviewPositionSoft(posSeconds)` được dùng cho phase timer để giữ pipeline DSP; hard seek chỉ dành cho lệnh seek của người dùng. Khi cùng preview path, sample BPM và ratio không đổi, `audio.setSyncBpm` không tạo thêm phase seek.
+
+**Đã gỡ (v1.4)**: `ai.searchSemantic`, `search.findSimilar`/`ai.findSimilar`/`browser.findSimilar`, vector embedding trong scanner/AI analysis, semantic scoring trong hybrid search (cố định `enableSemantic=false`).
 
 ## 4. API Contract (reals.media)
 
@@ -117,6 +130,8 @@ POST /api/lab/agent/chat   { messages[], tools[] }  → SSE stream tool_calls
 ```
 Client chỉ là executor: nhận `{tool, args}` → thực thi (REAPER actions / API calls) → trả kết quả vào vòng chat. Phân quyền: server gửi kèm `allowedTools[]`.
 
+**Hiện trạng (v1.6)**: chưa có endpoint server — client gọi trực tiếp `POST {agentBaseUrl}/v1/messages` (Anthropic) hoặc `/v1/chat/completions` (`agentProvider=openai`), không stream. `allowedTools[]` tạm lấy từ config `agentAllowedTools` (CSV, rỗng = tất cả).
+
 ## 5. Module Spec
 
 ### 5.1 Browser local (MVP ĐẦU TIÊN)
@@ -149,6 +164,16 @@ Client chỉ là executor: nhận `{tool, args}` → thực thi (REAPER actions 
 - Tools REAPER: ~50 tool ngữ nghĩa cao + bridge `Main_OnCommand` + get/set props
 - Mọi action bọc Undo block; action nguy hiểm → confirm theo chế độ
 - Memory phiên + history lưu Config
+- **Checklist P5 (v1.6)**:
+  - [x] LLM client (Anthropic + OpenAI-compatible), key ngoài repo, chọn model từ `/v1/models`
+  - [x] Tool registry dạng data (51 tool: project/track/item/FX/marker/region/transport/tempo/selection/`run_action`/Audio Lab)
+  - [x] Executor REAPER generic + Undo block; tool chạy trên main thread
+  - [x] 3 chế độ phân quyền + confirm inline trên UI; tool lạ = danger
+  - [x] Lịch sử hội thoại lưu `agent_history.json` (cắt còn 80 message)
+  - [x] UI chat + tool card + Settings › Agent AI (vi/en)
+  - [x] Test `TestSuite_Agent` (mock transport/executor)
+  - [x] Stream SSE + hủy request đang chạy (`net::CancelToken`, `Request::onData`; config `agentStream`, `agentThinking`, `agentThinkingBudget`, `agentToolProtocol` auto|native|text)
+  - [ ] Tool catalog + `allowedTools[]` từ server (§4.4)
 
 ### 5.5 Account & Hệ thống
 - Device flow login, hiển thị gói + license + usage
@@ -167,7 +192,7 @@ Client chỉ là executor: nhận `{tool, args}` → thực thi (REAPER actions 
 | **P2 — Audio Lab** | 5.2 đầy đủ (API + local tools) | Tách stem từ REAPER ra track mới |
 | **P3 — Marketplace** | 5.3 | Mua/tải/cài trong app |
 | **P4 — Account** | Device flow + settings đầy đủ | Login sync với web |
-| **P5 — Agent** | 5.4 | Chat điều khiển REAPER được |
+| **P5 — Agent** 🚧 | 5.4 — bản đầu đã có (v1.6), còn stream + server catalog | Chat điều khiển REAPER được |
 | **P6 — Full** | Update system, onboarding, **Mac (WKWebView) + Linux (WebKitGTK)**, polish | 3 OS release |
 
 Mỗi phase có checklist riêng, xong phase mới sang phase sau. Không nhảy cóc.

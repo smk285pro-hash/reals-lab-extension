@@ -29,9 +29,12 @@ std::string lowerUtf8(const std::string& s) {
 }
 
 inline bool isAudioExtRaw(std::string_view extLower) {
+    // PCM audio + MIDI preview only. REAPER cache files (.reapeaks) and
+    // instrument/loop metadata (.sfz/.rex/.rx2) are NOT playable audio and
+    // must never reach the browser list or the preview decoder.
     static const std::unordered_set<std::string_view> kAudio = {
         "wav", "wave", "mp3", "flac", "ogg", "oga", "aiff", "aif", "wma", "m4a", "aac", "opus",
-        "mid", "midi", "w64", "caf", "sfz", "rex", "rx2"};
+        "mid", "midi", "w64", "caf"};
     return kAudio.count(extLower) > 0;
 }
 
@@ -144,7 +147,8 @@ bool isIgnoredDir(std::string_view name) {
     static const std::unordered_set<std::string_view> kIgnored = {
         ".git", ".svn", ".hg", "node_modules", "$recycle.bin", "system volume information",
         ".vscode", ".idea", "__pycache__", ".trash", ".reals", "appdata", "application data",
-        "windows", "program files", "program files (x86)", "programdata"
+        "windows", "program files", "program files (x86)", "programdata",
+        "peaks"  // REAPER waveform cache folders — contain only .reapeaks junk
     };
     return kIgnored.count(lower) > 0 || (lower.rfind('.', 0) == 0 && lower.length() > 1 && lower != ".");
 }
@@ -207,6 +211,16 @@ std::string BrowserModel::formatTime(const long long epochSeconds) {
 
 void BrowserModel::loadStore() {
     const std::lock_guard lock(m_storeMutex);
+
+    // Loading a different store must replace the complete persisted state.
+    // Without clearing first, a missing or malformed file leaves roots and
+    // metadata from the previous store attached to the new path.
+    m_favorites.clear();
+    m_recents.clear();
+    m_tags.clear();
+    m_roots.clear();
+    m_cache.clear();
+
     std::ifstream in(platform::u8path(m_storePath));
     if (!in)
         return;
@@ -295,6 +309,10 @@ std::vector<FileEntry>& BrowserModel::buildListing(const std::string& dir) {
             std::string extLower;
             bool isAudio = false;
             if (!matchMediaExt(raw.name, extLower, isAudio))
+                continue;
+            // REAPER peak-cache files are binary waveform caches, not audio.
+            // Decoding them produces chipmunk noise ("pít lên") — never list.
+            if (fastLower(raw.name).ends_with(".reapeaks"))
                 continue;
 
             FileEntry fe;
